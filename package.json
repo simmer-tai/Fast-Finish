@@ -1,0 +1,14 @@
+{
+  "name": "fast-finish",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node node_modules/typescript/bin/tsc",
+    "watch": "node node_modules/typescript/bin/tsc --watch"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^5.9.3"
+  }
+}

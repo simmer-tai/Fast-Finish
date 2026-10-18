@@ -1,0 +1,207 @@
+{
+ "gun_body": [
+  "gun_body_0.ogg",
+  "gun_body_1.ogg",
+  "gun_body_2.ogg",
+  "gun_body_3.ogg",
+  "gun_body_4.ogg"
+ ],
+ "gun_crack": [
+  "gun_crack_0.ogg",
+  "gun_crack_1.ogg",
+  "gun_crack_2.ogg",
+  "gun_crack_3.ogg",
+  "gun_crack_4.ogg"
+ ],
+ "gun_sub": [
+  "gun_sub_0.ogg",
+  "gun_sub_1.ogg"
+ ],
+ "gun_latch": [
+  "gun_latch_0.ogg",
+  "gun_latch_1.ogg"
+ ],
+ "metal_tick": [
+  "metal_tick_0.ogg",
+  "metal_tick_1.ogg",
+  "metal_tick_2.ogg",
+  "metal_tick_3.ogg",
+  "metal_tick_4.ogg"
+ ],
+ "metal_small": [
+  "metal_small_0.ogg",
+  "metal_small_1.ogg",
+  "metal_small_2.ogg"
+ ],
+ "ricochet": [
+  "ricochet_0.ogg",
+  "ricochet_1.ogg",
+  "ricochet_2.ogg",
+  "ricochet_3.ogg",
+  "ricochet_4.ogg"
+ ],
+ "plate": [
+  "plate_0.ogg",
+  "plate_1.ogg",
+  "plate_2.ogg",
+  "plate_3.ogg",
+  "plate_4.ogg"
+ ],
+ "swish": [
+  "swish_0.ogg",
+  "swish_1.ogg",
+  "swish_2.ogg",
+  "swish_3.ogg",
+  "swish_4.ogg",
+  "swish_5.ogg",
+  "swish_6.ogg",
+  "swish_7.ogg",
+  "swish_8.ogg",
+  "swish_9.ogg",
+  "swish_10.ogg",
+  "swish_11.ogg",
+  "swish_12.ogg",
+  "swish_13.ogg",
+  "swish_14.ogg",
+  "swish_15.ogg"
+ ],
+ "blade": [
+  "blade_0.ogg",
+  "blade_1.ogg",
+  "blade_2.ogg",
+  "blade_3.ogg",
+  "blade_4.ogg",
+  "blade_5.ogg",
+  "blade_6.ogg",
+  "blade_7.ogg",
+  "blade_8.ogg",
+  "blade_9.ogg"
+ ],
+ "clash": [
+  "clash_0.ogg",
+  "clash_1.ogg",
+  "clash_2.ogg",
+  "clash_3.ogg",
+  "clash_4.ogg",
+  "clash_5.ogg",
+  "clash_6.ogg",
+  "clash_7.ogg",
+  "clash_8.ogg",
+  "clash_9.ogg"
+ ],
+ "unsheathe": [
+  "unsheathe_0.ogg",
+  "unsheathe_1.ogg",
+  "unsheathe_2.ogg",
+  "unsheathe_3.ogg",
+  "unsheathe_4.ogg"
+ ],
+ "knife_draw": [
+  "knife_draw_0.ogg",
+  "knife_draw_1.ogg",
+  "knife_draw_2.ogg"
+ ],
+ "slice": [
+  "slice_0.ogg",
+  "slice_1.ogg",
+  "slice_2.ogg"
+ ],
+ "punch_heavy": [
+  "punch_heavy_0.ogg",
+  "punch_heavy_1.ogg",
+  "punch_heavy_2.ogg",
+  "punch_heavy_3.ogg",
+  "punch_heavy_4.ogg"
+ ],
+ "punch": [
+  "punch_0.ogg",
+  "punch_1.ogg",
+  "punch_2.ogg",
+  "punch_3.ogg",
+  "punch_4.ogg"
+ ],
+ "thud_heavy": [
+  "thud_heavy_0.ogg",
+  "thud_heavy_1.ogg",
+  "thud_heavy_2.ogg",
+  "thud_heavy_3.ogg",
+  "thud_heavy_4.ogg"
+ ],
+ "thud": [
+  "thud_0.ogg",
+  "thud_1.ogg",
+  "thud_2.ogg",
+  "thud_3.ogg",
+  "thud_4.ogg"
+ ],
+ "wood": [
+  "wood_0.ogg",
+  "wood_1.ogg",
+  "wood_2.ogg",
+  "wood_3.ogg",
+  "wood_4.ogg"
+ ],
+ "plank": [
+  "plank_0.ogg",
+  "plank_1.ogg",
+  "plank_2.ogg",
+  "plank_3.ogg",
+  "plank_4.ogg"
+ ],
+ "step": [
+  "step_0.ogg",
+  "step_1.ogg",
+  "step_2.ogg",
+  "step_3.ogg",
+  "step_4.ogg",
+  "step_5.ogg",
+  "step_6.ogg",
+  "step_7.ogg",
+  "step_8.ogg",
+  "step_9.ogg"
+ ],
+ "step_hard": [
+  "step_hard_0.ogg",
+  "step_hard_1.ogg",
+  "step_hard_2.ogg",
+  "step_hard_3.ogg",
+  "step_hard_4.ogg"
+ ],
+ "cloth": [
+  "cloth_0.ogg",
+  "cloth_1.ogg",
+  "cloth_2.ogg",
+  "cloth_3.ogg",
+  "cloth_4.ogg",
+  "cloth_5.ogg"
+ ],
+ "gear": [
+  "gear_0.ogg",
+  "gear_1.ogg",
+  "gear_2.ogg",
+  "gear_3.ogg"
+ ],
+ "focus": [
+  "focus_0.ogg",
+  "focus_1.ogg",
+  "focus_2.ogg"
+ ],
+ "bell": [
+  "bell_0.ogg",
+  "bell_1.ogg"
+ ],
+ "glass": [
+  "glass_0.ogg",
+  "glass_1.ogg"
+ ],
+ "chain": [
+  "chain_0.ogg",
+  "chain_1.ogg",
+  "chain_2.ogg"
+ ],
+ "blade_hi": [
+  "blade_hi_0.ogg",
+  "blade_hi_1.ogg",
+  "blade_hi_2.ogg"
+ ]
+}

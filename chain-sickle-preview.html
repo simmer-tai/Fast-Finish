@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鎖鎌プレビュー</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #c8c8c8; }
+      #note { position: fixed; left: 12px; top: 10px; font: 13px sans-serif; color: #333; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="note">ドラッグで回転 / ホイールで拡大（npm run build 後に表示）</div>
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+      import {
+        createChainSickle, createChain, createHeldSickle, layChain, SICKLE_VIEW_MODEL_POS,
+      } from './dist/chainSickle.js';
+      // ?fp を付けると、ゲームと同じ一人称の構えで表示する
+      const firstPerson = new URLSearchParams(location.search).has('fp');
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(devicePixelRatio);
+      renderer.setSize(innerWidth, innerHeight);
+      document.body.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xc8c8c8);
+      const envMap = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.5));
+      const sun = new THREE.DirectionalLight(0xffffff, 2);
+      sun.position.set(1, 2, 1.5);
+      scene.add(sun);
+
+      // ゲーム内と同じ質感
+      const metal = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.6, roughness: 0.3, envMap, envMapIntensity: 1.2, flatShading: true });
+      const shaft = new THREE.MeshStandardMaterial({ color: 0x3b444c, metalness: 0.3, roughness: 0.7, flatShading: true });
+      const wrap = new THREE.MeshStandardMaterial({ color: 0x23282d, metalness: 0.1, roughness: 0.9, flatShading: true });
+
+      // 左: 組んだ状態（鎖は柄の中に収まって見えない）
+      const sickle = createChainSickle({ metal, shaft, wrap });
+      sickle.position.set(-0.25, 0.9, 0);
+      scene.add(sickle);
+      // 右: 継ぎ目から頭が外れて、握りの先と頭の付け根を鎖がつないでいる状態
+      const apart = createChainSickle({ metal, shaft, wrap });
+      apart.position.set(0.25, 0.75, 0);
+      scene.add(apart);
+      const head = apart.userData.head;
+      head.position.set(0.1, 0.35, -0.05);
+      head.rotation.z = -0.5;
+      const chain = createChain(metal, false);
+      apart.add(chain);
+      const joint = apart.userData.chainAnchor;
+      const headEnd = joint.clone().applyEuler(head.rotation).add(head.position);
+      const mid = joint.clone().lerp(headEnd, 0.5).add(new THREE.Vector3(0.06, -0.08, 0));
+      layChain(chain, [joint.clone(), mid, headEnd]);
+
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshStandardMaterial({ color: 0xbdbdbd }));
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+      floor.visible = !firstPerson;
+
+      const camera = new THREE.PerspectiveCamera(firstPerson ? 75 : 40, innerWidth / innerHeight, 0.01, 50);
+      if (firstPerson) {
+        // 置いてある鎖鎌はどけて、カメラに構えを付ける。中央に照準の点を出す
+        sickle.visible = apart.visible = false;
+        camera.position.set(0, 1.6, 2);
+        scene.add(camera);
+        const vm = new THREE.Group();
+        vm.position.copy(SICKLE_VIEW_MODEL_POS);
+        camera.add(vm);
+        vm.add(createHeldSickle({ metal, shaft, wrap }, 1), createHeldSickle({ metal, shaft, wrap }, -1));
+        document.getElementById('note').textContent = '一人称の構え（ゲーム内と同じ）';
+        const dot = document.createElement('div');
+        dot.style.cssText = 'position:fixed;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#333';
+        document.body.appendChild(dot);
+      } else {
+        camera.position.set(1.4, 1.2, 2.1);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0.0, 0.95, 0);
+        controls.update();
+      }
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+      renderer.setAnimationLoop(() => renderer.render(scene, camera));
+    </script>
+  </body>
+</html>
