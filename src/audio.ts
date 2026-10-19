@@ -810,13 +810,13 @@ export function playCasing(volume: number) {
   sample('plate', { gain: 0.25 * volume, rate: rand(1.7, 2.3), pan: rand(-0.5, 0.5) });
 }
 
-// 弾が壁や地面に当たった: 硬い着弾音に、ときどき跳弾の「ピュン」を混ぜる
+// 弾が壁や地面に当たった: 短く乾いた「パスッ」。頭の割れる音に、こもった硬い衝突と、崩れた粉の細かいノイズを重ねる。
+// 跳弾の「ピュン」や金属の鳴りは足さない（目立たず、重く短く）
 export function playRicochet() {
-  sample('ricochet', { gain: 0.45, rate: rand(0.9, 1.2), reverb: 0.15 });
-  playRing(0.45 + Math.random() * 0.15, 0.35, 0.06);
-  if (Math.random() < 0.4) {
-    tone(rand(2600, 3400), rand(900, 1300), 0.05, 0.28, { type: 'triangle', delay: 0.01, attack: 0.01 });
-  }
+  noise('bandpass', rand(3200, 4200), 1600, 0.2, 0.035, { q: 1.1, attack: 0.001 });
+  sample('step_hard', { gain: 0.4, rate: rand(0.65, 0.8), lp: 1800, cut: 0.15, reverb: 0.08 });
+  sample('thud', { gain: 0.22, rate: rand(0.75, 0.9), lp: 700, cut: 0.12 });
+  noise('lowpass', 1400, 280, 0.08, 0.2, { attack: 0.006, delay: 0.008 });
 }
 
 // ---- 体の動き ----
