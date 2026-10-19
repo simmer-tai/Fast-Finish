@@ -77,7 +77,8 @@ const MAX_FOV_BONUS = 22; // 速度による最大の視野拡大
 const FOV_SPEED_MAX = 32; // この速さで視野拡大が最大になる
 
 // ---- 基本セットアップ ----
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// 画面のアンチエイリアスは後処理のマルチサンプル描画で行うので、キャンバス側では持たない
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -119,6 +120,9 @@ function setShadows(on: boolean) {
 setShadows(shadowsOn);
 // 描くたびに、太陽を視点の真上の方へ置き直す。影がちらつかないよう、1m 刻みでしか動かさない
 scene.onBeforeRender = (_r, _s, cam) => {
+  // 床のグリッドも視点についていかせる。線は 1m 間隔なので、1m 刻みで動かせば線の位置は変わらない
+  grid.position.x = Math.round(cam.position.x);
+  grid.position.z = Math.round(cam.position.z);
   if (!shadowsOn) return;
   sun.target.position.set(Math.round(cam.position.x), 0, Math.round(cam.position.z));
   sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 120);
@@ -132,7 +136,9 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
-const grid = new THREE.GridHelper(2000, 2000, 0x000000, 0x000000);
+// 霧は奥行き 150m で背景色になり切るので、視野が最も広いときの画面の端まで見ても 500m 先は見えない。
+// 視点のまわり 1000m 四方だけ描き、視点についていかせる
+const grid = new THREE.GridHelper(1000, 1000, 0x000000, 0x000000);
 grid.position.y = 0.01;
 const gridMat = grid.material as THREE.Material;
 gridMat.opacity = 0.1;
@@ -7795,6 +7801,10 @@ function updateHitFx(dt: number) {
   // 最後の 1 体を倒したときも同じ白黒を使う
   u.uMono.value = Math.max(parryMono(), finaleMono());
   u.uInvert.value = parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
+  // 効果が無いときは全画面の処理ごと飛ばす
+  impactFxPass.enabled = u.uDim.value > 0.001 || u.uMono.value > 0.001;
+  // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
+  hitFxRenderPass.enabled = fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));
 }
 
 // ---- 斬撃の軌跡 ----
@@ -9861,6 +9871,9 @@ const speedFxPass = new ShaderPass(SpeedFxShader);
 composer.addPass(speedFxPass);
 const impactFxPass = new ShaderPass(ImpactFxShader);
 composer.addPass(impactFxPass);
+// どちらも最初は効果が無いので止めておく（動き出したら update 側で点ける）
+speedFxPass.enabled = false;
+impactFxPass.enabled = false;
 // 当たりの光は暗転のあとに重ねる（奥行きは見ず、常に手前に描く）
 const hitFxRenderPass = new RenderPass(fxScene, camera);
 hitFxRenderPass.clear = false;
@@ -9874,6 +9887,9 @@ function updateSpeedFx(dt: number) {
   if (dashTime > 0) target = 1;
   // 強くなるときは素早く、弱まるときはゆっくり
   speedFx += (target - speedFx) * Math.min(1, dt * (target > speedFx ? 12 : 4));
+  if (target === 0 && speedFx < 0.002) speedFx = 0;
+  // 効果が無いときは全画面の処理（ブラーの 10 回読み）ごと飛ばす
+  speedFxPass.enabled = speedFx > 0;
 
   const u = speedFxPass.uniforms;
   u.uTime.value += dt;
