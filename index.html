@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>fast-finish</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&family=Noto+Sans+JP:wght@500&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&family=Oswald:wght@600&family=IBM+Plex+Sans+JP:wght@500;700&display=swap" />
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #c8c8c8; }
       /* メニューの寸法の単位。表示領域が 1920×960 のとき 1px で、幅と高さの比率の小さい方に合わせて伸び縮みする。
@@ -95,15 +95,13 @@
       #overlay .menu button:nth-child(1) { animation-delay: 0.5s; }
       #overlay .menu button:nth-child(2) { animation-delay: 0.58s; }
       #overlay .menu button:nth-child(3) { animation-delay: 0.66s; }
+      #overlay .menu button:nth-child(4) { animation-delay: 0.74s; }
       /* タイトルへ戻る項目は一時停止のときだけ出す */
       #overlay.title .menu [data-action="title"] { display: none; }
-      /* START を押した後のモード選択。出すときは元のメニューと入れ替え、同じ流れで滑り込ませる */
+      /* タイトルではモードの選択（GAME / TRAINING / OPTIONS）を出し、一時停止では元のメニューを出す */
       #overlay .menu.modes { display: none; }
-      #overlay.select-mode .menu.main { display: none; }
-      #overlay.select-mode .menu.modes { display: flex; }
-      #overlay .menu.modes button:nth-child(1) { animation-delay: 0s; }
-      #overlay .menu.modes button:nth-child(2) { animation-delay: 0.06s; }
-      #overlay .menu.modes button:nth-child(3) { animation-delay: 0.12s; }
+      #overlay.title .menu.main { display: none; }
+      #overlay.title .menu.modes { display: flex; }
       /* まだ遊べない項目は薄くして、選んでも帯を出さない（クリックは拾って「選べない」音を鳴らすので、disabled にはしない） */
       #overlay .menu button[aria-disabled="true"] { color: var(--ink-faint); cursor: default; }
       #overlay .menu button[aria-disabled="true"] small { color: var(--ink-faint); }
@@ -129,32 +127,58 @@
       #overlay .menu button:hover small, #overlay .menu button:focus-visible small, #overlay .menu button.active small { color: rgba(255, 255, 255, 0.6); }
       #overlay .menu button:hover::before, #overlay .menu button:focus-visible::before, #overlay .menu button.active::before { transform: skewX(-24deg) scaleX(1); }
       #overlay .menu button:hover i, #overlay .menu button:focus-visible i { opacity: 1; transform: none; }
-      /* 操作説明。右側に、四隅の HUD と同じく中央へ向けて傾けて置く */
-      #overlay .controls {
+      /* オプション。右側に、四隅の HUD と同じく中央へ向けて傾けて置く */
+      #overlay .options {
         position: absolute; right: calc(80 * var(--u)); top: 50%; width: min(calc(560 * var(--u)), 44vw);
         transform: translateY(-50%) perspective(calc(900 * var(--u))) rotateY(-10deg); transform-origin: 100% 50%;
         padding: calc(26 * var(--u)) calc(30 * var(--u)) calc(24 * var(--u)); background: rgba(240, 240, 240, 0.9); box-shadow: 0 0 0 1px var(--ink-faint);
         cursor: default; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0s 0.2s;
       }
-      #overlay.show-controls .controls { opacity: 1; visibility: visible; transition: opacity 0.2s; }
-      #overlay.show-controls .controls .sec { animation: ov-slide 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-      #overlay .controls h2 {
+      #overlay.show-options .options { opacity: 1; visibility: visible; transition: opacity 0.2s; }
+      #overlay.show-options .options .sec { animation: ov-slide 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      #overlay .options .sec:nth-child(2) { animation-delay: 0.04s; }
+      #overlay .options .sec + .sec { margin-top: calc(18 * var(--u)); }
+      #overlay .options h2 {
         display: flex; align-items: center; gap: calc(12 * var(--u)); margin: 0 0 calc(14 * var(--u)); font-weight: 600; font-size: max(10px, calc(14 * var(--u))); letter-spacing: 0.32em;
       }
-      #overlay .controls h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(51, 51, 51, 0.5), rgba(51, 51, 51, 0)); }
-      #overlay .controls .sec + .sec { margin-top: calc(16 * var(--u)); }
-      #overlay .controls .sec:nth-child(2) { animation-delay: 0.04s; }
-      #overlay .controls .sec:nth-child(3) { animation-delay: 0.08s; }
-      #overlay .controls .sec:nth-child(4) { animation-delay: 0.12s; }
-      #overlay .controls .sec:nth-child(5) { animation-delay: 0.16s; }
-      #overlay .controls h3 { margin: 0 0 calc(6 * var(--u)); font-weight: 600; font-size: max(10px, calc(12 * var(--u))); letter-spacing: 0.3em; color: var(--ink-soft); }
-      #overlay .controls dl { display: grid; grid-template-columns: max-content 1fr; gap: calc(5 * var(--u)) calc(16 * var(--u)); margin: 0; }
-      #overlay .controls dt { font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.06em; white-space: nowrap; }
-      #overlay .controls dt kbd {
-        display: inline-block; min-width: 1.2em; padding: 0 calc(6 * var(--u)); font: inherit; text-align: center;
-        box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.45);
+      #overlay .options h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(51, 51, 51, 0.5), rgba(51, 51, 51, 0)); }
+      #overlay .options h3 { margin: 0 0 calc(6 * var(--u)); font-weight: 600; font-size: max(10px, calc(12 * var(--u))); letter-spacing: 0.3em; color: var(--ink-soft); }
+      /* 1 行 = 1 項目。選んでいる行は左に斜めの短い帯を立てる */
+      #overlay .opt { position: relative; display: flex; align-items: center; gap: calc(12 * var(--u)); padding: calc(8 * var(--u)) 0 calc(8 * var(--u)) calc(16 * var(--u)); }
+      #overlay .opt::before {
+        content: ""; position: absolute; left: 0; top: 22%; bottom: 22%; width: calc(4 * var(--u)); background: var(--ink);
+        transform: skewX(-24deg) scaleY(0); transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
       }
-      #overlay .controls dd { margin: 0; font: 500 max(10px, calc(12.5 * var(--u)))/1.6 "Noto Sans JP", sans-serif; color: rgba(51, 51, 51, 0.85); align-self: center; }
+      #overlay .opt.active::before { transform: skewX(-24deg) scaleY(1); }
+      #overlay .opt .name { flex: none; width: 8.6em; font-size: max(10px, calc(19 * var(--u))); letter-spacing: 0.14em; line-height: 1; }
+      #overlay .opt .name small { display: block; margin-top: calc(4 * var(--u)); font: 500 max(10px, calc(11 * var(--u)))/1 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.1em; color: var(--ink-soft); }
+      #overlay .opt button { flex: none; padding: 0; border: 0; background: none; cursor: pointer; font: inherit; color: var(--ink-soft); transition: color 0.12s; }
+      #overlay .opt [data-step] { width: calc(26 * var(--u)); height: calc(26 * var(--u)); font-size: max(12px, calc(20 * var(--u))); line-height: 1; box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.35); }
+      #overlay .opt [data-step]:hover { color: #fff; background: var(--ink); }
+      /* 感度の目盛り。線の上に墨の帯を伸ばし、先に斜めのつまみを立てる */
+      #overlay .opt .bar { position: relative; flex: 1; height: calc(26 * var(--u)); cursor: pointer; }
+      #overlay .opt .bar::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--ink-faint); }
+      #overlay .opt .bar i { position: absolute; left: 0; top: 50%; height: calc(6 * var(--u)); margin-top: calc(-3 * var(--u)); width: var(--p, 50%); background: var(--ink); }
+      #overlay .opt .bar i::after {
+        content: ""; position: absolute; right: calc(-3 * var(--u)); top: calc(-7 * var(--u)); width: calc(6 * var(--u)); height: calc(20 * var(--u)); background: var(--ink); transform: skewX(-24deg);
+      }
+      #overlay .opt .val { flex: none; width: 2.6em; text-align: right; font-size: max(10px, calc(19 * var(--u))); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+      /* 画質: 難易度と同じ、斜めの枠を並べて選んだものを塗る */
+      #overlay .opt .seg { flex: 1; display: flex; gap: calc(10 * var(--u)); }
+      #overlay .opt .seg button { position: relative; flex: 1; padding: calc(7 * var(--u)) 0 calc(5 * var(--u)); isolation: isolate; font-size: max(10px, calc(17 * var(--u))); letter-spacing: 0.16em; text-indent: 0.16em; }
+      #overlay .opt .seg button::before {
+        content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-24deg); box-shadow: inset 0 0 0 1.5px rgba(51, 51, 51, 0.35);
+        transition: background 0.15s, box-shadow 0.15s;
+      }
+      #overlay .opt .seg button:hover { color: var(--ink); }
+      #overlay .opt .seg button:hover::before { box-shadow: inset 0 0 0 2px var(--ink); }
+      #overlay .opt .seg button.active { color: #fff; }
+      #overlay .opt .seg button.active::before { background: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+      #overlay .options .note { margin: calc(4 * var(--u)) 0 0 calc(16 * var(--u)); font: 500 max(10px, calc(12 * var(--u)))/1.6 "IBM Plex Sans JP", sans-serif; color: rgba(51, 51, 51, 0.85); }
+      #overlay .options .keys {
+        display: flex; gap: calc(14 * var(--u)); justify-content: flex-end; margin-top: calc(18 * var(--u)); font-size: max(10px, calc(12 * var(--u))); letter-spacing: 0.2em; color: var(--ink-soft);
+      }
+      #overlay .options .keys kbd { margin-right: calc(4 * var(--u)); padding: 0 calc(5 * var(--u)); font: inherit; letter-spacing: 0; color: var(--ink); box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.4); }
       /* 画面下の帯: 左に状態、右にクリックで始まる案内 */
       #overlay .foot {
         position: absolute; left: calc(80 * var(--u)); right: calc(80 * var(--u)); bottom: calc(30 * var(--u));
@@ -243,8 +267,23 @@
       }
       #overlay .rv-score.slam b { color: #fff; }
       #overlay .rv-score.slam b::before { animation: ov-band 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-      #overlay .rv-score .bar { height: calc(3 * var(--u)); margin-top: calc(14 * var(--u)); background: var(--ink); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); }
-      #overlay .rv-score.slam .bar { transition: opacity 0.3s; opacity: 0; }
+      /* スコアのメーター: 細い線の上を墨の帯が伸びる。各ランクの地点に斜めの目印と文字を立て、帯が届いた目印は墨に変わって一瞬弾む。
+         右端が S の地点で、それより上は振り切ったまま */
+      #overlay .rv-meter { position: relative; height: calc(8 * var(--u)); margin: calc(22 * var(--u)) calc(10 * var(--u)) calc(30 * var(--u)) 0; }
+      #overlay .rv-meter::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--ink-faint); }
+      #overlay .rv-meter .fill { position: absolute; inset: 0; background: var(--ink); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); }
+      #overlay .rv-meter .mk { position: absolute; left: var(--x); top: calc(-7 * var(--u)); bottom: calc(-7 * var(--u)); width: 0; }
+      #overlay .rv-meter .mk::before {
+        content: ""; position: absolute; left: calc(-1.5 * var(--u)); top: 0; bottom: 0; width: calc(3 * var(--u)); background: var(--ink-faint);
+        transform: skewX(-24deg); transition: background 0.12s;
+      }
+      #overlay .rv-meter .mk span {
+        position: absolute; left: 0; top: 100%; margin-top: calc(6 * var(--u)); transform: translateX(-50%);
+        font-weight: 600; font-size: max(10px, calc(15 * var(--u))); line-height: 1; color: var(--ink-faint); transition: color 0.12s;
+      }
+      #overlay .rv-meter .mk.on::before { background: var(--ink); }
+      #overlay .rv-meter .mk.on span { color: var(--ink); animation: rv-mk 0.3s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      @keyframes rv-mk { from { transform: translateX(-50%) scale(1.8); } to { transform: translateX(-50%); } }
       #overlay .rv-menu { margin-top: calc(40 * var(--u)); display: none; }
       #overlay .rv-menu.show { display: flex; opacity: 1; animation: none; }
       #overlay .rv-menu button { animation-delay: 0s; }
@@ -265,6 +304,8 @@
         content: attr(data-rank); position: absolute; left: 0; top: 0; z-index: -1; color: transparent; -webkit-text-stroke: 1.5px rgba(51, 51, 51, 0.5);
         transform: translate(0.06em, 0.05em);
       }
+      /* SS は 2 文字なので、少し小さく詰めて同じ幅に収める */
+      #overlay .rv-letter[data-rank="SS"] { font-size: calc(var(--size) * 0.74); letter-spacing: -0.04em; }
       #overlay .rv-rank.show .rv-letter { animation: rv-rank-slam 0.42s cubic-bezier(0.3, 0, 0.2, 1) both; }
       #overlay .rv-rank.show .rv-letter::before { animation: rv-rank-echo 0.9s 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
       @keyframes rv-rank-slam {
@@ -313,7 +354,7 @@
         width: min(calc(460 * var(--u)), 38vw); box-sizing: border-box; font-size: calc(40 * var(--u));
       }
       #overlay .menu.stage-list button .no { font-size: max(10px, calc(17 * var(--u))); letter-spacing: 0.1em; color: var(--ink-soft); transition: color 0.12s; }
-      #overlay .menu.stage-list button small { font: 500 max(10px, calc(12 * var(--u)))/1 "Noto Sans JP", sans-serif; letter-spacing: 0.1em; }
+      #overlay .menu.stage-list button small { font: 500 max(10px, calc(12 * var(--u)))/1 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.1em; }
       #overlay .menu.stage-list button.active .no, #overlay .menu.stage-list button:hover .no { color: rgba(255, 255, 255, 0.6); }
       #overlay .menu.stage-list button[aria-disabled="true"] .no { color: var(--ink-faint); }
       #overlay .menu.stage-list button.active i { opacity: 1; transform: none; }
@@ -324,8 +365,9 @@
       #overlay .menu.stage-back { margin-top: calc(28 * var(--u)); }
       #overlay .menu.stage-back button { font-size: calc(34 * var(--u)); animation-delay: 0.26s; }
       /* 詳細: 文字と線だけで画面の中央寄りに置き、外側を HUD の枠で囲む */
+      #overlay .stages { --si-l: max(calc(600 * var(--u)), 43vw); --si-w: min(calc(620 * var(--u)), 43vw); }
       #overlay .stage-info {
-        position: absolute; left: max(calc(600 * var(--u)), 43vw); top: 50%; width: min(calc(620 * var(--u)), 43vw);
+        position: absolute; left: var(--si-l); top: 50%; width: var(--si-w);
         transform: translateY(-50%);
       }
       #overlay .stage-info > * { animation: ov-slide 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
@@ -334,6 +376,7 @@
       #overlay .stage-info > :nth-child(3) { animation-delay: 0.22s; }
       #overlay .stage-info > :nth-child(4) { animation-delay: 0.28s; }
       #overlay .stage-info > :nth-child(5) { animation-delay: 0.34s; }
+      #overlay .stage-info > :nth-child(6) { animation-delay: 0.4s; }
       /* ステージ番号: 薄い塗りの数字の上に、線だけの数字を左上へずらして重ね、浮き上がった厚みに見せる。
          出るときは線の数字が塗りから持ち上がる */
       #overlay .si-head { display: flex; align-items: flex-end; gap: calc(30 * var(--u)); }
@@ -345,10 +388,11 @@
         content: attr(data-no); position: absolute; left: 0; top: calc(-12 * var(--u)); color: transparent; -webkit-text-stroke: 1.5px var(--ink);
         animation: si-no-lift 0.5s 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both;
       }
+      #overlay .si-no.swap::after { animation: none; }
       @keyframes si-no-lift { from { transform: translate(calc(12 * var(--u)), calc(12 * var(--u))); opacity: 0; } to { transform: none; opacity: 1; } }
       #overlay .si-title small { display: block; font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.4em; color: var(--ink-soft); }
       #overlay .si-title b { display: block; margin-top: calc(8 * var(--u)); font-weight: 600; font-size: calc(86 * var(--u)); line-height: 0.82; letter-spacing: 0.04em; }
-      #overlay .si-title span { display: block; margin-top: calc(12 * var(--u)); font: 500 max(10px, calc(14 * var(--u)))/1 "Noto Sans JP", sans-serif; letter-spacing: 0.2em; color: var(--ink-soft); }
+      #overlay .si-title span { display: block; margin-top: calc(12 * var(--u)); font: 500 max(10px, calc(14 * var(--u)))/1 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.2em; color: var(--ink-soft); }
       #overlay .si-best { display: flex; gap: calc(44 * var(--u)); margin-top: calc(34 * var(--u)); padding: calc(16 * var(--u)) 0; border-top: 1px solid var(--ink-faint); border-bottom: 1px solid var(--ink-faint); }
       #overlay .si-best small { display: block; font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.34em; color: var(--ink-soft); }
       #overlay .si-best b { display: block; margin-top: calc(7 * var(--u)); font-weight: 500; font-size: calc(32 * var(--u)); line-height: 1; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; color: var(--ink-faint); }
@@ -477,8 +521,188 @@
       @keyframes si-corner { from { opacity: 0; transform: translate(var(--dx), var(--dy)); } to { opacity: 1; transform: none; } }
       @keyframes si-fade-55 { from { opacity: 0; } to { opacity: 0.55; } }
       @keyframes si-fade-25 { from { opacity: 0; } to { opacity: 0.25; } }
+      /* ---- 武器 ----
+         詳細の難易度の下に、持ち込む武器を 1 行で出す。押すと武器の選択画面を開く */
+      #overlay .si-weapon { margin-top: calc(26 * var(--u)); }
+      #overlay .si-weapon > small {
+        display: flex; align-items: center; font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.34em; color: var(--ink-soft);
+      }
+      #overlay .si-weapon > small em, #overlay .sw-keys em { display: flex; gap: calc(4 * var(--u)); margin-left: auto; font-style: normal; }
+      #overlay .si-weapon kbd, #overlay .sw-keys kbd {
+        min-width: 1.4em; padding: 2px calc(4 * var(--u)) 1px; font: inherit; font-size: max(10px, calc(12 * var(--u))); letter-spacing: 0; text-align: center;
+        color: var(--ink); box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.4);
+      }
+      /* 1 行の枠: 難易度と同じ斜めの枠に、小さな台と名前、右端に CHANGE と流れる山形 */
+      #overlay .sw-slot {
+        position: relative; display: flex; align-items: center; gap: calc(20 * var(--u)); width: 100%; box-sizing: border-box; margin-top: calc(12 * var(--u));
+        padding: calc(8 * var(--u)) calc(28 * var(--u)) calc(8 * var(--u)) calc(30 * var(--u)); border: 0; background: none; cursor: pointer; isolation: isolate;
+        font: inherit; color: var(--ink); text-align: left; transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+      }
+      #overlay .sw-slot::before {
+        content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-24deg);
+        box-shadow: inset 0 0 0 1.5px rgba(51, 51, 51, 0.35); transition: background 0.15s, box-shadow 0.15s;
+      }
+      #overlay .sw-slot:hover, #overlay .sw-slot:focus-visible { transform: translateY(calc(-3 * var(--u))); outline: none; }
+      #overlay .sw-slot:hover::before, #overlay .sw-slot:focus-visible::before { background: rgba(51, 51, 51, 0.07); box-shadow: inset 0 0 0 2px var(--ink); }
+      #overlay .sw-slot:active { transform: none; }
+      #overlay .sw-slot .sw-plate { width: calc(64 * var(--u)); flex: none; --cut: calc(12 * var(--u)); --cell: calc(8 * var(--u)); }
+      #overlay .sw-slot .nm { font-size: calc(34 * var(--u)); }
+      #overlay .sw-slot .go { display: flex; align-items: center; gap: calc(10 * var(--u)); margin-left: auto; font-size: max(10px, calc(14 * var(--u))); letter-spacing: 0.24em; color: var(--ink-soft); }
+      #overlay .sw-slot .chev { display: flex; gap: calc(4 * var(--u)); }
+      #overlay .sw-slot .chev b {
+        width: calc(7 * var(--u)); height: calc(16 * var(--u)); background: currentColor; clip-path: polygon(0 0, 45% 0, 100% 50%, 45% 100%, 0 100%, 55% 50%);
+        animation: si-go-chev 1.2s ease-in-out infinite;
+      }
+      #overlay .sw-slot .chev b:nth-child(2) { animation-delay: 0.15s; }
+      #overlay .sw-slot:hover .go, #overlay .sw-slot:focus-visible .go { color: var(--ink); }
+      /* 名前: 太い詰め字に、極太の角ゴシックを傾けた和名を添える */
+      #overlay .sw-name { display: block; min-width: 0; }
+      #overlay .sw-name .nm { display: block; font-weight: 800; font-size: calc(40 * var(--u)); line-height: 0.86; letter-spacing: 0.05em; white-space: nowrap; }
+      #overlay .sw-name .ja {
+        display: block; width: max-content; margin-top: calc(6 * var(--u)); font: 700 max(10px, calc(13 * var(--u)))/1 "IBM Plex Sans JP", sans-serif;
+        letter-spacing: 0.2em; color: var(--ink-soft);
+      }
+      /* 台: 墨の正方形の右上と左下を斜めに落とし、細かいグリッドと、武器の向きに沿う帯と線を敷く。
+         アイコンは 3:1 なので、対角に沿うよう斜めに寝かせて大きく収める */
+      #overlay .sw-plate {
+        --cut: calc(28 * var(--u)); --cell: calc(16 * var(--u));
+        position: relative; display: block; aspect-ratio: 1; overflow: hidden;
+        clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+          var(--ink);
+      }
+      #overlay .sw-plate::before, #overlay .sw-plate::after { content: ""; position: absolute; left: -30%; right: -30%; top: 50%; transform: rotate(-35deg); }
+      #overlay .sw-plate::before { height: 34%; margin-top: -17%; background: rgba(255, 255, 255, 0.07); }
+      #overlay .sw-plate::after { height: 1px; margin-top: 24%; background: rgba(255, 255, 255, 0.28); }
+      #overlay .sw-plate .ic { position: absolute; inset: 0; }
+      #overlay .sw-plate .ic svg {
+        position: absolute; left: -3%; top: 50%; width: 106%; height: auto; margin-top: -17.7%; transform: rotate(-35deg);
+        fill: #f2f2f2; visibility: hidden; filter: drop-shadow(0.03em 0.05em 0 rgba(0, 0, 0, 0.35));
+      }
+      #overlay .sw-plate .ic svg.on { visibility: visible; }
+      #overlay .sw-plate .ic .line { fill: none; stroke: #f2f2f2; stroke-width: 2.5; }
+      #overlay .sw-plate .ic .cut { fill: none; stroke: var(--ink); stroke-width: 1.2; opacity: 0.7; }
+      /* 大きな台の外の角: 左上と右下にかぎ括弧、落とした角の外に斜めの刻み */
+      #overlay .sw-box { position: relative; }
+      #overlay .sw-box > i { position: absolute; width: calc(16 * var(--u)); height: calc(16 * var(--u)); border: 0 solid var(--ink); }
+      #overlay .sw-box > .tl { left: calc(-7 * var(--u)); top: calc(-7 * var(--u)); border-left-width: calc(2.5 * var(--u)); border-top-width: calc(2.5 * var(--u)); }
+      #overlay .sw-box > .br { right: calc(-7 * var(--u)); bottom: calc(-7 * var(--u)); border-right-width: calc(2.5 * var(--u)); border-bottom-width: calc(2.5 * var(--u)); }
+      #overlay .sw-box > .tr, #overlay .sw-box > .bl { width: calc(28 * var(--u)); height: calc(2.5 * var(--u)); background: var(--ink); transform: rotate(45deg); }
+      #overlay .sw-box > .tr { right: calc(-12 * var(--u)); top: calc(6 * var(--u)); }
+      #overlay .sw-box > .bl { left: calc(-12 * var(--u)); bottom: calc(6 * var(--u)); }
+      /* ---- 武器の選択画面 ----
+         ステージ選択の上に濃い靄を掛け（ぼかしは裏の 3D ごと毎フレーム掛け直して重いので使わない）、中央に詳細と同じ枠の窓を出す。左に武器の行を縦に並べ、カーソルの武器を右に大きく見せる */
+      #overlay .sw-picker { display: none; position: absolute; inset: 0; z-index: 2; }
+      #overlay.pick-weapon .sw-picker { display: block; }
+      #overlay .sw-dim {
+        position: absolute; inset: 0; background: rgba(226, 226, 226, 0.86);
+        animation: ov-fade 0.2s both;
+      }
+      #overlay .sw-win {
+        position: absolute; left: 50%; top: 50%; width: calc(1040 * var(--u)); transform: translate(-50%, -50%);
+        display: grid; grid-template-columns: calc(390 * var(--u)) 1fr; column-gap: calc(52 * var(--u)); align-items: start;
+      }
+      #overlay .sw-win > * { animation: ov-slide 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      #overlay .sw-win > :nth-child(1) { animation-delay: 0.04s; }
+      #overlay .sw-win > :nth-child(2) { animation-delay: 0.08s; }
+      #overlay .sw-win > :nth-child(3) { animation-delay: 0.12s; }
+      #overlay .sw-win > :nth-child(4) { animation-delay: 0.16s; }
+      #overlay .sw-win > .si-frame { position: absolute; inset: calc(-56 * var(--u)) calc(-52 * var(--u)) calc(-40 * var(--u)); z-index: -1; pointer-events: none; animation: none; }
+      #overlay .sw-win-head { grid-column: 1 / -1; margin-bottom: calc(26 * var(--u)); }
+      #overlay .sw-win-head h3 { margin: calc(10 * var(--u)) 0 0; font-weight: 600; font-size: calc(64 * var(--u)); line-height: 0.85; letter-spacing: 0.02em; }
+      /* 行: 番号・小さな台・名前。カーソルは墨の斜めの枠で囲んで右へ出し、左に太い帯。持ち込んでいる武器には印 */
+      #overlay .sw-rows { display: flex; flex-direction: column; gap: calc(10 * var(--u)); }
+      #overlay .sw-rows button {
+        position: relative; display: grid; grid-template-columns: 2.2ch calc(58 * var(--u)) 1fr; align-items: center; gap: calc(18 * var(--u));
+        padding: calc(8 * var(--u)) calc(24 * var(--u)) calc(8 * var(--u)) calc(26 * var(--u)); border: 0; background: none; cursor: pointer; isolation: isolate;
+        font: inherit; text-align: left; color: var(--ink-soft); transition: color 0.15s, transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+      }
+      #overlay .sw-rows button::before {
+        content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-24deg);
+        box-shadow: inset 0 0 0 1.5px rgba(51, 51, 51, 0.16); transition: background 0.15s, box-shadow 0.15s;
+      }
+      #overlay .sw-rows button::after {
+        content: ""; position: absolute; left: calc(-6 * var(--u)); top: 0; bottom: 0; width: calc(7 * var(--u)); background: var(--ink);
+        transform: skewX(-24deg) scaleY(0); transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+      }
+      #overlay .sw-rows button.active { color: var(--ink); transform: translateX(calc(12 * var(--u))); }
+      #overlay .sw-rows button.active::before { background: rgba(51, 51, 51, 0.08); box-shadow: inset 0 0 0 2px var(--ink); }
+      #overlay .sw-rows button.active::after { transform: skewX(-24deg) scaleY(1); }
+      #overlay .sw-rows button:focus-visible { outline: none; }
+      #overlay .sw-rows .no { font-weight: 800; font-size: max(10px, calc(16 * var(--u))); letter-spacing: 0.06em; }
+      #overlay :is(.sw-rows, .sw-slot) .sw-plate .ic svg { filter: none; } /* 小さな台では影は見えないので省いて軽くする */
+      #overlay .sw-rows .sw-plate { --cut: calc(11 * var(--u)); --cell: calc(8 * var(--u)); opacity: 0.5; transition: opacity 0.15s; }
+      #overlay .sw-rows button.active .sw-plate { opacity: 1; }
+      #overlay .sw-rows .nm { font-size: calc(30 * var(--u)); }
+      /* 一覧は枠とアイコンだけ。番号と名前は出さず、アイコンを台に載せずに横向きのまま大きく置く */
+      #overlay .sw-rows button { grid-template-columns: 1fr; justify-items: start; padding: calc(12 * var(--u)) calc(30 * var(--u)); }
+      #overlay .sw-rows :is(.no, .nm, .ja) { display: none; }
+      #overlay .sw-rows .sw-name { position: absolute; inset: 0; }
+      #overlay .sw-rows .sw-plate { width: calc(222 * var(--u)); aspect-ratio: 120 / 40; overflow: visible; clip-path: none; background: none; }
+      #overlay .sw-rows .sw-plate::before, #overlay .sw-rows .sw-plate::after { content: none; }
+      #overlay .sw-rows .sw-plate .ic svg { left: 0; top: 0; width: 100%; height: 100%; margin: 0; transform: none; fill: currentColor; }
+      #overlay .sw-rows .sw-plate .ic .line { stroke: currentColor; }
+      #overlay .sw-rows .sw-plate .ic .cut { stroke: #e2e2e2; }
+      #overlay .sw-rows button.equipped .sw-name::after {
+        content: "EQUIPPED"; position: absolute; right: calc(22 * var(--u)); top: calc(8 * var(--u)); padding: calc(3 * var(--u)) calc(8 * var(--u)) calc(2 * var(--u));
+        font-size: max(9px, calc(11 * var(--u))); line-height: calc(13 * var(--u)); letter-spacing: 0.24em; color: #fff; background: var(--ink); transform: skewX(-24deg);
+      }
+      /* 右: 上に 16:9 のプレビュー動画、下にカーソルの武器の台と名前。動かしたら、下へは下から・上へは上から差し込む */
+      #overlay .sw-video {
+        position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--ink);
+        clip-path: polygon(0 0, calc(100% - 28 * var(--u)) 0, 100% calc(28 * var(--u)), 100% 100%, calc(28 * var(--u)) 100%, 0 calc(100% - 28 * var(--u)));
+      }
+      #overlay .sw-video video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.2s; }
+      #overlay .sw-video.has-video video { opacity: 1; }
+      /* 動画が無いとき: 走査線とグリッドの上に NO SIGNAL と、置くファイルの名前 */
+      #overlay .sw-nosig {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(12 * var(--u));
+        background:
+          repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px calc(4 * var(--u))),
+          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px) 0 0 / calc(24 * var(--u)) calc(24 * var(--u)),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px) 0 0 / calc(24 * var(--u)) calc(24 * var(--u));
+      }
+      #overlay .sw-video.has-video .sw-nosig { display: none; }
+      #overlay .sw-nosig b { font-weight: 800; font-size: calc(44 * var(--u)); line-height: 1; letter-spacing: 0.3em; text-indent: 0.3em; color: rgba(255, 255, 255, 0.35); }
+      #overlay .sw-nosig small { font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.2em; color: rgba(255, 255, 255, 0.3); }
+      #overlay .sw-live {
+        position: absolute; left: calc(18 * var(--u)); top: calc(14 * var(--u)); display: flex; align-items: center; gap: calc(8 * var(--u));
+        font-weight: 800; font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.3em; color: #fff;
+      }
+      #overlay .sw-live i { width: calc(8 * var(--u)); height: calc(8 * var(--u)); border-radius: 50%; background: #fff; animation: ov-blink 0.8s ease-in-out infinite alternate; }
+      #overlay .sw-detail { display: grid; grid-template-columns: calc(150 * var(--u)) 1fr; align-items: end; gap: calc(28 * var(--u)); margin-top: calc(26 * var(--u)); }
+      #overlay .sw-detail .sw-plate { --cut: calc(18 * var(--u)); --cell: calc(10 * var(--u)); }
+      #overlay .sw-preview .nm { font-size: calc(56 * var(--u)); }
+      #overlay .sw-preview .ja { font-size: max(10px, calc(15 * var(--u))); }
+      #overlay .sw-preview.in-next { --sw-from: calc(26 * var(--u)); }
+      #overlay .sw-preview.in-prev { --sw-from: calc(-26 * var(--u)); }
+      #overlay .sw-preview:is(.in-next, .in-prev) .ic svg.on { animation: sw-in-ic 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) backwards; }
+      #overlay .sw-preview:is(.in-next, .in-prev) .ja { animation: sw-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) 0.04s both; }
+      /* 名前は透かさずに差し込み、文字の後ろの辺が尾を引いて遅れて追いつく。
+         尾は main.ts が SVG のフィルター（#sw-smear）で文字を進む向きの反対へだけ縦に太らせて描く */
+      #overlay .sw-preview:is(.in-next, .in-prev) .nm { animation: sw-in-smear 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) backwards; }
+      @keyframes sw-in { from { opacity: 0; translate: 0 var(--sw-from); } to { opacity: 1; translate: 0 0; } }
+      @keyframes sw-in-smear { 0% { translate: 0 calc(var(--sw-from) * 1.3); } 22%, 100% { translate: 0 0; } }
+      /* アイコンも透かさずに差し込み、名前と同じ時刻に着いて白い尾を巻き取る */
+      @keyframes sw-in-ic { 0% { translate: 0 calc(var(--sw-from) * 0.9); } 22%, 100% { translate: 0 0; } }
+      /* 下の操作の案内。DECIDE と BACK は押しても効く */
+      #overlay .sw-keys {
+        grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: calc(28 * var(--u)); margin-top: calc(30 * var(--u));
+        font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.26em; color: var(--ink-soft);
+      }
+      #overlay .sw-keys > * { display: flex; align-items: center; gap: calc(8 * var(--u)); }
+      #overlay .sw-keys button { padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer; transition: color 0.12s; }
+      #overlay .sw-keys button:hover, #overlay .sw-keys button:focus-visible { color: var(--ink); outline: none; }
+      #overlay .sw-keys kbd { letter-spacing: 0.06em; padding-inline: calc(5 * var(--u)); }
       @media (max-width: 900px) {
-        #overlay .controls { left: 16px; right: 16px; width: auto; transform: translateY(-50%); }
+        #overlay .sw-win { width: calc(100vw - 48px); grid-template-columns: 1fr; }
+        #overlay .sw-preview, #overlay .sw-win > .si-frame .code, #overlay .sw-win > .si-frame .slash { display: none; }
+        #overlay .sw-win > .si-frame { inset: calc(-40 * var(--u)) -12px calc(-24 * var(--u)); }
+      }
+      @media (max-width: 900px) {
+        #overlay .options { left: 16px; right: 16px; width: auto; transform: translateY(-50%); }
         #overlay .stage-info { left: 16px; right: 16px; top: auto; bottom: calc(64 * var(--u)); width: auto; transform: none; }
         #overlay .stage-info > .si-frame { inset: calc(-30 * var(--u)) -8px calc(-18 * var(--u)); }
         #overlay .si-frame .code, #overlay .si-frame .slash { display: none; }
@@ -538,8 +762,9 @@
         position: fixed; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
         pointer-events: none;
       }
-      #crosshair svg { display: block; width: 100%; height: 100%; overflow: visible; }
-      #crosshair .ring { fill: #333; stroke: none; }
+      /* 暗い所でも明るい所でも見えるよう、全体に白い縁を付ける */
+      #crosshair svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9)); }
+      #crosshair .ring { fill: #222; stroke: #fff; stroke-width: 1.2; paint-order: stroke; }
       #crosshair .track, #crosshair .gauge { fill: none; stroke-width: 2; stroke-linecap: round; }
       #crosshair .track { stroke: rgba(51, 51, 51, 0.2); }
       #crosshair .gauge { stroke: #333; }
@@ -580,6 +805,36 @@
         40% { transform: translateX(calc(-50% + 3px)); }
         60% { transform: translateX(calc(-50% - 2px)); }
         80% { transform: translateX(calc(-50% + 2px)); }
+      }
+      /* 居合のゲージ（クロスヘアの下）: 引き寄せの帯 2 本分の幅の斜めの帯 1 本。刀を持っている間だけ出す。
+         敵を斬ると薄い墨で溜まり、満タンで白く光って濃い墨に変わる。構えている間は残り時間として右から左へ減る。
+         溜まっていないのに構えようとすると、枠が浮いて横に震える */
+      #focusgauge {
+        position: fixed; left: 50%; top: calc(50% + 36px); width: 76px; height: 9px; overflow: hidden;
+        background: rgba(51, 51, 51, 0.16); pointer-events: none; opacity: 0;
+        transform: translateX(-50%) skewX(-24deg); transition: opacity 0.2s;
+      }
+      body.on-title #focusgauge { visibility: hidden; }
+      #focusgauge.show { opacity: 1; }
+      #focusgauge .f {
+        position: absolute; inset: 0; background: rgba(51, 51, 51, 0.45);
+        transform-origin: 0 50%; transform: scaleX(0);
+      }
+      #focusgauge.ready .f { background: #333; }
+      #focusgauge::after { content: ""; position: absolute; inset: 0; background: #fff; opacity: 0; }
+      #focusgauge.gain { animation: focus-gain 0.32s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      #focusgauge.gain::after { animation: hook-gain-flash 0.32s ease-out; }
+      #focusgauge.empty { animation: focus-empty 0.35s linear; box-shadow: inset 0 0 0 1.5px #333; }
+      @keyframes focus-gain {
+        from { transform: translateX(-50%) skewX(-24deg) scale(1.2, 1.6); }
+        to { transform: translateX(-50%) skewX(-24deg); }
+      }
+      @keyframes focus-empty {
+        0%, 100% { transform: translateX(-50%) skewX(-24deg); }
+        20% { transform: translateX(calc(-50% - 3px)) skewX(-24deg); }
+        40% { transform: translateX(calc(-50% + 3px)) skewX(-24deg); }
+        60% { transform: translateX(calc(-50% - 2px)) skewX(-24deg); }
+        80% { transform: translateX(calc(-50% + 2px)) skewX(-24deg); }
       }
       /* ヒットマーカー: 照準の周りの斜めの 4 本線。当たった瞬間に外へ弾けるように出て消える */
       #hitmarker {
@@ -624,10 +879,49 @@
       @keyframes weapon-name-in { from { opacity: 0; transform: translateY(70%); } to { opacity: 1; transform: none; } }
       #weapon .rule { width: 320px; height: 1px; background: linear-gradient(270deg, rgba(51, 51, 51, 0.55), rgba(51, 51, 51, 0)); }
       /* 残弾: 武器名の上に弾の数だけ縦長の印を並べる。撃った分は薄くし、装填中は点滅させる */
-      #ammo { display: flex; gap: 5px; margin-bottom: 2px; }
+      /* 残弾（居合のゲージの真下）: ゲージと同じ傾きの細い帯を 6 本 */
+      #ammo {
+        position: fixed; left: 50%; top: calc(50% + 50px); display: flex; gap: 4px;
+        transform: translateX(-50%); pointer-events: none;
+      }
+      body.on-title #ammo { visibility: hidden; }
       #ammo.hidden { display: none; }
-      #ammo i { display: block; width: 6px; height: 18px; border-radius: 3px 3px 1px 1px; background: #333; }
+      #ammo i { display: block; width: 5px; height: 12px; background: #333; transform: skewX(-24deg); }
       #ammo i.spent { background: rgba(51, 51, 51, 0.2); }
+      #ammo i.marked { background: #c4161c; }
+      /* デッドアイの印: 敵の体に重ねる赤い × */
+      .deadeye-mark {
+        position: fixed; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; pointer-events: none;
+      }
+      .deadeye-mark svg {
+        display: block; width: 100%; height: 100%; overflow: visible;
+        filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9)); animation: deadeye-in 0.16s ease-out;
+      }
+      body.on-title .deadeye-mark { visibility: hidden; }
+      .deadeye-mark path { fill: none; stroke: #c4161c; stroke-width: 3.2; stroke-linecap: round; }
+      @keyframes deadeye-in {
+        from { opacity: 0; transform: scale(2.2) rotate(-45deg); }
+        to { opacity: 1; transform: none; }
+      }
+      /* 武器の操作一覧: 画面右の中ほどに、構えている武器の操作名と入力のアイコンを並べる。長押しはアイコンの下に HOLD */
+      #controls {
+        position: absolute; right: 40px; top: 50%; display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+        transform-origin: 100% 50%; transform: translateY(-50%) rotateY(calc(var(--hud-yaw) * -1));
+        font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 600; color: #333;
+      }
+      #controls.in { animation: controls-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      @keyframes controls-in { from { opacity: 0; } to { opacity: 1; } }
+      #controls .row { display: flex; align-items: flex-start; gap: 10px; }
+      /* 技名: 計器の文字のような、機械的なゴシック。傾けずにまっすぐ置く */
+      #controls .label { font: 700 15px/24px "IBM Plex Sans JP", sans-serif; letter-spacing: 0.08em; color: #333; }
+      #controls .keys { display: flex; align-items: flex-start; gap: 4px; min-width: 24px; justify-content: flex-end; }
+      #controls .plus { font-size: 15px; line-height: 24px; color: rgba(51, 51, 51, 0.55); }
+      #controls .k { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      #controls .k small { font-size: 10px; line-height: 1; letter-spacing: 0.12em; }
+      #controls svg { display: block; height: 24px; width: auto; overflow: visible; }
+      #controls .o { fill: none; stroke: #333; stroke-width: 1.5; }
+      #controls .f { fill: #333; }
+      #controls .t { fill: #333; font: 600 12px "Barlow Condensed", "Arial Narrow", sans-serif; text-anchor: middle; dominant-baseline: central; }
       /* ロックオンの印: 敵を四隅のかぎ括弧で囲み、中心に菱形を置く。ロックした瞬間に外から縮んで収まる */
       #lockon {
         position: fixed; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px;
@@ -810,7 +1104,7 @@
   <body class="on-title">
     <div id="crosshair">
       <svg viewBox="0 0 40 40">
-        <circle class="ring" cx="20" cy="20" r="2.5" />
+        <circle class="ring" cx="20" cy="20" r="3" />
         <!-- 左右の円弧（r=14, 中心から ±50°）。どちらも下から上へ溜まる -->
         <path class="track" d="M 11 30.72 A 14 14 0 0 1 11 9.28" />
         <path class="track" d="M 29 30.72 A 14 14 0 0 0 29 9.28" />
@@ -824,6 +1118,10 @@
       <div class="cell"><div class="f"></div></div>
       <div class="cell"><div class="f"></div></div>
     </div>
+    <!-- 居合の構えの残り時間: クロスヘアの下に、斜めに切った帯を 1 本 -->
+    <div id="focusgauge"><div class="f"></div></div>
+    <!-- リボルバーの残弾: ゲージの真下に 6 本 -->
+    <div id="ammo" class="hidden"><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div id="hitmarker">
       <svg viewBox="0 0 40 40">
         <line x1="9" y1="9" x2="14" y2="14" />
@@ -861,9 +1159,9 @@
         <div class="run" hidden><span class="time">0:00.00</span></div>
         <div class="gain"></div>
       </div>
+      <div id="controls"></div>
       <div id="remain" hidden><div class="num">0</div><small>ENEMIES LEFT</small></div>
       <div id="weapon">
-        <div id="ammo" class="hidden"><i></i><i></i><i></i><i></i><i></i><i></i></div>
         <div class="cur">
           <div class="icon">
             <!-- クナイ: 菱形の刃、紐を巻いた柄、輪の柄頭 -->
@@ -891,18 +1189,36 @@
               <rect x="85" y="17" width="31" height="6" />
               <path d="M89 15.5 l3 9 M95 15.5 l3 9 M101 15.5 l3 9 M107 15.5 l3 9" class="cut" />
             </svg>
-            <!-- 鎖鎌: 柄の先から反った刃、柄尻から伸びる鎖と分銅 -->
+            <!-- 鎖鎌: 左右の手に 1 本ずつ持つので 2 本。奥の 1 本は右上へずらす。
+                 刃は口金から張り出して柄の方へ曲がり込む。柄の継ぎ目の金具（頭が外れて鎖が出る所）と巻いた握り -->
             <svg data-w="sickle" viewBox="0 0 120 40">
-              <path d="M36 23 L36 18 C28 5 14 3 3 7 C16 9 27 14 31 23 Z" />
-              <rect x="34" y="20" width="32" height="6" rx="1" />
-              <g class="line">
-                <ellipse cx="72" cy="24" rx="4" ry="2.4" />
-                <ellipse cx="79" cy="22" rx="4" ry="2.4" />
-                <ellipse cx="86" cy="23" rx="4" ry="2.4" />
-                <ellipse cx="93" cy="25" rx="4" ry="2.4" />
-                <ellipse cx="100" cy="26" rx="4" ry="2.4" />
+              <g transform="translate(30 -1) scale(0.8)">
+                <path d="M9.8 30.0 L10.1 27.2 L10.4 24.3 L10.9 21.2 L11.5 18.2 L12.5 15.1 L13.8 12.0 L15.5 9.1 L17.7 6.4 L20.3 4.1 L23.3 2.3 L26.7 1.3 L30.3 2.2 L28.5 7.7 L26.8 8.7 L25.3 10.0 L24.0 11.6 L23.1 13.5 L22.4 15.5 L21.9 17.7 L21.7 19.9 L21.6 22.3 L21.7 24.8 L21.9 27.3 L22.2 30.0 Z" />
+                <path d="M14.8 27.2 L15.2 21.7 L16.3 16.1 L18.5 10.8 L22.3 6.5 L27.4 3.8" class="cut" />
+                <path d="M6 31 L11.5 28 L11.5 34 Z" />
+                <rect x="11.5" y="27.5" width="9.9" height="7" />
+                <rect x="21.4" y="28.7" width="59" height="4.6" />
+                <rect x="47.1" y="28" width="4" height="6" />
+                <rect x="53.5" y="28.2" width="20" height="5.6" />
+                <path d="M56 27.5 l2 7 M60.5 27.5 l2 7 M65 27.5 l2 7 M69.5 27.5 l2 7" class="cut" />
+                <rect x="80" y="27.8" width="3.6" height="6.4" />
               </g>
-              <circle cx="110" cy="26" r="5.5" />
+              <g transform="translate(4 8) scale(0.8)">
+                <path d="M9.8 30.0 L10.1 27.2 L10.4 24.3 L10.9 21.2 L11.5 18.2 L12.5 15.1 L13.8 12.0 L15.5 9.1 L17.7 6.4 L20.3 4.1 L23.3 2.3 L26.7 1.3 L30.3 2.2 L28.5 7.7 L26.8 8.7 L25.3 10.0 L24.0 11.6 L23.1 13.5 L22.4 15.5 L21.9 17.7 L21.7 19.9 L21.6 22.3 L21.7 24.8 L21.9 27.3 L22.2 30.0 Z" />
+                <path d="M14.8 27.2 L15.2 21.7 L16.3 16.1 L18.5 10.8 L22.3 6.5 L27.4 3.8" class="cut" />
+                <path d="M6 31 L11.5 28 L11.5 34 Z" />
+                <rect x="11.5" y="27.5" width="9.9" height="7" />
+                <rect x="21.4" y="28.7" width="59" height="4.6" />
+                <rect x="47.1" y="28" width="4" height="6" />
+                <rect x="53.5" y="28.2" width="20" height="5.6" />
+                <path d="M56 27.5 l2 7 M60.5 27.5 l2 7 M65 27.5 l2 7 M69.5 27.5 l2 7" class="cut" />
+                <rect x="80" y="27.8" width="3.6" height="6.4" />
+              </g>
+            </svg>
+            <!-- バトルアックス: 後ろへ尖ったスパイクと髭の垂れた刃、指を守る爪と鉤の付いた長い柄 -->
+            <svg data-w="axe" viewBox="0 0 120 40">
+              <path d="M23.5 16.5 L111.1 16.8 L113.5 17.6 L113.7 20.8 L112.3 26.2 L110.1 25.4 L108.7 22.2 L75.1 22.0 L72.9 25.6 L70.3 25.6 L69.1 21.8 L23.5 21.5 Z" />
+              <path d="M13.5 1.1 L17.6 14.8 L24.4 16.4 L24.4 21.4 L19.1 22.2 L19.7 29.4 L25.8 37.4 L23.2 39.0 L12.5 38.6 L4.2 35.5 L8.2 22.2 L10.4 14.8 Z" />
             </svg>
           </div>
           <div class="name"><span>KUNAI</span></div>
@@ -923,11 +1239,11 @@
         <div class="menu modes">
           <button type="button" data-action="game"><span>GAME</span><small>STAGES</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           <button type="button" data-action="training"><span>TRAINING</span><small>ENTER</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
-          <button type="button" data-action="back"><span>BACK</span><small>ESC</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+          <button type="button" data-action="options"><span>OPTIONS</span><small>O</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
         </div>
         <div class="menu main">
           <button type="button" data-action="start"><span class="label">START</span><small>ENTER</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
-          <button type="button" data-action="controls"><span>CONTROLS</span><small>TAB</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+          <button type="button" data-action="options"><span>OPTIONS</span><small>O</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           <button type="button" data-action="title"><span>TITLE</span><small>Q</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
         </div>
       </div>
@@ -939,7 +1255,7 @@
           <div class="rule"></div>
           <div class="menu stage-list">
             <button type="button" data-stage="station"><span class="no">01</span><span>STATION</span><small>駅のホーム</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
-            <button type="button" data-stage="" aria-disabled="true"><span class="no">02</span><span>? ? ?</span><small>LOCKED</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+            <button type="button" data-stage="warehouse"><span class="no">02</span><span>WAREHOUSE</span><small>物流倉庫</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
             <button type="button" data-stage="" aria-disabled="true"><span class="no">03</span><span>? ? ?</span><small>LOCKED</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
             <button type="button" data-stage="" aria-disabled="true"><span class="no">04</span><span>? ? ?</span><small>LOCKED</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           </div>
@@ -966,6 +1282,15 @@
             <button type="button" data-difficulty="normal">NORMAL</button>
             <button type="button" data-difficulty="hard">HARD</button>
           </div>
+          <!-- 持ち込む武器。押すと武器の選択画面を開く -->
+          <div class="si-weapon">
+            <small>WEAPON<em><kbd>Q</kbd></em></small>
+            <button type="button" class="sw-slot" data-action="weapon-open">
+              <span class="sw-plate"><span class="ic"></span></span>
+              <span class="sw-name"><b class="nm">KUNAI</b><span class="ja">クナイ</span></span>
+              <span class="go">CHANGE<em class="chev"><b></b><b></b></em></span>
+            </button>
+          </div>
           <div class="menu si-go">
             <button type="button" data-action="stage-start"><span>START</span><em class="chev"><b></b><b></b><b></b></em><small>ENTER</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           </div>
@@ -976,6 +1301,79 @@
             <span class="code">SYS.SELECT</span>
             <span class="ticks"></span>
             <span class="slash"><i></i><i></i><i></i></span>
+          </div>
+        </div>
+        <!-- 武器の選択画面。詳細の WEAPON を押すと開く。左に武器の行を縦に並べ、カーソルの武器を右に大きく見せる。
+             アイコンは右下の HUD の物を写して入れ、名前と和名は行から写す -->
+        <div class="sw-picker">
+          <!-- 武器名の尾: 文字を縦にだけ太らせ（重ねずに広げるので輪郭のぼかしが潰れない）、太らせた分ずらして片側へ伸ばす。
+               尾は 2 段: 外に文字と同じ墨、文字との間に半分の長さの白。その上に元の文字を載せる。
+               太らせる量とずらす量は main.ts が毎フレーム書き換える（data-len: 尾の長さに対する割合） -->
+          <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+            <filter id="sw-smear" x="-5%" y="-150%" width="110%" height="400%">
+              <feMorphology in="SourceAlpha" operator="dilate" radius="0 0" data-len="1" result="grow-far" />
+              <feOffset in="grow-far" dx="0" dy="0" data-len="1" result="trail-far" />
+              <feFlood flood-color="#333" />
+              <feComposite in2="trail-far" operator="in" result="far" />
+              <feMorphology in="SourceAlpha" operator="dilate" radius="0 0" data-len="0.5" result="grow-near" />
+              <feOffset in="grow-near" dx="0" dy="0" data-len="0.5" result="trail-near" />
+              <feFlood flood-color="#fff" />
+              <feComposite in2="trail-near" operator="in" result="near" />
+              <feMerge><feMergeNode in="far" /><feMergeNode in="near" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <!-- アイコンの尾: 白 1 段。名前より遠くから来るぶん長く（data-len 1.6）。アイコンは斜めに寝かせてあるので、寝かせていない入れ物（.ic）に掛けて画面の上下へ伸ばす -->
+            <filter id="sw-smear-ic" x="-5%" y="-50%" width="110%" height="200%">
+              <feMorphology in="SourceAlpha" operator="dilate" radius="0 0" data-len="1.6" result="grow" />
+              <feOffset in="grow" dx="0" dy="0" data-len="1.6" result="trail" />
+              <feFlood flood-color="#fff" />
+              <feComposite in2="trail" operator="in" result="white" />
+              <feMerge><feMergeNode in="white" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </svg>
+          <div class="sw-dim"></div>
+          <div class="sw-win">
+            <div class="sw-win-head">
+              <div class="kicker">LOADOUT</div>
+              <h3>WEAPON SELECT</h3>
+            </div>
+            <div class="sw-rows">
+              <button type="button" data-weapon="kunai" data-name="KUNAI" data-ja="クナイ"><span class="no">01</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">KUNAI</b><span class="ja">クナイ</span></span></button>
+              <button type="button" data-weapon="handgun" data-name="HANDGUN" data-ja="リボルバー"><span class="no">02</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">HANDGUN</b><span class="ja">リボルバー</span></span></button>
+              <button type="button" data-weapon="sword" data-name="SWORD" data-ja="刀"><span class="no">03</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">SWORD</b><span class="ja">刀</span></span></button>
+              <button type="button" data-weapon="sickle" data-name="CHAIN SICKLE" data-ja="鎖鎌"><span class="no">04</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">CHAIN SICKLE</b><span class="ja">鎖鎌</span></span></button>
+              <button type="button" data-weapon="axe" data-name="BATTLE AXE" data-ja="バトルアックス"><span class="no">05</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">BATTLE AXE</b><span class="ja">バトルアックス</span></span></button>
+            </div>
+            <div class="sw-preview">
+              <!-- 16:9 のプレビュー動画。previews/<武器>.mp4 を流し、無ければ NO SIGNAL の画面を出す -->
+              <div class="sw-box sw-screen">
+                <div class="sw-video">
+                  <video muted loop playsinline preload="auto"></video>
+                  <div class="sw-nosig"><b>NO SIGNAL</b><small></small></div>
+                  <span class="sw-live"><i></i>PREVIEW</span>
+                </div>
+                <i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i>
+              </div>
+              <div class="sw-detail">
+                <div class="sw-box">
+                  <div class="sw-plate"><span class="ic"></span></div>
+                  <i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i>
+                </div>
+                <div class="sw-name"><b class="nm"></b><span class="ja"></span></div>
+              </div>
+            </div>
+            <div class="sw-keys">
+              <span><kbd>↑</kbd><kbd>↓</kbd>SELECT</span>
+              <button type="button" data-action="weapon-decide"><kbd>ENTER</kbd>DECIDE</button>
+              <button type="button" data-action="weapon-close"><kbd>ESC</kbd>BACK</button>
+            </div>
+            <div class="si-frame" aria-hidden="true">
+              <i class="e t"></i><i class="e r"></i><i class="e b"></i><i class="e l"></i>
+              <i class="c tl"></i><i class="c tr"></i><i class="c br"></i><i class="c bl"></i>
+              <span class="tag">ARMORY</span>
+              <span class="code">SYS.LOADOUT</span>
+              <span class="ticks"></span>
+              <span class="slash"><i></i><i></i><i></i></span>
+            </div>
           </div>
         </div>
       </div>
@@ -992,7 +1390,7 @@
               <div class="rv-row" data-row="kills"><small>KILLS</small><i></i><b>0</b></div>
               <div class="rv-row" data-row="damage"><small>DAMAGE</small><i></i><b>0</b><em class="rv-tag" data-tag="damage">NO DAMAGE</em></div>
             </div>
-            <div class="rv-score"><small>SCORE</small><div class="val"><b>0</b><em class="rv-tag" data-tag="score">NEW RECORD</em></div><div class="bar"></div></div>
+            <div class="rv-score"><small>SCORE</small><div class="val"><b>0</b><em class="rv-tag" data-tag="score">NEW RECORD</em></div><div class="rv-meter"><div class="fill"></div></div></div>
             <div class="menu rv-menu">
               <button type="button" data-action="title" class="active"><span>TITLE</span><small>ENTER</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
             </div>
@@ -1007,58 +1405,49 @@
         </div>
         <div class="rv-flash"></div>
       </div>
-      <div class="controls">
+      <div class="options">
         <section class="sec">
-          <h2>CONTROLS</h2>
-          <h3>MOVE</h3>
-          <dl>
-            <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>移動 ／ マウスで視点</dd>
-            <dt><kbd>SPACE</kbd></dt><dd>ジャンプ（壁走り中は壁ジャンプ）</dd>
-            <dt><kbd>SHIFT</kbd></dt><dd>押した瞬間にダッシュ（空中も可）・押し続けると走る</dd>
-            <dt><kbd>C</kbd></dt><dd>スライディング（走りながら）</dd>
-            <dt>PARKOUR</dt><dd>空中で柱へ向かい続けると縁をよじ登る ／ 走って壁に飛びつくと壁走り</dd>
-          </dl>
+          <h2>OPTIONS</h2>
+          <h3>SENSITIVITY</h3>
+          <div class="opt" data-opt="mouseSens">
+            <span class="name">MOUSE<small>マウス感度</small></span>
+            <button type="button" data-step="-1">−</button>
+            <div class="bar"><i></i></div>
+            <button type="button" data-step="1">+</button>
+            <b class="val">1.0</b>
+          </div>
+          <div class="opt" data-opt="padSens">
+            <span class="name">GAMEPAD<small>パッド感度</small></span>
+            <button type="button" data-step="-1">−</button>
+            <div class="bar"><i></i></div>
+            <button type="button" data-step="1">+</button>
+            <b class="val">1.0</b>
+          </div>
         </section>
         <section class="sec">
-          <h3>WEAPON</h3>
-          <dl>
-            <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></dt><dd>クナイ ／ ハンドガン ／ 剣 ／ 鎖鎌</dd>
-          </dl>
-        </section>
-        <section class="sec">
-          <h3>KUNAI</h3>
-          <dl>
-            <dt>L-CLICK</dt><dd>3 段コンボ。スライディング中・ダッシュ直後は専用の技</dd>
-            <dt>R-HOLD</dt><dd>回して溜め、離すと投げる（最大 3 本）</dd>
-          </dl>
-        </section>
-        <section class="sec">
-          <h3>SWORD</h3>
-          <dl>
-            <dt>L-CLICK</dt><dd>袈裟 → 逆袈裟 → 唐竹割り。スライディング中は薙ぎ、ダッシュ直後は突き</dd>
-            <dt>L-HOLD</dt><dd>溜めきって離すと、踏み込みながら横に薙ぎ払う</dd>
-            <dt>R-HOLD</dt><dd>居合の構え（スロー）。照準でロックオンし、左クリックで突進斬り</dd>
-          </dl>
-        </section>
-        <section class="sec">
-          <h3>CHAIN SICKLE</h3>
-          <dl>
-            <dt>L-CLICK</dt><dd>右の引き斬り → 左の引っ掛け → 両手の交差斬り → 鎌を回し続ける風車斬り。ダッシュ直後・スライディング中は専用の技。空中は横薙ぎ → 斬り上げ → 両手の車輪 → 叩きつけ</dd>
-            <dt>R-HOLD</dt><dd>振りかぶり、離すと両手の鎌の頭を投げる。建物に掛かると引き寄せる。敵に掛かると敵の前まで飛び込んで挟み斬る</dd>
-            <dt><kbd>R</kbd></dt><dd>鎌を宙へ回しながら投げて受け止める（片手 → 持ち替え → 反対の片手）。ダッシュしたときも確率で投げる</dd>
-          </dl>
-        </section>
-        <section class="sec">
-          <h3>HANDGUN</h3>
-          <dl>
-            <dt>L-CLICK</dt><dd>射撃（6 発）</dd>
-            <dt><kbd>R</kbd></dt><dd>装填（撃ち尽くすと自動）</dd>
-          </dl>
+          <h3>GRAPHICS</h3>
+          <div class="opt" data-opt="brightness">
+            <span class="name">BRIGHTNESS<small>明るさ</small></span>
+            <button type="button" data-step="-1">−</button>
+            <div class="bar"><i></i></div>
+            <button type="button" data-step="1">+</button>
+            <b class="val">1.0</b>
+          </div>
+          <div class="opt" data-opt="quality">
+            <span class="name">QUALITY<small>画質</small></span>
+            <div class="seg">
+              <button type="button" data-quality="low">LOW</button>
+              <button type="button" data-quality="medium">MEDIUM</button>
+              <button type="button" data-quality="high">HIGH</button>
+            </div>
+          </div>
+          <p class="note"></p>
+          <div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd>SELECT</span><span><kbd>←</kbd><kbd>→</kbd>CHANGE</span><span><kbd>ESC</kbd>CLOSE</span></div>
         </section>
       </div>
       <div class="foot">
         <span class="status">ESC — PAUSE</span>
-        <span class="prompt">CLICK TO START</span>
+        <span class="prompt">SELECT MODE</span>
       </div>
     </div>
     <script type="importmap">

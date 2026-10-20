@@ -439,7 +439,7 @@ export interface SwishParams {
   f1: number;
   gain: number;
 }
-export type SwishKind = 'kunai' | 'sword' | 'gun' | 'sickle';
+export type SwishKind = 'kunai' | 'sword' | 'gun' | 'sickle' | 'axe';
 
 // 風切り音: ノイズを帯域フィルタに通し、振りの速さに合わせて高さと音量を山なりに動かす。
 // そこへ録音の振り音を、合成の山に合わせて少し遅らせて重ねる。剣は刃が空気を裂く「シュイン」も足す。
@@ -448,12 +448,13 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   if (!ctx) return;
   const t0 = ctx.currentTime;
   const sickle = kind === 'sickle';
-  const v = rand(0.9, 1.1) * (sickle ? 1.6 : 1);
+  const axe = kind === 'axe';
+  const v = rand(0.9, 1.1) * (sickle ? 1.6 : axe ? 0.55 : 1);
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer;
   const bp = ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.Q.value = sickle ? 2.2 : 1.2;
+  bp.Q.value = sickle ? 2.2 : axe ? 0.8 : 1.2;
   bp.frequency.setValueAtTime(s.f0 * v, t0);
   bp.frequency.exponentialRampToValueAtTime(s.f1 * v, t0 + s.dur * 0.45);
   bp.frequency.exponentialRampToValueAtTime(s.f0 * 0.7 * v, t0 + s.dur);
@@ -471,6 +472,11 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   if (kind === 'sword') {
     sample('blade', { gain: Math.min(0.9, s.gain * 1.3), rate: 0.85 * speed, delay: at * 0.6, lp: 9000, reverb: 0.12 });
     sample('swish', { gain: Math.min(0.8, s.gain * 1.2), rate: 0.7 * speed, delay: at, reverb: 0.08 });
+  } else if (axe) {
+    // 斧は厚い頭が空気を押しのける、低く太い「ブォン」。録音を遅く回して低い帯域だけ残す
+    sample('swish', { gain: Math.min(0.8, s.gain * 1.4), rate: 0.5 * speed, delay: at, lp: 2200, reverb: 0.1 });
+    sample('blade', { gain: Math.min(0.4, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.8, lp: 3000 });
+    noise('lowpass', 500, 260, Math.min(0.3, s.gain * 0.5), s.dur * 1.1, { attack: s.dur * 0.35 });
   } else if (sickle) {
     sample('blade_hi', { gain: Math.min(0.85, s.gain * 1.5), rate: 1.15 * speed, delay: at * 0.5, hp: 1500, reverb: 0.1 });
     sample('blade', { gain: Math.min(0.5, s.gain * 0.8), rate: 1.3 * speed, delay: at * 0.7, hp: 2500, reverb: 0.08 });
@@ -483,7 +489,7 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   }
 }
 
-export type HitKind = 'kunai' | 'sword' | 'throw' | 'bullet';
+export type HitKind = 'kunai' | 'sword' | 'throw' | 'bullet' | 'axe';
 
 // ヒット音: 「ザシュッ」（刃が入る録音と高い帯域のノイズ）に、「ドン」（殴打の録音と音程を下げるサイン波）、
 // 頭の「カッ」（ごく短い高音のノイズ）を重ねる。power が大きいほど低く長く、重い打撃と残響も足す
@@ -499,6 +505,13 @@ export function playHit(power: number, kind: HitKind) {
   if (kind === 'bullet') {
     sample('punch', { gain: 0.75, rate: 0.85, out });
     sample('thud_heavy', { gain: 0.6, rate: 1.1, out });
+  } else if (kind === 'axe') {
+    // 斧: 刃が深く食い込む「ゴシャッ」。低く遅い斬撃に、重い殴打と鈍い金属の鳴りを厚く重ねる
+    sample('slice', { gain: 0.75, rate: 0.6 * (1 - 0.1 * heavy), out, reverb: verb });
+    sample('punch_heavy', { gain: 0.8, rate: 0.8 - 0.1 * heavy, out, reverb: verb });
+    sample('thud_heavy', { gain: 0.6, rate: 0.85, out, reverb: 0.15 });
+    sample('clash', { gain: 0.16, rate: 0.5, lp: 3500, out, reverb: verb });
+    sample('plank', { gain: 0.3, rate: 0.7, lp: 4000, out }); // 割れる「バキッ」
   } else {
     const blade = kind === 'sword';
     sample('slice', { gain: blade ? 0.7 : 0.55, rate: (blade ? 0.85 : 1.1) * (1 - 0.15 * heavy), out, reverb: verb });
@@ -519,6 +532,16 @@ export function playHit(power: number, kind: HitKind) {
   // 低い衝撃
   const thumpDur = 0.14 + 0.16 * heavy;
   tone((170 - 50 * heavy) * v, 42, 0.6 + 0.3 * heavy, thumpDur, { attack: 0.006, out });
+}
+
+// 斧が地面を叩いた: 硬い床に重い鉄が当たる「ドゴッ」。空振りでも重さが伝わるように
+export function playAxeGround(power = 1) {
+  if (!ctx) return;
+  sample('thud_heavy', { gain: 0.6 * power, rate: 0.7, reverb: 0.2 });
+  sample('plate', { gain: 0.22 * power, rate: 0.6, lp: 2500 });
+  sample('gun_sub', { gain: 0.35 * power, rate: 1.4 });
+  noise('lowpass', 900, 120, 0.3 * power, 0.25, { attack: 0.003 });
+  tone(95, 38, 0.5 * power, 0.3, { attack: 0.004 });
 }
 
 // とどめで砕け散る: 低く重い「ドッ」に、低く落としたガラスの割れる音を乾いたまま重ねる
@@ -658,7 +681,7 @@ export function playGrip() {
 }
 
 // 武器を持ち替えた: 武器ごとに抜く音を変える
-export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle') {
+export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe') {
   sample('gear', { gain: 0.35 });
   sample('cloth', { gain: 0.2, rate: 1.2 });
   if (weapon === 'kunai') {
@@ -668,8 +691,9 @@ export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle') {
     sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
     sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
   } else {
-    sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : 1, delay: 0.02, reverb: 0.15 });
-    playRing(weapon === 'sickle' ? 1.6 : 1.2, 0.4, 0.4);
+    // 斧は重いので低く遅く
+    sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : 1, delay: 0.02, reverb: 0.15 });
+    playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : 1.2, 0.4, 0.4);
     if (weapon === 'sickle') playChain('ready');
   }
 }
@@ -740,11 +764,49 @@ export function playFocusStart() {
   sample('knife_draw', { gain: 0.5, rate: 0.75 });
 }
 
+// 投げたクナイで世界だけが遅くなる: 入った瞬間に低く沈み込む「ヴゥン」、明けるときに吸い戻す逆再生の「シュッ」。
+// どちらもこもりを通さない parryBus へ出して、こもった世界の音の上にはっきり乗せる
+export function playWorldSlow(hold: number, release: number) {
+  if (!ctx) return;
+  const out = parryBus;
+  const dry = { out, pan: 0, jitter: 0.02 };
+  tone(150, 38, 0.55, 0.45, { attack: 0.005, out });
+  sample('thud_heavy', { ...dry, gain: 0.4, rate: 0.55, lp: 600 });
+  sample('focus', { ...dry, gain: 0.35, rate: 0.45, lp: 1800, reverb: 0.3 });
+  noise('lowpass', 1400, 120, 0.18, 0.4, { attack: 0.004, out });
+  // 明ける: 戻り始めから戻りきる所へ向けて吸い込み、戻りきった所で短く切る
+  sample('swish', { ...dry, gain: 0.35, rate: 0.7, reversed: true, lp: 4000, delay: hold - 0.1, cut: release + 0.1 });
+  tone(60, 160, 0.2, release + 0.1, { attack: release, out, delay: hold - 0.1 });
+}
+
 // ロックオンした瞬間の「キン」: 合成の金属音に、鐘とガラスの余韻を重ねる
 export function playLockOn() {
   playRing(1.6, 0.9, 0.25);
   sample('bell', { gain: 0.16, rate: 1.6, reverb: 0.5 });
   sample('glass', { gain: 0.18, rate: 1.2, reverb: 0.3 });
+}
+
+// デッドアイに入る: 撃鉄を起こす「カチリ」と、低く沈み込む「ヴゥン」
+export function playDeadEyeStart() {
+  if (!ctx) return;
+  sample('gun_latch', { gain: 0.5, rate: 0.8 });
+  sample('metal_tick', { gain: 0.35, rate: 0.7, delay: 0.05 });
+  playRing(0.7, 0.5, 0.05);
+  tone(140, 40, 0.4, 0.45, { attack: 0.005 });
+  sample('focus', { gain: 0.35, rate: 0.5, reversed: true, lp: 2200, reverb: 0.3 });
+}
+
+// 印を付けた: 小さく乾いた「チッ」。付けるたびに少しずつ高くする
+export function playDeadEyeMark(count: number) {
+  if (!ctx) return;
+  const k = 1 + (count - 1) * 0.08;
+  playRing(1.4 * k, 0.45, 0.05);
+  sample('metal_tick', { gain: 0.25, rate: 1.2 * k });
+}
+
+// 撃ち始める: 指を掛け直す短い握りの音
+export function playDeadEyeFire() {
+  playGrip();
 }
 
 // 居合の突進: 地を蹴る重い踏み込みと、大きく空気を裂く音
@@ -1077,16 +1139,20 @@ export function playResultScore() {
   uiTone(120, 42, 0.7, 0.55);
 }
 
-// ランクを落とす「ズドン」。上のランクほど低く長く沈め、S は遠い鐘のような細い余韻を足す
+// ランクを落とす「ズドン」。上のランクほど低く長く沈め、S 以上は遠い鐘のような細い余韻を足し、SS はさらに高い鐘を重ねる
 export function playResultRank(rank: string) {
-  const k = ({ S: 1, A: 0.7, B: 0.4 } as Record<string, number>)[rank] ?? 0.2;
+  const k = ({ SS: 1.25, S: 1, A: 0.7, B: 0.4 } as Record<string, number>)[rank] ?? 0.2;
   uiClick('bandpass', 4600, 700, 0.18, 0.07);
   uiClick('lowpass', 2400, 70, 0.4 + 0.2 * k, 0.6 + 0.6 * k);
   uiTone(76 - 14 * k, 26, 0.95, 0.9 + 0.8 * k);
   uiClick('lowpass', 260, 35, 0.2 + 0.1 * k, 1.4 + 1.2 * k, 0.05);
-  if (rank === 'S') {
+  if (rank === 'S' || rank === 'SS') {
     uiTone(1320, 1316, 0.02, 2.4, { delay: 0.08 });
     uiTone(1986, 1980, 0.008, 1.8, { delay: 0.08 });
+  }
+  if (rank === 'SS') {
+    uiTone(2640, 2634, 0.007, 2.8, { delay: 0.22 });
+    uiTone(3960, 3952, 0.003, 2.0, { delay: 0.22 });
   }
 }
 

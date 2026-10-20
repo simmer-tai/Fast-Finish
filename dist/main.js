@@ -8,11 +8,13 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { loftRings } from './geometry.js';
 import { SICKLE_VIEW_MODEL_POS, createChainSickle, createHeldSickle, createLongChain, layChain, layLongChain, } from './chainSickle.js';
+import { AXE_REST_QUAT, AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
 import * as sfx from './audio.js';
 import { ensureAudio, playGrip, playHit, playRing, playSwish } from './audio.js';
 import { showKillScore, totalScore, updateScoreHud } from './score.js';
-import { fmtTime, showResult, skipResult } from './result.js';
+import { finalScore, fmtTime, showResult, skipResult } from './result.js';
 import { buildStation } from './station.js';
+import { buildWarehouse } from './warehouse.js';
 import { createStageTitle, STAGE_TITLE_END } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
 // ---- 設定 ----
@@ -98,7 +100,8 @@ Object.assign(sun.shadow.camera, { left: -SHADOW_HALF, right: SHADOW_HALF, top: 
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.04;
 scene.add(sun, sun.target);
-let shadowsOn = new URLSearchParams(location.search).get('shadow') !== '0';
+const shadowParamOff = new URLSearchParams(location.search).get('shadow') === '0';
+let shadowsOn = !shadowParamOff;
 function setShadows(on) {
     shadowsOn = on;
     sun.visible = on;
@@ -1137,6 +1140,7 @@ function createSword() {
     pommel.position.y = -GRIP_LEN / 2 - 0.008;
     sword.add(pommel);
     sword.userData.tipY = bladeBase + BLADE_LEN;
+    sword.userData.bladeBaseY = bladeBase;
     return sword;
 }
 // 右手で柄を握り、刃を前上方へ立てて構える
@@ -1195,18 +1199,80 @@ const rightSickle = createHeldSickle(sickleMats, 1);
 const leftSickle = createHeldSickle(sickleMats, -1);
 sickleViewModel.add(rightSickle, leftSickle);
 sickleViewModel.visible = false;
+// ---- 武器: バトルアックス ----
+// 頭はクナイと同じ黒光り、柄は鎖鎌の巻きと同じ暗い色。両手で握る
+const axeViewModel = new THREE.Group();
+// 視点を回したときの揺れ（重さで遅れて付いてくる）
+const AXE_SWAY_GAIN = 1.4;
+const AXE_SWAY_STIFF = 90;
+const AXE_SWAY_DAMP = 11;
+let axeSwayX = 0;
+let axeSwayY = 0;
+let axeSwayVelX = 0;
+let axeSwayVelY = 0;
+axeViewModel.position.copy(AXE_VIEW_MODEL_POS);
+camera.add(axeViewModel);
+const heldAxe = createHeldAxe({ metal: kunaiMat, grip: sickleWrapMat });
+const axeRest = heldAxe.userData.rest;
+const heldAxeModel = heldAxe.userData.axe;
+axeViewModel.add(heldAxe);
+axeViewModel.visible = false;
 let wantWeapon = 'kunai'; // 数字キーで選んだ武器
 let shownWeapon = 'kunai'; // 今手に持っている武器
 let holster = 0; // 0 = 構えている, 1 = 画面の下へ下げきった
 const HOLSTER_TIME = 0.14;
-const WEAPON_KEYS = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle' };
+const WEAPON_KEYS = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle', Digit5: 'axe' };
 // ---- 操作 ----
 // PointerLockControls はマウスの移動量をそのまま足すので、Chrome がまれに送ってくる
 // 異常に大きな移動量で視点が飛ぶ。生のマウス入力を使い、飛んだ値は捨てる自前の実装にする
 const LOOK_SPEED = 0.002;
+// ---- オプション ----
+// 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
+// 画質は解像度・影・アンチエイリアスをまとめて切り替える（applyQuality）。次に開いたときのために覚えておく
+const OPTIONS_STORE = 'fast-finish.options';
+const RANGES = {
+    mouseSens: { min: 0.1, max: 3, step: 0.1 },
+    padSens: { min: 0.1, max: 3, step: 0.1 },
+    brightness: { min: 0.5, max: 2, step: 0.1 },
+};
+const QUALITIES = ['low', 'medium', 'high'];
+const isRangeKey = (k) => !!k && k in RANGES;
+const QUALITY_NOTES = {
+    low: '解像度を下げ、影とアンチエイリアスを切る。いちばん軽い',
+    medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
+    high: '高解像度（最大 2 倍）に、細かい影と 4x アンチエイリアス',
+};
+const options = { mouseSens: 1, padSens: 1, brightness: 1, quality: 'high' };
+try {
+    const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
+    for (const k of Object.keys(RANGES)) {
+        if (typeof saved[k] === 'number')
+            options[k] = THREE.MathUtils.clamp(saved[k], RANGES[k].min, RANGES[k].max);
+    }
+    if (QUALITIES.includes(saved.quality))
+        options.quality = saved.quality;
+}
+catch {
+    // 読めなければ初期値のまま
+}
+// LinearToneMapping は露出を掛けるだけなので、明るさ 1 なら今までと同じ見た目になる
+renderer.toneMapping = THREE.LinearToneMapping;
+function applyBrightness() {
+    renderer.toneMappingExposure = options.brightness;
+}
+applyBrightness();
+function saveOptions() {
+    try {
+        localStorage.setItem(OPTIONS_STORE, JSON.stringify(options));
+    }
+    catch {
+        // 保存できなくても、この回の間は効いている
+    }
+}
 // isLocked は「プレイ中」の意味で使う。マウスではポインターロックと一緒に切り替わり、
 // パッドで始めたときはロックなしでプレイ中にする（padPlaying）
 const controls = { isLocked: false };
+let menuRedraw = true; // 止まっているメニューの画面で、次のフレームに 1 度だけ描き直す
 let padPlaying = false;
 let fromPad = false; // パッドのボタンから送ったキー操作を処理している間だけ true
 const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -1230,7 +1296,7 @@ async function lockPointer() {
 const overlay = document.getElementById('overlay');
 function startFromOverlay() {
     ensureAudio(); // 音はユーザー操作の中でしか始められない
-    overlay.classList.remove('show-controls');
+    showPanel(null);
     // パッドのボタンはブラウザがユーザー操作とみなさないので、ポインターロックを始められない。ロックなしで始める
     if (fromPad) {
         padPlaying = true;
@@ -1247,20 +1313,138 @@ function pauseGame() {
     padPlaying = false;
     setPlaying(false);
 }
-function toggleControlsPanel() {
-    overlay.classList.toggle('show-controls');
-    if (overlay.classList.contains('show-controls'))
+const PANELS = ['options'];
+function showPanel(name) {
+    for (const n of PANELS) {
+        overlay.classList.toggle(`show-${n}`, n === name);
+        for (const b of overlay.querySelectorAll(`[data-action="${n}"]`))
+            b.classList.toggle('active', n === name);
+    }
+}
+function togglePanel(name) {
+    const on = !overlay.classList.contains(`show-${name}`);
+    showPanel(on ? name : null);
+    if (on)
         sfx.playUiOpen();
     else
         sfx.playUiBack();
-    overlay.querySelector('[data-action="controls"]').classList.toggle('active', overlay.classList.contains('show-controls'));
+    if (on && name === 'options')
+        renderOptions();
 }
-// タイトルで START を押したら、本編か訓練場かを選ぶ。今の場所は訓練場として使う（本編はまだ無い）
+// ---- オプション画面 ----
+// 上下で項目を選び、左右で値を変える。感度と明るさは目盛りをクリック / ドラッグしても変えられる
+const optionRows = [...overlay.querySelectorAll('.options .opt')];
+const qualityButtons = [...overlay.querySelectorAll('.options [data-quality]')];
+const qualityNote = overlay.querySelector('.options .note');
+let optionIndex = 0;
+function renderOptions() {
+    optionRows.forEach((row, i) => {
+        row.classList.toggle('active', i === optionIndex);
+        const key = row.dataset.opt;
+        if (!isRangeKey(key))
+            return;
+        const v = options[key];
+        const { min, max } = RANGES[key];
+        row.querySelector('.bar i').style.setProperty('--p', `${((v - min) / (max - min)) * 100}%`);
+        row.querySelector('.val').textContent = v.toFixed(1);
+    });
+    for (const b of qualityButtons)
+        b.classList.toggle('active', b.dataset.quality === options.quality);
+    qualityNote.textContent = QUALITY_NOTES[options.quality];
+}
+// 変わったら true
+function setRange(key, v) {
+    const { min, max, step } = RANGES[key];
+    v = Number(THREE.MathUtils.clamp(Math.round(v / step) * step, min, max).toFixed(2));
+    if (v === options[key])
+        return false;
+    options[key] = v;
+    saveOptions();
+    if (key === 'brightness')
+        applyBrightness();
+    renderOptions();
+    return true;
+}
+function setQuality(q) {
+    if (q === options.quality)
+        return false;
+    options.quality = q;
+    saveOptions();
+    applyQuality();
+    renderOptions();
+    return true;
+}
+function stepOption(row, dir) {
+    const key = row.dataset.opt;
+    const changed = key === 'quality'
+        ? setQuality(QUALITIES[THREE.MathUtils.clamp(QUALITIES.indexOf(options.quality) + dir, 0, QUALITIES.length - 1)])
+        : setRange(key, options[key] + dir * RANGES[key].step);
+    if (changed)
+        sfx.playUiSelect();
+    else
+        sfx.playUiDenied();
+}
+function onOptionsClick(target) {
+    const row = target.closest('.opt');
+    if (!row)
+        return;
+    optionIndex = optionRows.indexOf(row);
+    const step = target.closest('[data-step]');
+    const quality = target.closest('[data-quality]');
+    if (step)
+        stepOption(row, Number(step.dataset.step));
+    else if (quality && setQuality(quality.dataset.quality))
+        sfx.playUiSelect();
+    renderOptions();
+}
+function onOptionsKey(e) {
+    const dir = { ArrowUp: -1, KeyW: -1, ArrowDown: 1, KeyS: 1 }[e.code];
+    const side = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1 }[e.code];
+    if (e.code === 'Escape' || e.code === 'KeyO')
+        return togglePanel('options');
+    if (e.code === 'Enter' || e.code === 'NumpadEnter')
+        return e.preventDefault(); // 開いている間は始めない
+    if (dir) {
+        e.preventDefault();
+        const next = THREE.MathUtils.clamp(optionIndex + dir, 0, optionRows.length - 1);
+        if (next !== optionIndex)
+            sfx.playUiHover();
+        optionIndex = next;
+        renderOptions();
+    }
+    else if (side) {
+        e.preventDefault();
+        stepOption(optionRows[optionIndex], side);
+    }
+}
+for (const row of optionRows) {
+    row.addEventListener('mouseenter', () => {
+        optionIndex = optionRows.indexOf(row);
+        renderOptions();
+    });
+    const bar = row.querySelector('.bar');
+    if (!bar)
+        continue;
+    const key = row.dataset.opt;
+    const { min, max } = RANGES[key];
+    const fromPointer = (e) => {
+        const r = bar.getBoundingClientRect();
+        const t = THREE.MathUtils.clamp((e.clientX - r.left) / r.width, 0, 1);
+        if (setRange(key, min + t * (max - min)))
+            sfx.playUiHover();
+    };
+    bar.addEventListener('pointerdown', (e) => {
+        bar.setPointerCapture(e.pointerId);
+        fromPointer(e);
+    });
+    bar.addEventListener('pointermove', (e) => {
+        if (bar.hasPointerCapture(e.pointerId))
+            fromPointer(e);
+    });
+}
+renderOptions();
+// タイトルでは、本編（GAME）か訓練場（TRAINING）かを選ぶ。今の場所は訓練場として使う
 const overlayPrompt = overlay.querySelector('.foot .prompt');
-function setModeSelect(on) {
-    overlay.classList.toggle('select-mode', on);
-    overlayPrompt.textContent = on ? 'SELECT MODE' : 'CLICK TO START';
-}
 // ---- ステージ選択 ----
 // GAME を押すと、ステージと難易度を選ぶ画面を出す。START でそのステージへ入る。
 // 難易度は次に開いたときのために覚えておく
@@ -1283,6 +1467,7 @@ catch {
 function selectStage(i) {
     stageIndex = i;
     stageButtons.forEach((b, j) => b.classList.toggle('active', j === i));
+    showStageInfo();
     if (overlay.classList.contains('select-stage'))
         showStagePreview(selectedStageId());
     showStageBest();
@@ -1291,6 +1476,28 @@ function selectStage(i) {
 function selectedStageId() {
     const id = stageButtons[stageIndex]?.dataset.stage;
     return id && id in STAGE_BUILDERS ? id : null;
+}
+// 詳細欄の番号と名前を、選んでいるステージのボタンから写す。選び直したときは、番号と名前を出し直しの動きで入れ替える
+const stageInfo = overlay.querySelector('.stage-info');
+const stageInfoNo = stageInfo.querySelector('.si-no');
+const stageInfoTitle = stageInfo.querySelector('.si-title');
+function showStageInfo() {
+    const btn = stageButtons[stageIndex];
+    if (!btn)
+        return;
+    const no = btn.querySelector('.no')?.textContent ?? '';
+    if (stageInfoNo.dataset.no === no)
+        return;
+    stageInfoNo.dataset.no = stageInfoNo.textContent = no;
+    stageInfoTitle.querySelector('b').textContent = btn.querySelector('span:not(.no)')?.textContent ?? '';
+    stageInfoTitle.querySelector('span').textContent = btn.querySelector('small')?.textContent ?? '';
+    // 動きを頭からやり直す（見出しの入りと、番号の線の数字の持ち上がり）
+    const head = stageInfo.querySelector('.si-head');
+    head.style.animation = 'none';
+    stageInfoNo.classList.add('swap');
+    void head.offsetWidth;
+    head.style.animation = '';
+    stageInfoNo.classList.remove('swap');
 }
 function selectDifficulty(i) {
     difficultyIndex = i;
@@ -1332,13 +1539,210 @@ function showStageBest() {
     bestTimeEl.classList.toggle('set', !!best);
     bestScoreEl.classList.toggle('set', !!best);
 }
+// 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく
+const LOADOUT_STORE = 'fast-finish.weapon';
+// 詳細の欄には今の武器を 1 行で出し、押すと武器の選択画面を開く。選択画面では上下でカーソルを動かして右に大きく見せ、
+// 決めたら詳細の欄へ戻す。名前と和名は選択画面の行から写す
+const loadoutSlot = overlay.querySelector('.sw-slot');
+const picker = overlay.querySelector('.sw-picker');
+const pickerRows = [...picker.querySelectorAll('.sw-rows [data-weapon]')];
+const pickerPreview = picker.querySelector('.sw-preview');
+const LOADOUT_IDS = pickerRows.map((b) => b.dataset.weapon);
+// 右下の HUD のアイコンを写して、入れ物に武器の数だけ入れる（見せるものだけ on にする）
+const cloneWeaponIcon = (id) => {
+    const svg = document.querySelector(`#weapon .icon svg[data-w="${id}"]`).cloneNode(true);
+    svg.removeAttribute('class');
+    return svg;
+};
+const fillIcons = (box) => LOADOUT_IDS.map((id) => box.appendChild(cloneWeaponIcon(id)));
+const showIcon = (icons, i) => icons.forEach((svg, j) => svg.classList.toggle('on', j === i));
+pickerRows.forEach((b, i) => showIcon(fillIcons(b.querySelector('.ic')), i));
+const slotIcons = fillIcons(loadoutSlot.querySelector('.ic'));
+const previewIcons = fillIcons(pickerPreview.querySelector('.ic'));
+const setName = (el, i) => {
+    el.querySelector('.nm').textContent = pickerRows[i].dataset.name ?? '';
+    el.querySelector('.ja').textContent = pickerRows[i].dataset.ja ?? '';
+};
+let loadoutIndex = 0; // 持ち込むと決めた武器
+let pickerIndex = 0; // 選択画面のカーソル
+try {
+    const saved = LOADOUT_IDS.indexOf(localStorage.getItem(LOADOUT_STORE));
+    if (saved >= 0)
+        loadoutIndex = saved;
+}
+catch {
+    // 保存できない環境では毎回クナイから
+}
+const selectedLoadout = () => LOADOUT_IDS[loadoutIndex];
+const pickerOpen = () => overlay.classList.contains('pick-weapon');
+function selectLoadout(i) {
+    loadoutIndex = i;
+    showIcon(slotIcons, i);
+    setName(loadoutSlot, i);
+    try {
+        localStorage.setItem(LOADOUT_STORE, selectedLoadout());
+    }
+    catch {
+        // 覚えられなくても選ぶことはできる
+    }
+}
+// プレビュー動画: previews/<武器>.mp4 を音なしで繰り返し流す。読めるまで（無ければずっと）NO SIGNAL の画面を出す
+const PREVIEW_VIDEO_DIR = 'previews';
+const pickerScreen = pickerPreview.querySelector('.sw-video');
+const pickerVideo = pickerScreen.querySelector('video');
+const pickerNoSignal = pickerScreen.querySelector('.sw-nosig small');
+pickerVideo.addEventListener('loadeddata', () => pickerScreen.classList.add('has-video'));
+pickerVideo.addEventListener('error', () => pickerScreen.classList.remove('has-video'));
+function showPickerVideo(id) {
+    const src = `${PREVIEW_VIDEO_DIR}/${id}.mp4`;
+    pickerNoSignal.textContent = src;
+    if (pickerVideo.dataset.id === id)
+        return;
+    pickerVideo.dataset.id = id;
+    pickerScreen.classList.remove('has-video');
+    pickerVideo.src = src;
+    pickerVideo.play().catch(() => { }); // 無いファイルや自動再生の拒否は NO SIGNAL のままにする
+}
+// 差し込んだ武器名とアイコンの尾。着くまでは伸ばしたまま、着いたら一気に巻き取る（CSS の sw-in-smear / sw-in-ic と同じ長さ・同じ着く時刻）
+const SMEAR_TIME = 0.3;
+const SMEAR_LAND = 0.22;
+const pickerName = pickerPreview.querySelector('.nm');
+const pickerIcon = pickerPreview.querySelector('.ic');
+const smearDilates = [...document.querySelectorAll(':is(#sw-smear, #sw-smear-ic) feMorphology')];
+const smearOffsets = [...document.querySelectorAll(':is(#sw-smear, #sw-smear-ic) feOffset')];
+let smearRun = 0;
+function smearPicker(dir) {
+    const run = ++smearRun;
+    const len = parseFloat(getComputedStyle(pickerName).fontSize) * 0.24; // 尾の長さ（文字の高さに対して）
+    const start = performance.now();
+    pickerName.style.filter = 'url(#sw-smear)';
+    pickerIcon.style.filter = 'url(#sw-smear-ic)';
+    const step = (now) => {
+        if (run !== smearRun)
+            return;
+        const t = (now - start) / 1000 / SMEAR_TIME;
+        if (t >= 1) {
+            pickerName.style.filter = ''; // 止まったら素の文字に戻す
+            pickerIcon.style.filter = '';
+            return;
+        }
+        const k = t < SMEAR_LAND ? 1 : 2 ** (-10 * ((t - SMEAR_LAND) / (1 - SMEAR_LAND)));
+        const r = (len * k) / 2;
+        // 段ごとに data-len の割合だけ伸ばす。下から来たら下へ、上から来たら上へ尾を引く
+        for (const el of smearDilates)
+            el.setAttribute('radius', `0 ${r * Number(el.dataset.len)}`);
+        for (const el of smearOffsets)
+            el.setAttribute('dy', String((dir > 0 ? r : -r) * Number(el.dataset.len)));
+        requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
+// カーソルを動かして右に大きく見せる。dir: 動いた向き（1 = 下へ, -1 = 上へ, 0 = 動きなし）。その向きから差し込む
+function movePicker(i, dir = Math.sign(i - pickerIndex)) {
+    pickerIndex = i;
+    pickerRows.forEach((b, j) => {
+        b.classList.toggle('active', j === i);
+        b.classList.toggle('equipped', j === loadoutIndex);
+    });
+    showIcon(previewIcons, i);
+    setName(pickerPreview, i);
+    showPickerVideo(LOADOUT_IDS[i]);
+    pickerPreview.classList.remove('in-next', 'in-prev');
+    if (dir) {
+        void pickerPreview.offsetWidth; // 続けて動かしても頭から流し直す
+        pickerPreview.classList.add(dir > 0 ? 'in-next' : 'in-prev');
+        smearPicker(dir);
+    }
+}
+// 端まで行ったら反対の端へ回る
+function stepPicker(dir) {
+    sfx.playUiHover();
+    movePicker((pickerIndex + dir + LOADOUT_IDS.length) % LOADOUT_IDS.length, dir);
+}
+function openPicker() {
+    sfx.playUiOpen();
+    overlay.classList.add('pick-weapon');
+    movePicker(loadoutIndex, 0);
+    resumePickerVideo();
+}
+// decide: カーソルの武器に決めて閉じる。false なら選び直さずに閉じる
+function closePicker(decide) {
+    if (!pickerOpen())
+        return;
+    if (decide) {
+        sfx.playUiSelect();
+        selectLoadout(pickerIndex);
+    }
+    else {
+        sfx.playUiBack();
+    }
+    overlay.classList.remove('pick-weapon');
+    pickerVideo.pause(); // 閉じている間は流さない（開いたら movePicker で続きから）
+}
+// 開き直したとき、同じ武器の動画は読み直さずに再開する
+function resumePickerVideo() {
+    if (pickerScreen.classList.contains('has-video'))
+        pickerVideo.play().catch(() => { });
+}
+// 行に乗ったらカーソルをそこへ（音はメニュー共通の乗ったときの音が鳴る）
+for (const [i, b] of pickerRows.entries())
+    b.addEventListener('mouseenter', () => i !== pickerIndex && movePicker(i));
+// 選択画面の上でホイールを回しても上下に動かす。トラックパッドの細かい連続を 1 つずつに均すため、動かしたら少し待つ
+let pickerWheelAt = 0;
+picker.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (!e.deltaY || e.timeStamp - pickerWheelAt < 160)
+        return;
+    pickerWheelAt = e.timeStamp;
+    stepPicker(Math.sign(e.deltaY));
+}, { passive: false });
+function onPickerClick(target) {
+    const row = target.closest('.sw-rows [data-weapon]');
+    if (row) {
+        movePicker(pickerRows.indexOf(row));
+        return closePicker(true);
+    }
+    if (target.closest('[data-action="weapon-decide"]'))
+        return closePicker(true);
+    // 窓の外（靄）か BACK を押したら閉じる
+    if (target.closest('[data-action="weapon-close"]') || !target.closest('.sw-win'))
+        closePicker(false);
+}
+function onPickerKey(e) {
+    switch (e.code) {
+        case 'Escape':
+        case 'KeyQ':
+            return closePicker(false);
+        case 'Enter':
+        case 'NumpadEnter':
+        case 'Space':
+            e.preventDefault();
+            return closePicker(true);
+        case 'ArrowUp':
+        case 'KeyW':
+        case 'PageUp':
+            e.preventDefault();
+            return stepPicker(-1);
+        case 'ArrowDown':
+        case 'KeyS':
+        case 'PageDown':
+            e.preventDefault();
+            return stepPicker(1);
+    }
+    const n = WEAPON_KEYS[e.code] ? LOADOUT_IDS.indexOf(WEAPON_KEYS[e.code]) : -1;
+    if (n >= 0 && n !== pickerIndex) {
+        sfx.playUiHover();
+        movePicker(n);
+    }
+}
 selectStage(stageIndex);
 selectDifficulty(difficultyIndex);
+selectLoadout(loadoutIndex);
 function setStageSelect(on) {
     overlay.classList.toggle('select-stage', on);
+    overlay.classList.remove('pick-weapon');
+    pickerVideo.pause();
     showStagePreview(on ? selectedStageId() : null);
-    overlay.classList.remove('show-controls');
-    overlay.querySelector('[data-action="controls"]').classList.remove('active');
     overlayPrompt.textContent = on ? 'SELECT STAGE' : 'SELECT MODE';
     overlayStatus.textContent = on ? 'ESC — BACK' : 'ESC — PAUSE';
     // START を押したのにロックできずに戻ったときは、訓練場へ入る設定に戻す
@@ -1368,8 +1772,8 @@ function stepDifficulty(dir) {
 const transitionLabel = document.querySelector('#transition .label');
 let overlayKicker = 'FAST FINISH — TRAINING'; // 入った後の一時停止の画面に出す、今いる場所
 function startStage() {
-    const id = stageButtons[stageIndex]?.dataset.stage;
-    if (id !== 'station')
+    const id = selectedStageId();
+    if (!id)
         return sfx.playUiDenied();
     sfx.playUiSelect();
     pendingStage = id;
@@ -1379,6 +1783,10 @@ function startStage() {
     startFromOverlay();
 }
 function onStageSelectClick(target) {
+    if (pickerOpen())
+        return onPickerClick(target);
+    if (target.closest('[data-action="weapon-open"]'))
+        return openPicker();
     if (target.closest('[data-action="stage-back"]')) {
         sfx.playUiBack();
         return setStageSelect(false);
@@ -1399,10 +1807,12 @@ function onStageSelectClick(target) {
         const i = difficultyButtons.indexOf(diff);
         if (i !== difficultyIndex)
             sfx.playUiSelect();
-        selectDifficulty(i);
+        return selectDifficulty(i);
     }
 }
 function onStageSelectKey(e) {
+    if (pickerOpen())
+        return onPickerKey(e);
     switch (e.code) {
         case 'Escape':
             sfx.playUiBack();
@@ -1427,8 +1837,9 @@ function onStageSelectKey(e) {
         case 'KeyD':
             e.preventDefault();
             return stepDifficulty(1);
-        case 'Tab':
-            e.preventDefault(); // 操作説明は詳細と重なるので、ステージ選択の間は開かない
+        // 武器の選択画面を開く（パッドの Y も Q として届く）
+        case 'KeyQ':
+            return openPicker();
     }
 }
 // タイトルへ戻る。ゲームの状態はあちこちの変数に散らばっているので、読み込み直して最初からにする。
@@ -1441,15 +1852,14 @@ function quitToTitle() {
 }
 overlay.addEventListener('click', (e) => {
     const target = e.target;
-    // 操作説明の開閉と、説明そのものをクリックしたときは始めない
-    if (target.closest('[data-action="controls"]'))
-        return toggleControlsPanel();
     if (target.closest('[data-action="title"]')) {
         sfx.playUiSelect();
         return quitToTitle();
     }
-    if (target.closest('.controls'))
-        return;
+    if (target.closest('[data-action="options"]'))
+        return togglePanel('options');
+    if (target.closest('.options'))
+        return onOptionsClick(target);
     // 結果の画面では TITLE 以外を受け付けない（倒しきった勢いのクリックで何か起きないように）
     if (overlay.classList.contains('result'))
         return;
@@ -1460,20 +1870,12 @@ overlay.addEventListener('click', (e) => {
             sfx.playUiOpen();
             return setStageSelect(true);
         }
-        // モード選択中は、項目以外をクリックしても何もしない
+        // タイトルでは、項目以外をクリックしても何もしない
         if (target.closest('[aria-disabled="true"]'))
             return sfx.playUiDenied();
         if (target.closest('[data-action="training"]')) {
             sfx.playUiSelect();
             return startFromOverlay();
-        }
-        if (target.closest('[data-action="back"]')) {
-            sfx.playUiBack();
-            return setModeSelect(false);
-        }
-        if (!overlay.classList.contains('select-mode')) {
-            sfx.playUiOpen();
-            setModeSelect(true);
         }
         return;
     }
@@ -1483,7 +1885,7 @@ overlay.addEventListener('click', (e) => {
 // 項目に乗ったら小さく鳴らす（同じ項目の中を動いている間は鳴らさない。選べない項目は鳴らさない）
 let hoveredButton = null;
 overlay.addEventListener('mouseover', (e) => {
-    const button = e.target.closest('.menu button, .si-diff button');
+    const button = e.target.closest('.menu button, .si-diff button, .sw-slot, .sw-rows button, .sw-win .menu button, .opt button');
     if (button === hoveredButton)
         return;
     hoveredButton = button;
@@ -1498,6 +1900,8 @@ window.addEventListener('keydown', (e) => {
         return;
     if (overlay.classList.contains('select-stage'))
         return onStageSelectKey(e);
+    if (overlay.classList.contains('show-options'))
+        return onOptionsKey(e);
     if (overlay.classList.contains('result')) {
         if (e.code !== 'Enter' && e.code !== 'NumpadEnter' && e.code !== 'KeyQ')
             return;
@@ -1509,29 +1913,15 @@ window.addEventListener('keydown', (e) => {
     }
     if (e.code === 'Enter' || e.code === 'NumpadEnter') {
         e.preventDefault();
-        if (overlay.classList.contains('title') && !overlay.classList.contains('select-mode')) {
-            sfx.playUiOpen();
-            setModeSelect(true);
-        }
-        else {
-            sfx.playUiSelect();
-            startFromOverlay();
-        }
+        sfx.playUiSelect();
+        startFromOverlay(); // タイトルでは TRAINING、一時停止では RESUME
     }
     else if (e.code === 'KeyQ' && overlay.classList.contains('pause')) {
         sfx.playUiSelect();
         quitToTitle();
     }
-    else if (e.code === 'Tab') {
-        e.preventDefault();
-        toggleControlsPanel();
-    }
-    else if (e.code === 'Escape' && overlay.classList.contains('show-controls')) {
-        toggleControlsPanel();
-    }
-    else if (e.code === 'Escape' && overlay.classList.contains('select-mode')) {
-        sfx.playUiBack();
-        setModeSelect(false);
+    else if (e.code === 'KeyO') {
+        togglePanel('options');
     }
 });
 // 訓練場へ入るときは、タイトルをすぐには消さずに払い出す。切り替えの帯で覆いきったら（switchToStage）、
@@ -1543,7 +1933,7 @@ function endOverlayLeave() {
     overlay.classList.toggle('hidden', controls.isLocked);
     // 一度始めたら、以降は一時停止の画面にする
     overlay.classList.replace('title', 'pause');
-    overlay.classList.remove('select-mode', 'select-stage');
+    overlay.classList.remove('select-stage');
     overlay.querySelector('[data-action="start"] .label').textContent = 'RESUME';
     overlay.querySelector('.kicker').textContent = overlayKicker;
     overlayStatus.textContent = 'ESC — PAUSE';
@@ -1554,6 +1944,7 @@ function setPlaying(on) {
     if (controls.isLocked === on)
         return;
     controls.isLocked = on;
+    menuRedraw = true;
     // 止めている間は音も HUD の動きも止める
     sfx.setAudioPaused(!controls.isLocked);
     document.body.classList.toggle('paused', !controls.isLocked);
@@ -1584,6 +1975,7 @@ function turnView(yaw, pitch) {
     lookEuler.setFromQuaternion(camera.quaternion);
     lookEuler.y -= yaw;
     lookEuler.x -= pitch;
+    viewSpin += yaw;
     lookEuler.x = THREE.MathUtils.clamp(lookEuler.x, -Math.PI / 2 + 0.001, Math.PI / 2 - 0.001);
     lookEuler.z = 0;
     camera.quaternion.setFromEuler(lookEuler);
@@ -1605,7 +1997,7 @@ document.addEventListener('mousemove', (e) => {
     recentMove += (move - recentMove) * 0.3;
     if (move > 2)
         usingPad = false; // マウスに持ち替えたらエイムアシストを切る
-    const look = LOOK_SPEED * zoomLookScale();
+    const look = LOOK_SPEED * options.mouseSens * zoomLookScale();
     turnView(e.movementX * look, e.movementY * look);
 });
 const keys = new Set(); // 押しっぱなしのキー
@@ -1670,7 +2062,7 @@ document.addEventListener('mousedown', (e) => {
         attackHeld = true;
     }
     if (controls.isLocked && e.button === 2)
-        throwHeld = throwPressed = true;
+        throwHeld = throwPressed = focusPressed = axeLaunchPressed = deadEyePressed = true;
 });
 document.addEventListener('mouseup', (e) => {
     if (e.button === 0)
@@ -1703,18 +2095,20 @@ const PAD_WEAPONS = [
     [PAD.DOWN, 'sword'],
     [PAD.LEFT, 'sickle'],
 ];
-const WEAPON_ORDER = ['kunai', 'handgun', 'sword', 'sickle']; // LB / RB で順に回す
+const WEAPON_ORDER = ['kunai', 'handgun', 'sword', 'sickle', 'axe']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 const PAD_MENU_KEYS = [
     [PAD.A, 'Enter'],
     [PAD.START, 'Enter'],
     [PAD.B, 'Escape'],
     [PAD.Y, 'KeyQ'], // 一時停止からタイトルへ
-    [PAD.BACK, 'Tab'], // 操作説明
+    [PAD.X, 'KeyO'], // オプション
     [PAD.UP, 'ArrowUp'],
     [PAD.DOWN, 'ArrowDown'],
     [PAD.LEFT, 'ArrowLeft'],
     [PAD.RIGHT, 'ArrowRight'],
+    [PAD.LB, 'PageUp'], // 武器の選択画面でカーソルを動かす
+    [PAD.RB, 'PageDown'],
 ];
 const PAD_LOOK_SPEED = 4.2; // 右スティックを倒しきったときの視点の速さ (rad/s)
 const PAD_LOOK_CURVE = 2.2; // 小さく倒したときに細かく狙えるよう、倒した量を累乗して使う
@@ -1799,7 +2193,7 @@ function updatePad(dt) {
     if (pad.down[PAD.RT])
         attackPressed = attackHeld = true;
     if (pad.down[PAD.LT])
-        throwHeld = throwPressed = true;
+        throwHeld = throwPressed = focusPressed = axeLaunchPressed = deadEyePressed = true;
     if (pad.down[PAD.X])
         reloadQueued = tossPressed = true;
     const cycle = (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
@@ -1835,7 +2229,7 @@ function updatePad(dt) {
                     : 'アシスト  ○ 範囲外';
     }
     if (m > 0) {
-        const k = (Math.pow(m, PAD_LOOK_CURVE) / m) * PAD_LOOK_SPEED * dt * zoomLookScale() * slow;
+        const k = (Math.pow(m, PAD_LOOK_CURVE) / m) * PAD_LOOK_SPEED * options.padSens * dt * zoomLookScale() * slow;
         turnView(pad.rx * k, pad.ry * k);
         // マウスと同じく、回した量の 1/4 だけ武器を遅らせる
         lookSwayX = THREE.MathUtils.clamp(lookSwayX + pad.rx * k * 0.25, -0.06, 0.06);
@@ -2296,7 +2690,9 @@ function update(dt) {
     forward.normalize();
     right.crossVectors(forward, camera.up).normalize();
     wish.set(0, 0, 0);
-    if (locked) {
+    axeSlamRecover = Math.max(0, axeSlamRecover - dt);
+    const stuck = axeSlamRecover > 0; // 叩きつけの硬直中は、歩く・跳ぶ・ダッシュ・スライディングを受け付けない
+    if (locked && !stuck) {
         if (keys.has('KeyW'))
             wish.add(forward);
         if (keys.has('KeyS'))
@@ -2327,7 +2723,7 @@ function update(dt) {
             dashCharges++;
         }
     }
-    if (locked && mantleTime < 0 && rushTime < 0 && chargeDashTime <= 0 && [...pressed].some(isSprintKey) && dashCharges > 0 && dashCooldown <= 0) {
+    if (locked && !stuck && mantleTime < 0 && rushTime < 0 && chargeDashTime <= 0 && [...pressed].some(isSprintKey) && dashCharges > 0 && dashCooldown <= 0) {
         dashDir.copy(hasWish ? wish : forward);
         dashSpeedBefore = Math.hypot(velocity.x, velocity.z);
         dashTime = DASH_TIME;
@@ -2341,7 +2737,7 @@ function update(dt) {
     }
     // ---- スライディングの開始・終了 ----
     const hSpeed = Math.hypot(velocity.x, velocity.z);
-    if (!sliding && slideKey && !slideLock && onGround && dashTime <= 0 && hSpeed >= SLIDE_START_SPEED) {
+    if (!sliding && !stuck && slideKey && !slideLock && onGround && dashTime <= 0 && hSpeed >= SLIDE_START_SPEED) {
         sliding = true;
         if (slideBoostCooldown <= 0) {
             setHorizontalSpeed(Math.max(hSpeed, Math.min(hSpeed + SLIDE_BOOST, SLIDE_BOOST_MAX)));
@@ -2400,7 +2796,7 @@ function update(dt) {
         steerHorizontal(wish, maxSpeed, AIR_ACCEL, AIR_TURN_RATE, 0, dt);
     }
     // ---- ジャンプ（スライディング中も可。勢いはそのまま） ----
-    if (locked && onGround && dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0 && keys.has('Space')) {
+    if (locked && !stuck && onGround && dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0 && keys.has('Space')) {
         velocity.y = JUMP_SPEED;
         onGround = false;
         sliding = false;
@@ -2489,6 +2885,7 @@ function update(dt) {
     updateViewModel(dt);
     updateAttack(dt);
     updateSwordAttack(dt);
+    updateAxeAttack(dt);
     updateThrow(dt);
     updateSickleMelee(dt);
     updateGrapple(dt);
@@ -2514,6 +2911,7 @@ function onDash() {
     sfx.playDash();
     fovKick = 8;
     sinceDash = 0;
+    upgradeAttackOnDash();
     // 振っていなければ、右手のクナイを輪に掛けた指でくるりと一周回す
     if (kunaiReady() && !attack) {
         dashSpinTime = 0;
@@ -2529,6 +2927,59 @@ function onDash() {
     // 鎖鎌は、確率で鎌を宙へ投げ回し、そうでなければ両手の鎌を前回りにくるりと回す
     if (!tossOnDash())
         twirlSickles();
+    // 斧は、柄を軸にくるりと一回転させる
+    if (shownWeapon === 'axe' && wantWeapon === 'axe' && holster === 0 && !axeAttack) {
+        axeSpinTime = 0;
+        playSwish({ at: 0, dur: 0.22, f0: 380, f1: 1200, gain: 0.14 }, 'axe');
+    }
+}
+// ダッシュの直前に振り始めた普段の攻撃は、ダッシュ技に差し替える（ほぼ同時押しでもダッシュ技が出るように）
+const DASH_ATTACK_GRACE = 0.12;
+function upgradeAttackOnDash() {
+    if (sliding)
+        return;
+    // クナイ
+    if (attack && attackTime < DASH_ATTACK_GRACE && !firedImpact) {
+        const i = GROUND_COMBO.indexOf(attack);
+        if (i >= 0) {
+            comboStep = i;
+            startAttack(DASH_SLASH);
+        }
+    }
+    // 剣: 押してまだ離していない（普段の攻撃か溜めかを決める前）か、振り始めたばかり
+    if (swordHold >= 0 && !swordAttack && swordHold < DASH_ATTACK_GRACE) {
+        swordHold = -1;
+        startSwordAttack(SWORD_THRUST);
+    }
+    else if (swordAttack && swordTime < DASH_ATTACK_GRACE && !swordFiredImpact) {
+        const i = SWORD_COMBO.indexOf(swordAttack);
+        if (i >= 0) {
+            swordComboStep = i;
+            startSwordAttack(SWORD_THRUST);
+        }
+    }
+    // 鎖鎌
+    if (sickleMelee && sickleMelee.t < DASH_ATTACK_GRACE && sickleMelee.fired === 0) {
+        const i = SICKLE_COMBO.indexOf(sickleMelee.def);
+        const j = SICKLE_AIR_COMBO.indexOf(sickleMelee.def);
+        if (i >= 0)
+            sickleCombo = i;
+        if (j >= 0)
+            sickleAirCombo = j;
+        if (i >= 0 || j >= 0)
+            startSickleMove(SICKLE_DASH);
+    }
+    // 斧: 普段の攻撃は突進振り下ろし、打ち上げは突き飛ばしへ
+    if (axeAttack && axeTime < DASH_ATTACK_GRACE && !axeFiredImpact && !wallRunning) {
+        const i = AXE_COMBO.indexOf(axeAttack);
+        if (i >= 0 && (onGround || !axeRushAirUsed)) {
+            axeComboStep = i;
+            startAxeAttack(AXE_RUSH);
+        }
+        else if (axeAttack === AXE_LAUNCH && axeSlamRecover <= 0) {
+            startAxeAttack(AXE_DRIVE);
+        }
+    }
 }
 function onSlideStart() {
     addTrauma(0.15);
@@ -2575,7 +3026,8 @@ function updateCamera(dt) {
     fovKick = moveToward(fovKick, 0, dt * 30);
     const speedT = THREE.MathUtils.clamp((hSpeed - WALK_SPEED) / (FOV_SPEED_MAX - WALK_SPEED), 0, 1);
     // 居合の構えの間はズームする（スロー中でも実時間の速さで寄せる）
-    const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + fovKick - focusZoom * FOCUS_ZOOM - swordChargeBlend * CHARGE_ZOOM;
+    const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + fovKick - focusZoom * FOCUS_ZOOM - swordChargeBlend * CHARGE_ZOOM
+        - deadEyeBlend * DEADEYE_ZOOM;
     camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, realDt) * 8);
     camera.updateProjectionMatrix();
     // 着地の沈み込み（ばねで戻す）
@@ -2627,6 +3079,7 @@ const HAND_PROBE_KUNAI = new THREE.Vector3(0, 0.1, 0); // 握りから切っ先�
 const HAND_PROBE_SWORD = new THREE.Vector3(0, 0.35, 0);
 const HAND_PROBE_GUN = new THREE.Vector3(0, 0, -0.1);
 const HAND_PROBE_SICKLE = new THREE.Vector3(0, 0.1, 0);
+const HAND_PROBE_AXE = new THREE.Vector3(0, 0.6, 0);
 // frame 座標の点 local を、root の手前まで親をたどって root の座標へ移す（root 自身の揺れは入れない）
 function probeToRoot(frame, root, local, out) {
     out.copy(local);
@@ -2650,6 +3103,8 @@ function measureHand(out) {
             probeToRoot(hooks[0].rest, sickleViewModel, HAND_PROBE_SICKLE, out);
             out.add(probeToRoot(hooks[1].rest, sickleViewModel, HAND_PROBE_SICKLE, handCamTmp)).multiplyScalar(0.5);
             return out.add(SICKLE_VIEW_MODEL_POS).add(sickleBodyPos);
+        case 'axe':
+            return probeToRoot(axeRest, axeViewModel, HAND_PROBE_AXE, out).add(AXE_VIEW_MODEL_POS);
     }
 }
 function updateHandCam(dt) {
@@ -2771,8 +3226,8 @@ function updateWeaponSwitch(dt) {
     // 振りや溜め、投げの途中では持ち替えず、終わるのを待つ
     const kunaiBusy = attack !== null || charging || pendingThrows.length > 0;
     const swordBusy = swordAttack !== null || rushTime >= 0 || swordHold >= 0 || chargeDashTime > 0;
-    const busy = (shownWeapon === 'kunai' && kunaiBusy) || (shownWeapon === 'sword' && swordBusy) || grapple !== null || grappleAim
-        || sickleMelee !== null;
+    const busy = (shownWeapon === 'kunai' && kunaiBusy) || (shownWeapon === 'sword' && swordBusy) || grapple !== null
+        || sickleMelee !== null || (shownWeapon === 'axe' && axeAttack !== null);
     if (wantWeapon !== shownWeapon && !busy) {
         holster = Math.min(1, holster + dt / HOLSTER_TIME);
         if (holster === 1) {
@@ -2789,6 +3244,7 @@ function updateWeaponSwitch(dt) {
     gunViewModel.visible = shownWeapon === 'handgun';
     swordViewModel.visible = shownWeapon === 'sword';
     sickleViewModel.visible = shownWeapon === 'sickle';
+    axeViewModel.visible = shownWeapon === 'axe';
 }
 const handJoltPos = new THREE.Vector3();
 function updateViewModel(dt) {
@@ -2857,6 +3313,20 @@ function updateViewModel(dt) {
         + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12 + sickleBodyPos.y, SICKLE_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
     sickleViewModel.position.x += sickleBodyPos.x;
     sickleViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + sickleBodyRot.x, -lookSwayX * 2 + sickleBodyRot.y, slidePose * 0.35 + roll + sickleBodyRot.z);
+    // バトルアックスもハンドガンと同じ揺れ方をさせる。重いので揺れは少し大きめ。振っている間は揺れを弱めて振りの形を崩さない。
+    // 視点を回したときの揺れは、重さで遅れて付いてきて少し行き過ぎる（ばねで追わせる）
+    axeSwayVelX += ((lookSwayX * AXE_SWAY_GAIN - axeSwayX) * AXE_SWAY_STIFF - axeSwayVelX * AXE_SWAY_DAMP) * dt;
+    axeSwayVelY += ((lookSwayY * AXE_SWAY_GAIN - axeSwayY) * AXE_SWAY_STIFF - axeSwayVelY * AXE_SWAY_DAMP) * dt;
+    axeSwayX += axeSwayVelX * dt;
+    axeSwayY += axeSwayVelY * dt;
+    axeAttackWeight += ((axeAttack ? 1 : 0) - axeAttackWeight) * Math.min(1, dt * (axeAttack ? 20 : 6));
+    const axeCalm = 1 - axeAttackWeight * 0.8;
+    const aBob = bobAmount * axeCalm;
+    const aPull = dashPull * axeCalm;
+    const aSlide = slidePose * axeCalm;
+    axeViewModel.position.set(AXE_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.016 * aBob - axeSwayX * 0.5 + aSlide * 0.03, AXE_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.016 * aBob - Math.min(velocity.y, 0) * 0.002
+        + axeSwayY * 0.5 + landDip * 0.35 - aPull * 0.04 - aSlide * 0.03 - mantlePose * 0.12, AXE_VIEW_MODEL_POS.z + aPull * 0.1 + speedBack);
+    axeViewModel.rotation.set(-aPull * 0.35 + axeSwayY * 2 - mantlePose * 0.5, -axeSwayX * 2, aSlide * 0.35 + roll);
     // 高いところからの着地で、手元も画面と一緒に強く揺らす
     const ls = landShakeAmount();
     if (ls > 0) {
@@ -2864,7 +3334,7 @@ function updateViewModel(dt) {
         handJoltPos.set(ls * 0.025 * Math.sin(t * 83.9 + 1.7), -ls * 0.05 * Math.abs(Math.sin(t * 95.3 + 0.9)), ls * 0.02 * Math.sin(t * 77.1 + 4.4));
         const rx = -ls * 0.25 * Math.abs(Math.sin(t * 88.7 + 2.6));
         const rz = ls * 0.18 * Math.sin(t * 101.3 + 0.2);
-        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel]) {
+        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
             vm.position.add(handJoltPos);
             vm.rotation.x += rx;
             vm.rotation.z += rz;
@@ -2880,7 +3350,7 @@ function updateViewModel(dt) {
     gunViewModel.rotation.z += reloadRotOff.z * DEG;
     // 持ち替え中は手元を画面の下へ下げる
     const h = holster * holster * (3 - 2 * holster);
-    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel]) {
+    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
         vm.position.y -= h * 0.25;
         vm.rotation.x -= h * 0.9;
     }
@@ -2964,7 +3434,7 @@ const FINISHER = makeAttack({
         { t: 0.55, pos: [-0.1, 0.05, -0.26], tip: [-0.05, 0.08, -1], spin: -360, ease: easeOutBack }, // 突き切った形で止める
         { t: 0.85, spin: -360 }, // 構えへ引き戻し、握り直す
     ],
-    trails: [[0.1, 0.3, true], [0.36, 0.46]],
+    trails: [[0.1, 0.3, true]], // 突きは刃の向きへ進むので帯が潰れる。回すところだけ残す
     impact: 0.39,
     kick: [-0.5, 0, 0],
     lunge: 7,
@@ -3171,6 +3641,8 @@ function updateAttack(dt) {
                 swordPressed = true;
             else if (shownWeapon === 'sickle')
                 sicklePressed = true;
+            else if (shownWeapon === 'axe')
+                axePressed = true;
         }
         else if (!attack)
             startAttack(chooseAttack());
@@ -3240,7 +3712,8 @@ function updateAttack(dt) {
     applyPose(curPose);
     sampleKunaiSlideTrail(dt);
     updateTrailMesh();
-    updateEnemies(dt);
+    worldSlow = worldSlowFactor(dt);
+    updateEnemies(dt * worldSlow);
 }
 // ---- 被弾の演出 ----
 const HIT_REACH = 2.2; // 敵の中心までこの距離なら当たる
@@ -3252,7 +3725,7 @@ const FLASH_HOLD = 0.05; // 真っ白のまま保つ時間
 const FLASH_FADE = 0.12; // そこから元の色へ戻る時間
 // 体力: 0 になると体ごと砕け散り、しばらくするとその場で生えるように起き上がる
 const DUMMY_MAX_HP = 100;
-const HIT_DAMAGE = { kunai: 14, sword: 18, throw: 15, bullet: 30 }; // fx = 1 のときの量
+const HIT_DAMAGE = { kunai: 14, sword: 18, throw: 15, bullet: 30, axe: 24 }; // fx = 1 のときの量
 const KILL_HIT_STOP = 0.16; // とどめの一撃は長く止める
 const KILL_SLOW_SCALE = 0.25; // 砕けた直後は時間をゆっくりにして、飛び散る破片を見せる
 const KILL_SLOW_HOLD = 0.55; // スローを保つ実時間
@@ -3320,7 +3793,12 @@ function inReachOf(reach, angle) {
 const hitPoint = new THREE.Vector3();
 // swing は刃が動いていた向き（ワールド座標）。渡すと、光の線や飛び散るものを斬り抜けた向きへ流す
 const hitDamage = (def, kind) => HIT_DAMAGE[kind] * (def.fx ?? 1);
-function applyDummyHit(def, at, kind, swing) {
+// 投げ物と弾が頭（首から上）に当たったら、ダメージを大きくする
+const HEADSHOT_HEIGHT = 1.55; // 敵の足元からの高さ
+const HEADSHOT_MULT = 2.5;
+// scar = false なら切り跡を残さない（刃の当たらない衝撃波など）
+function applyDummyHit(def, at, kind, swing, scar = true) {
+    const headshot = (kind === 'throw' || kind === 'bullet') && at.y - en.root.position.y >= HEADSHOT_HEIGHT;
     staggerDummy(def.knock ?? DEFAULT_KNOCK, at, swing);
     en.flashT = 0;
     hitStop = Math.max(hitStop, def.hitStop ?? DEFAULT_HIT_STOP);
@@ -3335,21 +3813,26 @@ function applyDummyHit(def, at, kind, swing) {
     kickVel.z += def.kick[2] * DEG * 12 * fx;
     playHit(fx, kind);
     spawnHitFx(at, hitDir, def, swing);
-    if (kind === 'kunai' || kind === 'sword')
+    if (scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe'))
         addSlashScar(at, def, kind, swing);
-    en.hp -= hitDamage(def, kind);
+    const damage = hitDamage(def, kind) * (headshot ? HEADSHOT_MULT : 1);
+    en.hp -= damage;
+    if (def !== SWORD_ISSEN && def !== DEADEYE_HIT)
+        chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
     countHit(en.hp <= 0);
+    trackHitProcess(def, kind);
     if (en.hp <= 0) {
         countChain();
-        showKillScore(killBonuses(def)); // 倒した瞬間の体勢で数えるので、killDummy で状態が変わる前に
-        killDummy();
+        countMulti(def);
+        showKillScore(killBonuses(def, headshot)); // 倒した瞬間の体勢で数えるので、killDummy で状態が変わる前に
+        killDummy(kind, swing);
         showHitMarker(true);
     }
     else {
-        showHitMarker(fx >= HEAVY_FX);
+        showHitMarker(fx >= HEAVY_FX || headshot);
     }
 }
-function killDummy() {
+function killDummy(kind, swing) {
     en.alive = false;
     en.deadTime = 0;
     sinceKill = 0;
@@ -3363,7 +3846,7 @@ function killDummy() {
     for (const t of thrown)
         if (t.phase === 'stuck' && isOnDummy(t.mesh))
             startReturn(t);
-    breakDummy(hitDir);
+    breakDummy(hitDir, kind === 'axe', swing);
     en.root.visible = false;
     spawnKillFx(hitDir);
     if (finale) {
@@ -3377,6 +3860,33 @@ function killDummy() {
     }
     rewardKill();
     countStageKill();
+    startleAllies();
+}
+// 仲間が倒されたら、近くの敵はびくっと身をすくめ、首をそちらへ振り、構えを解いて立ち位置を変え始める
+const STARTLE_RANGE = 16;
+const STARTLE_DUCK = 0.7; // 腰を沈める勢い (m/s)
+const STARTLE_LOOK = 4; // 首を振る勢い (rad/s)
+function startleAllies() {
+    const dead = en;
+    const at = dead.root.position;
+    for (const e of enemies) {
+        if (e === dead || !e.alive || e.riseTime < RESPAWN_RISE_TIME)
+            continue;
+        const dx = at.x - e.root.position.x;
+        const dz = at.z - e.root.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > STARTLE_RANGE)
+            continue;
+        const k = 1 - (d / STARTLE_RANGE) * 0.6; // 近いほど大きく驚く
+        const rel = wrapAngle(Math.atan2(dx, dz) - e.yaw);
+        e.pelvisSpring.v.y -= STARTLE_DUCK * k;
+        e.headSpring.v.y += Math.sign(rel) * Math.min(Math.abs(rel), 1) * STARTLE_LOOK * k;
+        e.gunSpring.v.x -= 1.2 * k;
+        e.cooldown = Math.max(e.cooldown, rand(0.35, 0.6));
+        if (!e.moving && e.dodgeT <= 0)
+            e.waitT = Math.min(e.waitT, rand(0.15, 0.4));
+    }
+    en = dead;
 }
 // 倒したご褒美: ダッシュを満タンにし、少し回復し、今の進む向きへ勢いを足す（止まらずに次へ向かえるように）
 const KILL_HEAL = 15;
@@ -3413,24 +3923,76 @@ let killChain = 1; // 今の連続の数（1 = 連続していない）
 function countChain() {
     killChain = en.riseTime <= CHAIN_WINDOW || sinceKill <= CHAIN_WINDOW ? killChain + 1 : 1;
 }
+// 倒すまでの過程を en に記録する。当たりを処理するたびに呼ぶ
+const SPIN_WINDOW = 0.7; // 前の当たりからこの時間内に 1 回転して当てると SPIN
+let viewSpin = 0; // 前の当たりから視点を左右へ回した量（向きを含む, rad）
+let lastAnyHitAt = -Infinity; // どの敵かを問わず、最後に当てた時刻（実時間）
+function trackHitProcess(def, kind) {
+    const now = performance.now() / 1000;
+    // 投げたクナイや撃った弾は、着く前に持ち替えていても、放った武器で数える
+    en.weapons.add(kind === 'throw' ? 'kunai' : def === BULLET_HIT || def === DEADEYE_HIT ? 'handgun' : shownWeapon);
+    if (en.hits > 0 && now - en.lastHitAt > HIT_COUNT_WINDOW)
+        en.comboKept = false;
+    if (now - lastAnyHitAt <= SPIN_WINDOW && Math.abs(viewSpin) >= Math.PI * 2)
+        en.spun = true;
+    if (def === PARRY_RETURN_HIT)
+        en.parried = true;
+    en.hits++;
+    en.lastHitAt = lastAnyHitAt = now;
+    viewSpin = 0;
+}
+// 同時撃破: 前の敵を倒してから MULTI_WINDOW 秒以内（ゲーム内の時間）に同じ技で倒すと、同時に倒した数を増やす
+const MULTI_WINDOW = 0.15;
+const MULTI_STEP = 1; // 1 体増えるごとに倍率へ足す量
+const MULTI_MAX = 2;
+let multiKill = 1; // 今の同時撃破の数（1 = 単独）
+let lastKillDef = null;
+function countMulti(def) {
+    multiKill = def === lastKillDef && sinceKill <= MULTI_WINDOW ? multiKill + 1 : 1;
+    lastKillDef = def;
+}
 // とどめの倒し方ごとに、スコアの倍率へ足す量
 const LONG_SHOT_DIST = 12; // これより遠くから倒すと遠距離の加点。さらに 6 m 離れるごとに 0.5 ずつ増やす
 const LONG_SHOT_MAX = 2;
 const SPEED_KILL_MIN = 20; // 倒した瞬間の水平の速さがこれ以上なら速さの加点
 const SPEED_KILL_HIGH = 30; // これ以上なら加点を倍にする
 const killAt = new THREE.Vector3();
-function killBonuses(def) {
+function killBonuses(def, headshot) {
     const out = [];
+    if (headshot)
+        out.push({ label: 'HEADSHOT', add: 1 });
+    if (multiKill > 1)
+        out.push({ label: 'MULTI KILL', detail: `×${multiKill}`, add: Math.min(MULTI_MAX, (multiKill - 1) * MULTI_STEP) });
+    if (en.weapons.size >= 2)
+        out.push({ label: 'SWITCH', detail: `${en.weapons.size} WEAPONS`, add: 1 });
     if (def === PARRY_RETURN_HIT)
         out.push({ label: 'PARRY KILL', add: 2 });
+    else if (en.parried)
+        out.push({ label: 'PARRY', add: 1 }); // とどめ以外でパリィを当てていた（PARRY KILL とは重ねない）
+    if (en.hits >= 2 && en.comboKept)
+        out.push({ label: 'COMBO', detail: `${en.hits} HITS`, add: 1 });
+    if (en.spun)
+        out.push({ label: '360', add: 1 });
+    if (!en.hitPlayer)
+        out.push({ label: 'NO DAMAGE', add: 0.5 });
     if (sliding || def === SLIDE_UP || def === SWORD_SWEEP)
         out.push({ label: 'SLIDE KILL', add: 1 });
     if (def === SWORD_ISSEN)
         out.push({ label: 'IAI', add: 1 });
-    if (def === DASH_SLASH || def === SWORD_THRUST || def === SICKLE_DASH_HIT || def === SICKLE_DASH_LAST)
+    if (def === DEADEYE_HIT)
+        out.push({ label: 'DEAD EYE', add: 1 });
+    if (def === DASH_SLASH || def === AXE_DRIVE || def === SWORD_THRUST || def === SICKLE_DASH_HIT || def === SICKLE_DASH_LAST)
         out.push({ label: 'DASH KILL', add: 0.5 });
     if (def === SWORD_CHARGE_SLASH)
         out.push({ label: 'CHARGED', add: 0.5 });
+    if (def === AXE_SHOCK_HIT)
+        out.push({ label: 'SHOCKWAVE', add: 0.5 });
+    if (def === WALL_SLAM_HIT)
+        out.push({ label: 'WALL SLAM', add: 1 });
+    if (def === FLOOR_SLAM_HIT)
+        out.push({ label: 'GROUND SLAM', add: 1 });
+    if (en.airY > 0.5)
+        out.push({ label: 'JUGGLE', add: 1 });
     if (def === SICKLE_PULL_HIT || def === SICKLE_PULL_LAST || def === GRAPPLE_STICK_HIT)
         out.push({ label: 'HOOK KILL', add: 1 });
     if (wallRunning)
@@ -3456,6 +4018,13 @@ function respawnDummy() {
         placeDummy(pickSpawn());
     en.alive = true;
     en.hp = DUMMY_MAX_HP;
+    en.airY = 0;
+    en.airVel = 0;
+    en.airTilt.set(0, 0, 0);
+    en.airTiltVel.set(0, 0, 0);
+    en.airPose = 0;
+    en.spiked = false;
+    en.root.position.y = en.baseY;
     resetDummyStagger();
     clearDebris();
     clearScars();
@@ -3463,6 +4032,13 @@ function respawnDummy() {
     en.riseTime = 0;
     en.flashT = 0;
     en.cooldown = ENEMY_FIRST_SHOT;
+    en.speedMul = rand(0.85, 1.2);
+    en.dodgeCool = rand(1, 3);
+    en.hits = 0;
+    en.lastHitAt = -Infinity;
+    en.comboKept = true;
+    en.parried = en.spun = en.hitPlayer = false;
+    en.weapons.clear();
     // 足元から小さく光を散らして、現れたことを知らせる
     spawnSparks(respawnAt.set(en.root.position.x, en.root.position.y + 0.05, en.root.position.z), UP, 14, 1.2, 0.8);
 }
@@ -3485,6 +4061,7 @@ const STAGE_KILL_QUOTA = { easy: 10, normal: 15, hard: 20 };
 const RESULT_DELAY = 3.2; // 倒しきってから結果を出すまで（実時間）。最後の 1 体の長いスローを見せきってから
 const finaleHud = document.getElementById('finale');
 document.fonts.load('800 100px "Barlow Condensed"', 'FINISH'); // 出す瞬間に別の字形で一瞬出ないよう、太字を先に読み込んでおく
+document.fonts.load('600 100px "Oswald"', 'FASTFINISH'); // ステージの始まりのタイトルの字も先に読み込んでおく
 let stageRun = null; // 訓練場では null
 const runHud = document.querySelector('#total .run');
 const runTime = runHud.querySelector('.time');
@@ -3536,12 +4113,11 @@ function showStageResult(run) {
     const button = stageButtons[stageIndex];
     const stage = button.dataset.stage;
     const difficulty = DIFFICULTIES[difficultyIndex];
-    const score = Math.round(totalScore());
+    const score = finalScore(totalScore(), run.time, run.kills);
     const best = loadBest(stage, difficulty);
     const newTime = !best || run.time < best.time;
     const newScore = !best || score > best.score;
     saveBest(stage, difficulty, { time: newTime ? run.time : best.time, score: newScore ? score : best.score });
-    overlay.classList.remove('show-controls');
     overlay.classList.add('result');
     overlayStatus.textContent = '';
     overlayPrompt.textContent = 'ENTER — SKIP';
@@ -3590,6 +4166,8 @@ function placeDummy(i) {
     en.moving = false;
     en.waitT = rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX);
     en.vel.set(0, 0, 0);
+    en.knockVel.set(0, 0, 0);
+    en.flung = false;
     en.walk = 0;
 }
 // とどめの印: 今持っている武器の基本の一撃で倒せるまで削れたら、敵の体を画面上で囲む
@@ -3599,6 +4177,7 @@ function finishMarkHp() {
         case 'handgun': return hitDamage(BULLET_HIT, 'bullet');
         case 'sword': return hitDamage(SWORD_KESA, 'sword');
         case 'sickle': return hitDamage(SICKLE_KESA_HIT, 'sword');
+        case 'axe': return hitDamage(AXE_KESA, 'axe');
     }
 }
 const FINISH_MARK_PAD = 6; // 体のまわりに空ける余白 (px)
@@ -3710,7 +4289,7 @@ let shakeSide = 1;
 let shakeEnemy = null; // 震わせる敵（最後に当てた敵）
 function updateDummyShake() {
     for (const e of enemies)
-        e.shake.position.set(0, 0, 0);
+        poseEnemyTumble(e);
     if (hitStop <= 0 || !hitStopShakesDummy || !shakeEnemy)
         return;
     en = shakeEnemy;
@@ -3719,10 +4298,11 @@ function updateDummyShake() {
     shakeSide = -shakeSide;
     const side = shakeSide * k * (0.6 + Math.random() * 0.4);
     // dummy は傾いているので、ローカルの横向きで揺らす
-    en.shake.position.set(-hitDir.z * side, (Math.random() - 0.5) * k * 0.4, hitDir.x * side);
-    en.shake.position.applyQuaternion(dummyShakeInv.copy(en.root.quaternion).invert());
+    dummyShakeOff.set(-hitDir.z * side, (Math.random() - 0.5) * k * 0.4, hitDir.x * side);
+    en.shake.position.add(dummyShakeOff.applyQuaternion(dummyShakeInv.copy(en.root.quaternion).invert()));
 }
 const dummyShakeInv = new THREE.Quaternion();
+const dummyShakeOff = new THREE.Vector3();
 // 照準のヒットマーカー: 照準の周りに斜めの 4 本線を一瞬出す（締めの技は大きく）
 const hitMarker = document.getElementById('hitmarker');
 function showHitMarker(heavy) {
@@ -3860,8 +4440,8 @@ function addSlashScar(at, def, kind, swing) {
     scarAlong.crossVectors(scarUp, scarView);
     scarEuler.setFromRotationMatrix(scarBasis.makeBasis(scarAlong, scarUp, scarView));
     const fx = Math.sqrt(def.fx ?? 1);
-    const len = slashing ? (kind === 'sword' ? 0.6 : 0.36) * fx * rand(0.85, 1.15) : 0.14;
-    scarSize.set(len, (kind === 'sword' ? 0.07 : 0.05) * fx, SCAR_DEPTH);
+    const len = slashing ? (kind === 'sword' ? 0.6 : kind === 'axe' ? 0.5 : 0.36) * fx * rand(0.85, 1.15) : 0.14;
+    scarSize.set(len, (kind === 'sword' ? 0.07 : kind === 'axe' ? 0.11 : 0.05) * fx, SCAR_DEPTH); // 斧は厚い刃で太く割る
     const mat = new THREE.MeshBasicMaterial({
         map: scarTexture, transparent: true, depthWrite: false,
         polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
@@ -4068,11 +4648,12 @@ const legDir = new THREE.Vector3();
 const legThighQ = new THREE.Quaternion();
 const legShinQ = new THREE.Quaternion();
 const pelvisInv = new THREE.Matrix4();
+const legFoot = [new THREE.Vector3(), new THREE.Vector3()];
 function solveDummyLegs() {
     en.pelvis.updateMatrix();
     let drop = 0;
     for (let i = 0; i < 2; i++) {
-        const f = en.footState[i].pos;
+        const f = legFoot[i].copy(en.footState[i].pos).addScaledVector(AIR_TUCK[i], en.airPose);
         legHip.copy(en.thighs[i].position).applyMatrix4(en.pelvis.matrix);
         const h = Math.hypot(legHip.x - f.x, legHip.z - f.z);
         drop = Math.max(drop, legHip.y - f.y - Math.sqrt(Math.max(0, LEG_REACH ** 2 - h * h)));
@@ -4085,7 +4666,7 @@ function solveDummyLegs() {
     pelvisInv.copy(en.pelvis.matrix).invert();
     for (let i = 0; i < 2; i++) {
         const hip = en.thighs[i].position;
-        legAnkle.copy(en.footState[i].pos).applyMatrix4(pelvisInv);
+        legAnkle.copy(legFoot[i]).applyMatrix4(pelvisInv);
         legTo.subVectors(legAnkle, hip);
         const d = Math.min(legTo.length(), DUMMY_THIGH + DUMMY_SHIN - 1e-4);
         legTo.normalize();
@@ -4130,16 +4711,51 @@ function setFromRotVec(q, v, scale) {
     const a = v.length() * scale;
     return a < 1e-6 ? q.identity() : q.setFromAxisAngle(staggerTmp.copy(v).normalize(), a);
 }
+// ---- 体の表情 ----
+// よろめきのばねに、次の姿勢を上乗せする。上乗せした傾きとひねりは銃の向きで打ち消し、狙いは保つ。
+// - 立っている間: ゆっくり息をして、重心を左右へ移す（構えている間は止める）
+// - 歩いている間: 腰を左右へ揺らし、肩を足と逆へひねる。速さの変わり目では進む向きへ上体を傾ける
+// - 撃つ前: 腰を落とし、上体を前へ寄せ、頬を銃に付けるように首を下げる（撃つ合図になる）
+const IDLE_SWAY = 0.014; // 重心を左右へ移す幅 (m)
+const IDLE_SWAY_RATE = 1.9; // rad/s
+const IDLE_BREATH = 0.018; // 息で上体が前後する角度 (rad)
+const IDLE_BREATH_RATE = 2.3;
+const WALK_HIP_SWAY = 0.022; // 歩くときに腰が左右へ振れる幅 (m)
+const WALK_SHOULDER_TWIST = 0.09; // 歩くときに肩をひねる角度 (rad)
+const BRACE_DROP = 0.045; // 構えで腰を落とす量 (m)
+const BRACE_LEAN = 0.09; // 構えで上体を前へ寄せる角度 (rad)
+const BRACE_NECK = 0.1;
+const STUMBLE_DROP = 0.12; // 吹き飛ばされて踏ん張るときに腰を落とす量 (m)
+const STUMBLE_ARM_UP = 0.7; // 踏ん張っている間に腕が跳ね上がる角度 (rad)
+const STUMBLE_ARM_SWAY = 0.35; // 腕が左右へ振れる角度 (rad)
+const poseLeanTmp = new THREE.Vector3();
+const poseNeckTmp = new THREE.Vector3();
 function applyDummyPose() {
+    const still = (1 - en.walk) * (1 - en.brace * 0.8);
+    const sway = Math.sin(en.idleT * IDLE_SWAY_RATE);
+    const stride = Math.sin(en.walkPhase) * en.walk;
     en.pelvis.position.copy(en.pelvis.userData.origin).add(en.pelvisSpring.x);
-    en.pelvis.position.y -= Math.abs(Math.sin(en.walkPhase)) * ENEMY_WALK_BOB * en.walk;
-    setFromRotVec(en.pelvis.quaternion, en.leanSpring.x, PELVIS_LEAN);
+    en.pelvis.position.y -= Math.abs(Math.sin(en.walkPhase)) * ENEMY_WALK_BOB * en.walk + BRACE_DROP * en.brace + STUMBLE_DROP * en.stumble;
+    en.pelvis.position.x += sway * IDLE_SWAY * still + en.walkDir.z * stride * WALK_HIP_SWAY;
+    en.pelvis.position.z -= en.walkDir.x * stride * WALK_HIP_SWAY;
+    // 上乗せする傾き（重心を移した側と逆へ上体をわずかに戻す）
+    poseLeanTmp.copy(en.poseLean);
+    poseLeanTmp.x += Math.sin(en.idleT * IDLE_BREATH_RATE) * IDLE_BREATH * still + BRACE_LEAN * en.brace;
+    poseLeanTmp.z += sway * IDLE_SWAY * 1.5 * still;
+    const twist = -stride * WALK_SHOULDER_TWIST;
+    setFromRotVec(en.pelvis.quaternion, staggerTmp.copy(en.leanSpring.x).add(poseLeanTmp), PELVIS_LEAN);
     en.pelvis.quaternion.multiply(staggerQ.setFromAxisAngle(UP, en.twistSpring.x.y * PELVIS_TWIST));
-    setFromRotVec(en.spine.quaternion, en.leanSpring.x, 1 - PELVIS_LEAN);
-    en.spine.quaternion.multiply(staggerQ.setFromAxisAngle(UP, en.twistSpring.x.y * (1 - PELVIS_TWIST)));
-    setFromRotVec(en.neck.quaternion, en.headSpring.x, 1);
-    // 体の向きで追いきれない分は、銃と両腕を肩ごと振って狙う（負の x で銃口が上がる）
-    en.gunRig.rotation.set(en.gunSpring.x.x - en.aimPitch, en.aimYaw, 0, 'YXZ');
+    setFromRotVec(en.spine.quaternion, staggerTmp.copy(en.leanSpring.x).add(poseLeanTmp), 1 - PELVIS_LEAN);
+    en.spine.quaternion.multiply(staggerQ.setFromAxisAngle(UP, en.twistSpring.x.y * (1 - PELVIS_TWIST) + twist));
+    poseNeckTmp.copy(en.headSpring.x);
+    poseNeckTmp.x += BRACE_NECK * en.brace - poseLeanTmp.x * 0.5; // 頭は上体ほどは傾けない
+    poseNeckTmp.y -= twist;
+    setFromRotVec(en.neck.quaternion, poseNeckTmp, 1);
+    // 体の向きで追いきれない分は、銃と両腕を肩ごと振って狙う（負の x で銃口が上がる）。上乗せした傾きとひねりはここで打ち消す。
+    // 踏ん張っている間は狙いを保てず、腕が跳ね上がって振れる
+    const keep = 1 - en.stumble;
+    const flail = Math.sin(en.walkPhase * 0.5 + 1) * STUMBLE_ARM_SWAY * en.stumble;
+    en.gunRig.rotation.set(en.gunSpring.x.x - en.aimPitch * keep - poseLeanTmp.x * keep - STUMBLE_ARM_UP * en.stumble, en.aimYaw * keep - twist + flail, -poseLeanTmp.z * keep + flail * 0.5, 'YXZ');
     solveDummyLegs();
 }
 function resetDummyStagger() {
@@ -4149,6 +4765,13 @@ function resetDummyStagger() {
     }
     en.prevLeanVel.set(0, 0, 0);
     en.prevTwistVel = 0;
+    en.poseLean.set(0, 0, 0);
+    en.prevVel.set(0, 0, 0);
+    en.brace = 0;
+    en.dodgeT = 0;
+    en.aimedAt = 0;
+    en.stumble = 0;
+    en.stumbling = false;
     for (const f of en.footState) {
         f.pos.copy(f.rest);
         f.t = 1;
@@ -4230,9 +4853,37 @@ function createEnemy(mobile) {
         moveTo: new THREE.Vector3(),
         waitT: 0,
         vel: new THREE.Vector3(),
+        knockVel: new THREE.Vector3(),
+        flung: false,
         walk: 0,
         walkPhase: 0,
         walkDir: new THREE.Vector3(0, 0, 1),
+        airY: 0,
+        airVel: 0,
+        airTilt: new THREE.Vector3(),
+        airTiltVel: new THREE.Vector3(),
+        airRoll: 0,
+        airPose: 0,
+        spiked: false,
+        poseLean: new THREE.Vector3(),
+        prevVel: new THREE.Vector3(),
+        brace: 0,
+        idleT: Math.random() * 10,
+        speedMul: 1,
+        aimedAt: 0,
+        dodgeT: 0,
+        dodgeCool: rand(1, 3),
+        dodgeVel: new THREE.Vector3(),
+        stumble: 0,
+        stumbling: false,
+        skidT: 0,
+        hits: 0,
+        lastHitAt: -Infinity,
+        comboKept: true,
+        parried: false,
+        spun: false,
+        hitPlayer: false,
+        weapons: new Set(),
     };
     scene.add(e.root);
     enemies.push(e);
@@ -4254,14 +4905,21 @@ function removeEnemy(e) {
 let sinceKill = Infinity; // 最後に倒してからの時間
 function updateEnemies(dt) {
     sinceKill += dt;
+    camera.getWorldPosition(playerEye);
+    camera.getWorldDirection(playerLook);
     for (const e of enemies) {
         en = e;
         updateDummy(dt);
     }
     updateEnemyBullets(dt);
 }
-function breakDummy(dir) {
+// heavy = true（斧）なら、散らばりを抑えて攻撃の向き（と刃の振り抜けた向き）へまとめて吹き飛ばす
+const debrisPush = new THREE.Vector3();
+function breakDummy(dir, heavy = false, swing) {
     clearDebris();
+    debrisPush.copy(dir);
+    if (heavy && swing && swing.lengthSq() > 1e-6)
+        debrisPush.addScaledVector(swing.clone().normalize(), 0.7).normalize();
     en.root.updateMatrixWorld(true);
     // 部品を、いちばん近い塊の根元ごとに分ける
     const groups = new Map();
@@ -4299,8 +4957,14 @@ function breakDummy(dir) {
         const vel = new THREE.Vector3(obj.position.x - en.root.position.x, 0, obj.position.z - en.root.position.z);
         if (vel.lengthSq() < 1e-6)
             vel.set(Math.random() - 0.5, 0, Math.random() - 0.5);
-        vel.normalize().multiplyScalar(rand(1.5, 3.5)).addScaledVector(dir, rand(2.5, 5.5));
-        vel.y = rand(2, 5.5) + obj.position.y * 1.2; // 上の部品ほど高く飛ぶ
+        if (heavy) {
+            vel.normalize().multiplyScalar(rand(0.4, 1.2)).addScaledVector(debrisPush, rand(6, 10));
+            vel.y = Math.max(vel.y, 0) + rand(1.5, 3.5) + (obj.position.y - en.root.position.y) * 0.6;
+        }
+        else {
+            vel.normalize().multiplyScalar(rand(1.5, 3.5)).addScaledVector(dir, rand(2.5, 5.5));
+            vel.y = rand(2, 5.5) + obj.position.y * 1.2; // 上の部品ほど高く飛ぶ
+        }
         en.debris.push({
             obj,
             vel,
@@ -4339,7 +5003,13 @@ function updateDebris(dt) {
 }
 function updateDummy(dt) {
     if (en.alive) {
+        en.idleT += dt;
+        if (en.airY > 0 || en.airVel > 0)
+            updateEnemyAir(dt);
+        updateEnemyTumble(dt);
+        updateEnemyKnock(dt);
         updateEnemyMove(dt);
+        updateEnemyGait(dt);
         updateDummyAim(dt);
         updateDummyStagger(dt);
     }
@@ -4361,6 +5031,130 @@ function updateDummy(dt) {
     for (const m of en.mats)
         m.emissiveIntensity = (1 - fade) * (1 - fade);
     updateEnemyFire(dt);
+}
+// ---- 打ち上げられた敵 ----
+// 斧の打ち上げで真上へ飛び、プレイヤーと同じ重力で落ちる。浮いている間は歩かず撃たない。
+// 叩きつけられて速く落ちてきたら、地面で重く鳴って小さく跳ねる
+const ENEMY_SLAM_LAND = 15; // これより速く着地したら、叩きつけられた着地にする
+const ENEMY_SLAM_BOUNCE = 2.5;
+const enemyLandAt = new THREE.Vector3();
+function updateEnemyAir(dt) {
+    en.airVel -= GRAVITY * dt;
+    en.airY += en.airVel * dt;
+    if (en.airY <= 0) {
+        const impact = -en.airVel;
+        en.airY = 0;
+        en.airVel = 0;
+        if (en.spiked) {
+            en.spiked = false;
+            if (impact > ENEMY_SLAM_LAND)
+                slamEnemyIntoFloor();
+        }
+        else if (impact > ENEMY_SLAM_LAND) {
+            en.airVel = ENEMY_SLAM_BOUNCE;
+            en.airY = 1e-3;
+            sfx.playAxeGround(0.7);
+            addTrauma(0.2);
+            enemyLandAt.set(en.root.position.x, en.baseY + 0.05, en.root.position.z);
+            spawnSparks(enemyLandAt, UP, 10, 0.8, 0.8);
+            en.pelvisSpring.v.y -= 2; // 膝が沈む
+        }
+    }
+    en.root.position.y = en.baseY + en.airY;
+}
+// ---- 床への叩きつけ ----
+// 打ち上げて浮いている敵に斧の振り下ろしが当たると、真下へ一気に叩き落とす。
+// 床に着いた瞬間に重い一撃になり、床がひび割れて、体は反り返ったまま潰れるように跳ねてから起き上がる
+const ENEMY_SPIKE_SPEED = 38; // 叩き落とす速さ (m/s)。自分の急降下より速く、先に床へ着く
+const ENEMY_SPIKE_BOUNCE = 4.5; // 床で跳ね返る速さ (m/s)
+const FLOOR_SLAM_HIT = { kick: [-2, 0, 0], slash: 0, knock: 420, hitStop: 0.14, fx: 1.4 };
+const floorSlamAt = new THREE.Vector3();
+function spikeEnemy() {
+    if (enemyHeld())
+        return;
+    en.spiked = true;
+    en.airVel = -ENEMY_SPIKE_SPEED;
+    en.knockVel.set(0, 0, 0); // 横へは流さず、真下へ落とす
+    en.flung = false;
+    en.airTiltVel.x -= AIR_TILT_KICK * 1.5; // 打たれた勢いで、さらに大きく反り返る
+    en.gunSpring.v.x -= 4;
+    addImpulse(en.headSpring, LEG_FWD_X, 4);
+}
+function slamEnemyIntoFloor() {
+    floorSlamAt.set(en.root.position.x, en.baseY, en.root.position.z);
+    sfx.playAxeGround(1.4);
+    addTrauma(0.35);
+    spawnAxeShock(floorSlamAt, 2.2, 0.4);
+    spawnSparks(floorSlamAt, UP, 16, 1, 1.1);
+    en.airVel = ENEMY_SPIKE_BOUNCE;
+    en.airY = 1e-3;
+    en.pelvisSpring.v.y -= 6; // 体ごと床へ潰れる
+    en.airTiltVel.x -= AIR_TILT_KICK; // 反り返ったまま床に打ち付けられる
+    // 体の、床に打ち付けられた背中のあたりを打つ
+    hitDir.copy(UP);
+    floorSlamAt.y += 0.5;
+    applyDummyHit(FLOOR_SLAM_HIT, floorSlamAt, 'axe', undefined, false);
+}
+// 打ち上げで浮いている間の見た目: 腹を突き上げられて上体が後ろへ反り返りながら回り、脚は縮んで垂れる。
+// 落ち始めたら足から降りるよう起き直り、着地で行き過ぎて揺れ戻る。
+// 回すのは見た目の入れ物（shake）だけで、体の中ほどを中心にする（足もとを中心にすると振り子に見える）
+const AIR_TILT_BACK = 70 * DEG; // 上がっている間に反り返る角度
+const AIR_TILT_KICK = 7; // 打ち上げた瞬間に後ろへ回し始める速さ (rad/s)
+const AIR_TILT_ROLL = 18 * DEG; // 左右へ傾ける角度の最大
+const AIR_TILT_RIGHT = 2.5; // 落ちるとき、足もとまでこの高さ (m) を切ったら起き直り始める
+const AIR_TILT_K = 45;
+const AIR_TILT_D = 7;
+const AIR_PIVOT_Y = 1.0;
+const FLING_TILT = 75 * DEG; // 横へ吹き飛ばされて浮いている間に倒れ込む角度の最大
+const FLING_TILT_SPEED = 14; // この速さ (m/s) で最も深く倒れ込む
+const AIR_TUCK = [new THREE.Vector3(0, 0.36, 0.06), new THREE.Vector3(0, 0.22, 0.14)]; // 浮いている間の足の寄せ（右、左）
+function launchEnemy() {
+    en.airVel = AXE_LAUNCH_ENEMY_SPEED;
+    en.airTiltVel.x -= AIR_TILT_KICK;
+    en.airRoll = rand(-1, 1) * AIR_TILT_ROLL;
+    en.airTiltVel.z += en.airRoll * 4;
+    en.gunSpring.v.x -= 6; // 銃を持った腕が跳ね上がる
+    addImpulse(en.headSpring, LEG_FWD_X, 3); // 首は遅れて前へ残る
+}
+const LEG_FWD_X = new THREE.Vector3(1, 0, 0);
+function updateEnemyTumble(dt) {
+    const air = en.airY > 0;
+    // 上がっている間は反り返り、落ち始めたら地面が近づくほど起き直る（叩き落とされている間は反り返ったまま）
+    const w = !air ? 0 : en.airVel > 0 || en.spiked ? 1 : THREE.MathUtils.clamp(en.airY / AIR_TILT_RIGHT, 0, 1);
+    // 横へ吹き飛ばされて浮いている間は、飛ぶ向きへ上体から倒れ込む（速いほど深く）
+    let tx = -AIR_TILT_BACK;
+    let tz = en.airRoll;
+    const flySpeed = Math.hypot(en.knockVel.x, en.knockVel.z);
+    if (air && en.flung && flySpeed > 0.5) {
+        tumbleTmp.copy(en.knockVel).applyQuaternion(moveInvQ.copy(en.root.quaternion).invert());
+        const a = FLING_TILT * Math.min(1, flySpeed / FLING_TILT_SPEED);
+        tx = (tumbleTmp.z / flySpeed) * a;
+        tz = (-tumbleTmp.x / flySpeed) * a + en.airRoll * 0.5;
+    }
+    const n = Math.max(1, Math.ceil(dt / STAGGER_SUBSTEP));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+        en.airTiltVel.x += ((tx * w - en.airTilt.x) * AIR_TILT_K - en.airTiltVel.x * AIR_TILT_D) * h;
+        en.airTiltVel.z += ((tz * w - en.airTilt.z) * AIR_TILT_K - en.airTiltVel.z * AIR_TILT_D) * h;
+        en.airTilt.addScaledVector(en.airTiltVel, h);
+    }
+    // 脚は浮いたらすぐ縮め、着いたら素早く伸ばして立つ
+    en.airPose += ((air && en.airY > 0.05 ? 1 : 0) - en.airPose) * Math.min(1, dt * (air ? 10 : 18));
+}
+// shake の向きと位置（揺れの分を足す前）を、打ち上げの回転にする
+const tumbleQ = new THREE.Quaternion();
+const tumbleE = new THREE.Euler();
+const tumblePivot = new THREE.Vector3();
+const tumbleTmp = new THREE.Vector3();
+function poseEnemyTumble(e) {
+    if (e.airTilt.lengthSq() < 1e-8) {
+        e.shake.quaternion.identity();
+        e.shake.position.set(0, 0, 0);
+        return;
+    }
+    e.shake.quaternion.copy(tumbleQ.setFromEuler(tumbleE.set(e.airTilt.x, 0, e.airTilt.z)));
+    tumblePivot.set(0, AIR_PIVOT_Y, 0);
+    e.shake.position.copy(tumblePivot).sub(tumbleTmp.copy(tumblePivot).applyQuaternion(tumbleQ));
 }
 // ---- 敵の移動 ----
 // ステージの敵は、歩ける所から次の立ち位置を選んで歩き、着いたら少し立ち止まる（歩きながらも撃つ）。
@@ -4398,6 +5192,94 @@ function enemyCanStand(x, z) {
         if (dx * dx + dz * dz < r * r)
             return false;
     }
+    return true;
+}
+// ---- 斧で吹き飛ばされた敵 ----
+// 当たった向きへ滑るように押し下げられ、足を踏ん張って速さを殺していく。壁や段差の縁に着いたらそこで止まる。
+// 吹き飛んでいる間は歩かない（向かっていた先は選び直す）
+const ENEMY_KNOCK_FRICTION = 6; // 速さが減っていく割合 (1/s)。滑る距離はおよそ 速さ / これ
+const ENEMY_KNOCK_STOP = 0.4; // これより遅くなったら止める (m/s)
+const ENEMY_KNOCK_AIR_FRICTION = 0.4; // 浮いている間の速さの減り方 (1/s)
+const ENEMY_KNOCK_FLUNG_FRICTION = 2; // 大きく吹き飛ばされて床を滑っている間の速さの減り方 (1/s)
+const AXE_KNOCKBACK = 4; // 吹き飛ばす速さ (m/s)。knock = DEFAULT_KNOCK のときの量で、knock に比例させる
+function knockEnemy(dir, knock) {
+    if (enemyHeld())
+        return;
+    en.knockVel.set(dir.x, 0, dir.z).normalize().multiplyScalar(AXE_KNOCKBACK * (knock / DEFAULT_KNOCK));
+    en.vel.set(0, 0, 0);
+    en.moving = false;
+    en.dodgeT = 0;
+    en.waitT = Math.max(en.waitT, rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX) * 0.5);
+}
+function updateEnemyKnock(dt) {
+    const k = en.knockVel;
+    if (k.lengthSq() === 0)
+        return;
+    if (enemyHeld()) {
+        k.set(0, 0, 0);
+        en.flung = false;
+        return;
+    }
+    const p = en.root.position;
+    const nx = p.x + k.x * dt;
+    const nz = p.z + k.z * dt;
+    if (enemyCanStand(nx, nz)) {
+        p.x = nx;
+        p.z = nz;
+        // 浮いている間は踏ん張れないので、ほとんど速さが落ちない
+        k.multiplyScalar(Math.exp(-(en.airY > 0 ? ENEMY_KNOCK_AIR_FRICTION : en.flung ? ENEMY_KNOCK_FLUNG_FRICTION : ENEMY_KNOCK_FRICTION) * dt));
+        if (k.lengthSq() < ENEMY_KNOCK_STOP ** 2) {
+            k.set(0, 0, 0);
+            en.flung = false;
+        }
+    }
+    else {
+        const slam = en.flung && enemyWallAt(nx, nz) && slamEnemyIntoWall();
+        // 叩きつけられたら、壁から少しだけ跳ね返る
+        if (slam)
+            k.multiplyScalar(-WALL_SLAM_BOUNCE / k.length());
+        else
+            k.set(0, 0, 0);
+        en.flung = false;
+    }
+}
+// (x, z) で en の体が壁や柱（ステージの端を含む）に掛かるか。段差の縁で止まったときは壁にしない
+function enemyWallAt(x, z) {
+    if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ)
+        return true;
+    const r = DUMMY_RADIUS + ENEMY_WALL_GAP;
+    const y = en.baseY + en.airY;
+    for (const b of blocks) {
+        if (b.h <= y + 0.2 || (b.y0 ?? 0) >= y + DUMMY_HEIGHT)
+            continue;
+        const dx = x - THREE.MathUtils.clamp(x, b.minX, b.maxX);
+        const dz = z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ);
+        if (dx * dx + dz * dz < r * r)
+            return true;
+    }
+    return false;
+}
+// ---- 壁への叩きつけ ----
+// 斧の突進で前へ飛ばした敵が壁に当たると、その速さに応じた重い一撃になる。叩きつけたら true
+const WALL_SLAM_MIN = 5; // これより遅く当たったら叩きつけにしない (m/s)
+const WALL_SLAM_FULL = 18; // これ以上の速さで最も重くなる
+const WALL_SLAM_BOUNCE = 1.5; // 壁から跳ね返る速さ (m/s)
+const WALL_SLAM_HIT = { kick: [-1.5, 0, 0], slash: 0, hitStop: 0.12 };
+const wallSlamAt = new THREE.Vector3();
+function slamEnemyIntoWall() {
+    const speed = en.knockVel.length();
+    if (speed < WALL_SLAM_MIN)
+        return false;
+    const p = THREE.MathUtils.clamp((speed - WALL_SLAM_MIN) / (WALL_SLAM_FULL - WALL_SLAM_MIN), 0, 1);
+    hitDir.copy(en.knockVel).divideScalar(speed);
+    WALL_SLAM_HIT.fx = 0.9 + 0.8 * p;
+    WALL_SLAM_HIT.knock = 300 + 200 * p;
+    // 体の、壁に打ち付けられた側
+    wallSlamAt.copy(en.root.position).addScaledVector(hitDir, DUMMY_RADIUS);
+    wallSlamAt.y += 1.0;
+    sfx.playAxeGround(0.8 + 0.6 * p);
+    spawnSparks(wallSlamAt, hitDir, 12, 0.9, 1);
+    applyDummyHit(WALL_SLAM_HIT, wallSlamAt, 'axe', undefined, false);
     return true;
 }
 // 今いる所から (x, z) まで、まっすぐ歩いて行けるか
@@ -4448,13 +5330,73 @@ function pickMoveTarget() {
 function enemyHeld() {
     return (grapple?.enemy === en && grapple.phase !== 'back') || (rushTime >= 0 && rushEnemy === en);
 }
+// ---- 狙われたときの横っ飛び ----
+// プレイヤーの照準が少しの間この敵に重なり続けたら、構えを解いて横へ素早く跳ぶ。近くにいるとき（刃の間合い）は跳ばない
+const ENEMY_DODGE_CONE = 4 * DEG; // 視線と敵の胸の向きのずれがこれ以内なら狙われているとみなす
+const ENEMY_DODGE_NOTICE = 0.5; // これだけ狙われ続けたら跳ぶ
+const ENEMY_DODGE_NEAR = 6; // プレイヤーがこれより近ければ跳ばない
+const ENEMY_DODGE_DIST = 2.4; // 跳ぶ距離 (m)
+const ENEMY_DODGE_SPEED = 8; // m/s
+const ENEMY_DODGE_ACCEL = 25;
+const ENEMY_DODGE_COOL_MIN = 2.5;
+const ENEMY_DODGE_COOL_MAX = 4.5;
+const ENEMY_RETREAT_NEAR = 4; // プレイヤーがこれより近いと、立ち止まる時間を縮めてすぐ下がり始める
+const ENEMY_MOVE_LEAN = 0.025; // 速さ 1 m/s あたりに上体を傾ける角度 (rad)
+const ENEMY_ACCEL_LEAN = 0.012; // 加速 1 m/s² あたりに上体を傾ける角度 (rad)
+const ENEMY_MAX_MOVE_LEAN = 0.25;
+const playerEye = new THREE.Vector3();
+const playerLook = new THREE.Vector3();
+const dodgeTo = new THREE.Vector3();
+const leanWant = new THREE.Vector3();
+function updateEnemyAimed(dt) {
+    dodgeTo.set(en.root.position.x, en.root.position.y + en.airY + 1.2, en.root.position.z).sub(playerEye);
+    const dist = dodgeTo.length();
+    const aimed = dist > ENEMY_DODGE_NEAR && playerLook.angleTo(dodgeTo) < ENEMY_DODGE_CONE;
+    en.aimedAt = aimed ? en.aimedAt + dt : Math.max(0, en.aimedAt - dt * 2);
+}
+function tryDodge() {
+    const p = en.root.position;
+    const toPlayer = Math.atan2(position.x - p.x, position.z - p.z);
+    const first = Math.random() < 0.5 ? -1 : 1;
+    for (const side of [first, -first]) {
+        const a = toPlayer + side * (Math.PI / 2) + rand(-20, 20) * DEG;
+        const x = p.x + Math.sin(a) * ENEMY_DODGE_DIST;
+        const z = p.z + Math.cos(a) * ENEMY_DODGE_DIST;
+        if (!enemyCanStand(x, z) || !enemyApartAt(x, z) || !enemyPathClear(x, z))
+            continue;
+        en.dodgeVel.set(Math.sin(a), 0, Math.cos(a)).multiplyScalar(ENEMY_DODGE_SPEED);
+        en.dodgeT = ENEMY_DODGE_DIST / ENEMY_DODGE_SPEED;
+        en.dodgeCool = rand(ENEMY_DODGE_COOL_MIN, ENEMY_DODGE_COOL_MAX);
+        en.aimedAt = 0;
+        en.moving = false;
+        en.cooldown = Math.max(en.cooldown, 0.5); // 跳んですぐは撃たない
+        en.pelvisSpring.v.y -= 0.8; // 膝を沈めて踏み切る
+        return true;
+    }
+    en.dodgeCool = 0.6; // 跳べる所が無ければ、少し待って探し直す
+    return false;
+}
 function updateEnemyMove(dt) {
     if (!en.mobile)
         return;
     const p = en.root.position;
     moveWant.set(0, 0, 0);
-    const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || enemyHeld() || playerHp <= 0;
-    if (!halted && en.moving) {
+    const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || enemyHeld() || playerHp <= 0 || en.airY > 0
+        || en.knockVel.lengthSq() > ENEMY_KNOCK_STOP ** 2;
+    en.dodgeCool -= dt;
+    updateEnemyAimed(dt);
+    if (halted)
+        en.dodgeT = 0;
+    else if (en.dodgeT <= 0 && en.dodgeCool <= 0 && en.aimedAt > ENEMY_DODGE_NOTICE)
+        tryDodge();
+    const playerDist = Math.hypot(position.x - p.x, position.z - p.z);
+    if (en.dodgeT > 0) {
+        en.dodgeT -= dt;
+        moveWant.copy(en.dodgeVel);
+        if (en.dodgeT <= 0)
+            en.waitT = rand(0.3, 0.7); // 着地して一息おく
+    }
+    else if (!halted && en.moving) {
         const dx = en.moveTo.x - p.x;
         const dz = en.moveTo.z - p.z;
         const d = Math.hypot(dx, dz);
@@ -4472,18 +5414,19 @@ function updateEnemyMove(dt) {
             en.waitT = rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX);
         }
         else {
-            moveWant.set(dx / d, 0, dz / d).multiplyScalar(Math.min(ENEMY_WALK_SPEED, d * 3)); // 着く手前で緩める
+            moveWant.set(dx / d, 0, dz / d).multiplyScalar(Math.min(ENEMY_WALK_SPEED * en.speedMul, d * 3)); // 着く手前で緩める
         }
     }
     else if (!halted) {
-        en.waitT -= dt;
+        // 詰め寄られたら、のんびり立ち止まらずに下がり始める
+        en.waitT -= dt * (playerDist < ENEMY_RETREAT_NEAR ? 4 : 1);
         if (en.waitT <= 0) {
             en.moving = pickMoveTarget();
             if (!en.moving)
                 en.waitT = 0.5; // 行ける所が無ければ、少し待って探し直す
         }
     }
-    en.vel.lerp(moveWant, 1 - Math.exp(-ENEMY_WALK_ACCEL * dt));
+    en.vel.lerp(moveWant, 1 - Math.exp(-(en.dodgeT > 0 ? ENEMY_DODGE_ACCEL : ENEMY_WALK_ACCEL) * dt));
     // 次の 1 歩の先に立てなければ止まる
     const nx = p.x + en.vel.x * dt;
     const nz = p.z + en.vel.z * dt;
@@ -4494,13 +5437,73 @@ function updateEnemyMove(dt) {
     else {
         en.vel.set(0, 0, 0);
         en.moving = false;
+        en.dodgeT = 0;
     }
-    // 足: 速さに合わせて振る。振る向きは体の座標で持つ（体はプレイヤーへ向けたまま、横や後ろへも歩く）
-    const speed = Math.hypot(en.vel.x, en.vel.z);
-    en.walk += (Math.min(1, (speed / ENEMY_WALK_SPEED) * 1.5) - en.walk) * Math.min(1, dt * 8);
+}
+// ---- 足取りと上体の傾き（歩き・吹き飛ばされての踏ん張り） ----
+// 歩いている間は速さに合わせて足を振り、進む速さと速さの変わり目の向きへ上体を傾ける。
+// 吹き飛ばされて床を滑っている間は、押された向きへ小刻みに後ずさって（たたらを踏んで）踏ん張る。
+// 上体は押された向きへ大きく流れ、腰を落とし、銃を持った腕は狙いを外れて跳ね上がる。
+// 速いほど足を引きずって床をこすり、止まりきる瞬間に上体が揺り戻して体勢を立て直す
+const STUMBLE_MIN = 1.2; // 床を滑る速さがこれを超えたら踏ん張る (m/s)
+const STUMBLE_FULL = 6; // この速さで踏ん張りが最も強くなる
+const STUMBLE_CADENCE = 4.5; // 後ずさる足の運びの最高（歩きの速さに直した値, m/s）
+const STUMBLE_LEAN = 0.035; // 滑る速さ 1 m/s あたりに上体を流す角度 (rad)
+const STUMBLE_MAX_LEAN = 0.5;
+const STUMBLE_RECOVER = 1.8; // 止まりきったときに上体を揺り戻す勢い (rad/s)
+const SKID_SPEED = 5; // これより速く滑っていたら床をこする火花を出す
+const SKID_INTERVAL = 0.05;
+const gaitDir = new THREE.Vector3();
+const skidAt = new THREE.Vector3();
+const skidBack = new THREE.Vector3();
+function updateEnemyGait(dt) {
+    moveInvQ.copy(en.root.quaternion).invert();
+    const knockSpeed = en.airY > 0 ? 0 : Math.hypot(en.knockVel.x, en.knockVel.z);
+    const stumbleWant = knockSpeed > STUMBLE_MIN ? Math.min(1, knockSpeed / STUMBLE_FULL) : 0;
+    const recovered = en.stumbling && stumbleWant === 0 && en.airY <= 0;
+    if (stumbleWant > 0.3)
+        en.stumbling = true;
+    else if (stumbleWant === 0)
+        en.stumbling = false;
+    en.stumble += (stumbleWant - en.stumble) * Math.min(1, dt * (stumbleWant > en.stumble ? 20 : 6));
+    // 上体: 歩きの速さと加速の向きへ。踏ん張っている間は、押されている向きへ大きく流す
+    leanWant.subVectors(en.vel, en.prevVel).divideScalar(Math.max(dt, 1e-4)).multiplyScalar(ENEMY_ACCEL_LEAN)
+        .addScaledVector(en.vel, ENEMY_MOVE_LEAN).applyQuaternion(moveInvQ);
+    en.prevVel.copy(en.vel);
+    leanWant.set(leanWant.z, 0, -leanWant.x); // 傾ける向き → 回転ベクトル（+Z へ傾けるのは +X 軸まわり）
+    if (leanWant.length() > ENEMY_MAX_MOVE_LEAN)
+        leanWant.setLength(ENEMY_MAX_MOVE_LEAN);
+    if (knockSpeed > 0) {
+        gaitDir.copy(en.knockVel).applyQuaternion(moveInvQ);
+        const a = Math.min(STUMBLE_MAX_LEAN, knockSpeed * STUMBLE_LEAN);
+        leanWant.x += (gaitDir.z / knockSpeed) * a;
+        leanWant.z -= (gaitDir.x / knockSpeed) * a;
+    }
+    en.poseLean.lerp(leanWant, 1 - Math.exp(-(knockSpeed > 0 ? 18 : 10) * dt));
+    // 止まりきったら、流れていた上体を逆へ揺り戻す
+    if (recovered) {
+        en.leanSpring.v.addScaledVector(en.poseLean, -STUMBLE_RECOVER / Math.max(en.poseLean.length(), 1e-3));
+        en.pelvisSpring.v.y -= 0.5;
+    }
+    // 足: 歩きの速さか、踏ん張って後ずさる足の運びの速い方に合わせて振る（体はプレイヤーへ向けたまま、横や後ろへも歩く）
+    const walkSpeed = Math.hypot(en.vel.x, en.vel.z);
+    const stumbleSpeed = Math.min(knockSpeed, STUMBLE_CADENCE) * en.stumble;
+    const speed = Math.max(walkSpeed, stumbleSpeed);
+    en.walk += (Math.min(1, (speed / ENEMY_WALK_SPEED) * 1.5) - en.walk) * Math.min(1, dt * (en.stumble > 0.1 ? 16 : 8));
     en.walkPhase += (speed / ENEMY_STRIDE) * Math.PI * dt;
-    if (speed > 0.2)
-        en.walkDir.copy(en.vel).applyQuaternion(moveInvQ.copy(en.root.quaternion).invert()).setY(0).normalize();
+    if (stumbleSpeed > walkSpeed && knockSpeed > 0.2)
+        en.walkDir.copy(en.knockVel).applyQuaternion(moveInvQ).setY(0).normalize();
+    else if (walkSpeed > 0.2)
+        en.walkDir.copy(en.vel).applyQuaternion(moveInvQ).setY(0).normalize();
+    // 速く滑っている間は、足が床をこすって火花が後ろへ散る
+    en.skidT -= dt;
+    if (knockSpeed > SKID_SPEED && en.skidT <= 0) {
+        en.skidT = SKID_INTERVAL;
+        const f = en.footState[Math.random() < 0.5 ? 0 : 1];
+        skidAt.copy(f.pos).setY(0.03).applyMatrix4(en.root.matrixWorld);
+        skidBack.copy(en.knockVel).negate().normalize().setY(0.35);
+        spawnSparks(skidAt, skidBack, 2, 0.4, 0.45);
+    }
 }
 // 歩いている間の足: 左右の足を半周期ずらして前後に振り、前へ振り出す間だけ持ち上げる
 function walkFeet() {
@@ -4536,23 +5539,55 @@ const STICK_DEPTH = 0.05; // 刺さったときに埋まる深さ
 // 数本が続けて当たるたびに時間を止めるとカクつくので、投擲ではヒットストップを使わない
 const THROW_HIT = { kick: [-1.5, 0, 0], knock: 140, hitStop: 0, fx: 0.7 };
 const THROW_SWISH = { at: 0, dur: 0.16, f0: 900, f1: 2800, gain: 0.1 };
+// 投げたクナイが敵に刺さったら、世界（敵・敵の弾・破片）の時間だけ一瞬遅くする。プレイヤーはそのまま動ける
+const WORLD_SLOW_SCALE = 0.25;
+const WORLD_SLOW_HOLD = 0.3; // この間は遅いまま
+const WORLD_SLOW_RELEASE = 0.2; // この時間をかけて元の速さへ戻す
+const WORLD_SLOW_COOLDOWN = 0.5; // 明けてからこの間は、刺さってもかけ直さない
+const WORLD_SLOW_RING_TIME = 0.3; // 入った瞬間の歪みの輪が画面の端まで広がる時間
 const SPIN_START = Math.PI / 2 + 0.3; // 回し始めの切っ先の向き（真上から見て、前のやや右）
 const SPIN_PHASES = [0.4, 0, -0.4]; // 回すときの各クナイの角度のずれ（重なってよいので少しだけ開く）
 const SPIN_JITTER = 0.0015; // 回している間の震えの大きさ（1 段目、ローカル座標）
 const SPIN_TRAIL_STEP = 0.08; // 回転の軌跡を取る角度の刻み (rad)
 const SPIN_TRAIL_LIFE = 0.12;
-const SPIN_TRAIL_TIP = new THREE.Vector3(0, 0.2, 0); // クナイのローカル座標
+const SPIN_TRAIL_TIP = new THREE.Vector3(0, 0.175, 0); // クナイのローカル座標（切っ先に揃える）
 const SPIN_TRAIL_BASE = new THREE.Vector3(0, 0.07, 0);
 const FLIGHT_TRAIL_LIFE = 0.15;
 const FLIGHT_TRAIL_WIDTH = 0.02; // 飛んでいるクナイの軌跡の半分の幅
 // ---- 軌跡の帯 ----
-// 時刻つきの 2 点（tip, base）を順に並べて帯にする。古いものから薄くなって消える
+// 時刻つきの 2 点（tip, base）を順に並べて帯にする。古いものほど細くなり、根元側から削れて消える
 const RIBBON_COLOR = new THREE.Color(0x2a2a2a);
 const RIBBON_EDGE_COLOR = new THREE.Color(0x000000);
-function makeRibbonMaterial(symmetric) {
-    return new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: RIBBON_COLOR }, uEdgeColor: { value: RIBBON_EDGE_COLOR } },
-        defines: symmetric ? { SYMMETRIC: '' } : {},
+const RIBBON_CORE_COLOR = new THREE.Color(0x000000); // 切っ先の縁のいちばん外側の細い芯
+const RIBBON_BLACK = new THREE.Color(0x000000);
+// クナイ: 細く鋭く。古い側を強く尖らせ、素早く削る。本体は黒の半透明
+const KUNAI_RIBBON = { taper: 0.7, cut: 0.95, edge: 0.74, core: 0.92, body: [0.12, 0.3], bodyColor: RIBBON_BLACK };
+// 剣: 幅広の弧をそのまま見せる。尖らせ方は緩く、切っ先の黒い縁と芯は細く
+const SWORD_RIBBON = { taper: 0.3, cut: 0.75, edge: 0.92, core: 0.98, body: [0.3, 0.5] };
+// 斧: 太く濃く、黒い縁を厚くして重さを出す（寿命は短め）
+const AXE_RIBBON = { taper: 0.4, cut: 0.7, edge: 0.68, core: 0.95, body: [0.4, 0.62] };
+// 斧の空中の叩きつけ: 地上の振りよりさらに太く濃く。黒い縁を厚く、芯もはっきり通す
+const AXE_SLAM_RIBBON = { taper: 0.25, cut: 0.6, edge: 0.6, core: 0.93, body: [0.5, 0.75] };
+// 鎌: 曲線を活かして芯を目立たせる。本体は黒の半透明
+const SICKLE_RIBBON = { taper: 0.6, cut: 0.85, edge: 0.8, core: 0.9, body: [0.12, 0.28], bodyColor: RIBBON_BLACK };
+const taperedBase = new THREE.Vector3();
+// fade（1 = 新しい, 0 = 消える）に合わせて根元を切っ先へ寄せる
+function taperBase(base, tip, fade, taper) {
+    return taperedBase.copy(base).lerp(tip, (1 - fade) * taper);
+}
+// style を省くと、飛んでいるクナイの筋（中央が濃く、両側へ抜ける帯）になる
+function makeRibbonMaterial(style) {
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            uColor: { value: style?.bodyColor ?? RIBBON_COLOR },
+            uEdgeColor: { value: RIBBON_EDGE_COLOR },
+            uCoreColor: { value: RIBBON_CORE_COLOR },
+            uCut: { value: style?.cut ?? 0 },
+            uEdge: { value: style?.edge ?? 0 },
+            uCore: { value: style?.core ?? 0 },
+            uBody: { value: new THREE.Vector2(...(style?.body ?? [0, 0])) },
+        },
+        defines: style ? {} : { SYMMETRIC: '' },
         vertexShader: /* glsl */ `
       attribute float aFade;
       attribute float aSide;
@@ -4567,6 +5602,11 @@ function makeRibbonMaterial(symmetric) {
         fragmentShader: /* glsl */ `
       uniform vec3 uColor;
       uniform vec3 uEdgeColor;
+      uniform vec3 uCoreColor;
+      uniform float uCut;
+      uniform float uEdge;
+      uniform float uCore;
+      uniform vec2 uBody;
       varying float vFade;
       varying float vSide;
       void main() {
@@ -4575,10 +5615,18 @@ function makeRibbonMaterial(symmetric) {
         float a = vFade * vFade * (1.0 - abs(vSide * 2.0 - 1.0)) * 0.85;
         gl_FragColor = vec4(uEdgeColor, a);
       #else
-        // 回転の軌跡: 斬撃と同じく、根元側は透明に、切っ先側ほど濃く
-        float edge = smoothstep(0.8, 1.0, vSide);
-        float a = vFade * vFade * smoothstep(0.0, 0.9, vSide) * mix(0.5, 0.9, edge);
-        gl_FragColor = vec4(mix(uColor, uEdgeColor, edge), a);
+        // 斬撃・回転の軌跡: 透けて薄れるのではなく、古いほど根元側から境目のくっきりした線で削れる。
+        // 切っ先側の黒い縁は最後まで残し、そのいちばん外側に細い芯を通す
+        float cut = (1.0 - vFade) * uCut;
+        float body = smoothstep(cut, cut + 0.05, vSide);
+        if (body <= 0.0) discard;
+        float edge = smoothstep(uEdge, uEdge + 0.06, vSide);
+        float core = smoothstep(uCore, uCore + 0.03, vSide);
+        // 縁と芯は本体より少し濃いだけにとどめ、切っ先が真っ黒に潰れないようにする
+        float edgeA = max(uBody.y, 0.5);
+        float coreA = max(uBody.y, 0.65);
+        float a = body * mix(mix(mix(uBody.x, uBody.y, vSide), edgeA, edge), coreA, core) * smoothstep(0.0, 0.15, vFade);
+        gl_FragColor = vec4(mix(mix(uColor, uEdgeColor, edge), uCoreColor, core), a);
       #endif
       }
     `,
@@ -4589,9 +5637,11 @@ function makeRibbonMaterial(symmetric) {
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 4,
     });
+    mat.userData.taper = style?.taper ?? 0;
+    return mat;
 }
-const spinRibbonMat = makeRibbonMaterial(false);
-const flightRibbonMat = makeRibbonMaterial(true);
+const spinRibbonMat = makeRibbonMaterial(KUNAI_RIBBON);
+const flightRibbonMat = makeRibbonMaterial();
 class Ribbon {
     max;
     life;
@@ -4603,9 +5653,11 @@ class Ribbon {
     positions;
     fade;
     index;
+    taper;
     constructor(max, life, material) {
         this.max = max;
         this.life = life;
+        this.taper = material.userData.taper ?? 0;
         this.positions = new THREE.BufferAttribute(new Float32Array(max * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage);
         this.fade = new THREE.BufferAttribute(new Float32Array(max * 2), 1).setUsage(THREE.DynamicDrawUsage);
         const side = new THREE.BufferAttribute(new Float32Array(max * 2), 1);
@@ -4646,9 +5698,10 @@ class Ribbon {
         const n = samples.length;
         for (let i = 0; i < n; i++) {
             const s = samples[i];
-            this.positions.setXYZ(i * 2, s.base.x, s.base.y, s.base.z);
-            this.positions.setXYZ(i * 2 + 1, s.tip.x, s.tip.y, s.tip.z);
             const f = 1 - (now - s.time) / this.life;
+            const base = taperBase(s.base, s.tip, f, this.taper);
+            this.positions.setXYZ(i * 2, base.x, base.y, base.z);
+            this.positions.setXYZ(i * 2 + 1, s.tip.x, s.tip.y, s.tip.z);
             this.fade.setX(i * 2, f);
             this.fade.setX(i * 2 + 1, f);
         }
@@ -4883,7 +5936,7 @@ const ASSIST_SLOW = 0.3; // 胸の真上にいるときの視点の速さの倍�
 const ASSIST_PULL = 6; // スティックを倒しきっている間、胸とのずれを 1 秒にどれだけ詰めるか (1/s)
 const ASSIST_CHEST = 0.55; // 胸の高さ（腰の骨から首の骨までの割合）
 let usingPad = false; // 最後に触ったのがパッドか（マウスを触ったら外れる）
-const assistTarget = { point: new THREE.Vector3(), angle: 0, size: 0, yaw: 0, pitch: 0 };
+const assistTarget = { point: new THREE.Vector3(), angle: 0, size: 0, yaw: 0, pitch: 0, enemy: null };
 const assistNeck = new THREE.Vector3();
 const assistDir = new THREE.Vector3();
 const assistInv = new THREE.Quaternion();
@@ -4920,6 +5973,7 @@ function findAssistTarget() {
         bestScore = score;
         best = assistTarget;
         best.point.copy(chest);
+        best.enemy = e;
         best.angle = angle;
         best.size = size;
         best.yaw = Math.atan2(assistDir.x, -assistDir.z);
@@ -4998,10 +6052,32 @@ function stickThrown(t, at, onDummy, dir) {
             hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
         hitDir.normalize();
         applyDummyHit(THROW_HIT, at, 'throw');
+        startWorldSlow();
     }
     else {
         sfx.playStick(); // 壁や地面に刺さった「カッ」
     }
+}
+let worldSlowAge = Infinity; // 世界のスローをかけてからの時間（プレイヤーの時間で進める）
+let worldSlow = 1; // 今フレームの世界の時間の速さ
+let worldSlowRingAge = Infinity; // スローに入ってからの時間（歪みの輪に使う）
+// 遅いままの間に刺さったら、残りを最大へ戻すだけ（時間は足さない）。戻りかけと明けた直後は何もしない
+function startWorldSlow() {
+    if (worldSlowAge < WORLD_SLOW_HOLD) {
+        worldSlowAge = 0;
+    }
+    else if (worldSlowAge >= WORLD_SLOW_HOLD + WORLD_SLOW_RELEASE + WORLD_SLOW_COOLDOWN) {
+        worldSlowAge = 0;
+        worldSlowRingAge = 0; // 輪と音は、入ったときだけ（かけ直しでは出さない）
+        sfx.playWorldSlow(WORLD_SLOW_HOLD, WORLD_SLOW_RELEASE);
+    }
+}
+// 時間を進め、世界の時間に掛ける速さを返す
+function worldSlowFactor(dt) {
+    worldSlowAge += dt;
+    worldSlowRingAge += dt;
+    const u = THREE.MathUtils.clamp((worldSlowAge - WORLD_SLOW_HOLD) / WORLD_SLOW_RELEASE, 0, 1);
+    return THREE.MathUtils.lerp(WORLD_SLOW_SCALE, 1, u * u);
 }
 // 刺さった所から抜く（または飛んでいる途中で引き返す）。ここからは何にも当たらず手元へ向かう
 function startReturn(t) {
@@ -5084,7 +6160,7 @@ function updateThrown(dt) {
         sampleFlightTrail(t, t.mesh.position, throwDir);
     }
 }
-// ---- 鎖鎌（左クリックの近接は updateSickleMelee）: 右クリック長押しで両手の鎌を振りかぶり、離すと右、左の順に投げる。建物に掛かったら鎖をたぐって自分を引き寄せる ----
+// ---- 鎖鎌（左クリックの近接は updateSickleMelee）: 右クリックで構えてすぐ投げる。建物に掛かったら鎖をたぐって自分を引き寄せる ----
 // 掛かったら自動で引き始め、近くまで寄ったら放す。引いている間に右クリックで放し、スペースで放して跳ぶ
 const GRAPPLE_RANGE = 25;
 const GRAPPLE_SPREAD = 0.25; // 2 本の刺さる所を、照準の先から左右へずらす距離
@@ -5094,6 +6170,7 @@ const AIM_HAND_LIFT = new THREE.Vector3(0.04, 0.1, 0.1); // 手を動かす量�
 const AIM_TILT = 0.9; // 柄の先を後ろへ倒す角度 (rad)
 const AIM_ROLL = -0.3; // 外へ傾ける角度 (rad。右手の値で、左手は逆向き)
 // 投げ: 離したら、鎖を持った手を軸に鎌を縦に 1 周回して勢いをつけ（上 → 前 → 下 → 後ろ → 上）、前へ振り出す所で放す
+const QUICK_AIM_TIME = 0.1; // 右クリックしてから振りかぶって回し始めるまで (s)
 const HOOK_STAGGER = 0; // 右手が回し始めてから左手が回し始めるまで (s)。0 なら両手同時
 const WINDUP_TIME = 0.18; // 振りかぶった所から 1 周して放すまで (s)。だんだん速く回す
 const WINDUP_RADIUS = 0.15; // 回している間の、握りの先から頭の付け根までの鎖の長さ
@@ -5146,7 +6223,6 @@ function createHook(hand, side) {
 const hooks = [createHook(rightSickle, 1), createHook(leftSickle, -1)];
 let grapple = null;
 let throwPressed = false; // 右クリックを押した瞬間
-let grappleAim = false; // 振りかぶっている（離すと投げる）
 let grappleClock = 0;
 const grappleHand = new THREE.Vector3();
 const grappleButt = new THREE.Vector3();
@@ -5213,14 +6289,14 @@ function castBlocks(origin, dir, far) {
     }
     return best;
 }
-// 右クリックを離した: 両手で鎌を回し始める。狙う先は、最初の 1 本を放す瞬間の照準で決める（aimGrapple）
+// 右クリック: 振りかぶってすぐ両手で鎌を回し始める。狙う先は、最初の 1 本を放す瞬間の照準で決める（aimGrapple）
 function startThrow() {
     grapple = {
         phase: 'fly', target: new THREE.Vector3(), block: null, enemy: null, struck: false, aimed: false,
         pullTime: 0, zipFrom: new THREE.Vector3(), zipTo: new THREE.Vector3(), zipDur: 0, speedBefore: 0,
     };
     for (const h of hooks)
-        h.launchIn = h.side > 0 ? 0 : HOOK_STAGGER;
+        h.launchIn = QUICK_AIM_TIME + (h.side > 0 ? 0 : HOOK_STAGGER);
 }
 // 照準の先を調べて、鎌の飛ぶ先を決める。地面より手前で敵か建物に当たったときだけ掛かる
 function aimGrapple(g) {
@@ -5444,9 +6520,9 @@ function updateGrapple(dt) {
         }
         else if (!grapple && !sickleMelee && sickleReady()) {
             if (hookCharges > 0) {
-                grappleAim = true;
                 playRing(0.8, 0.5, 0.1); // 構えた「チャッ」
                 sfx.playChain('ready');
+                startThrow();
             }
             else {
                 hookEmptyFlash = HOOK_EMPTY_FLASH;
@@ -5455,13 +6531,6 @@ function updateGrapple(dt) {
         }
     }
     throwPressed = false;
-    if (grappleAim && (!sickleReady() || !controls.isLocked)) {
-        grappleAim = false;
-    }
-    else if (grappleAim && !throwHeld) {
-        grappleAim = false;
-        startThrow();
-    }
     for (const h of hooks) {
         if (h.launchIn >= 0) {
             h.launchIn -= dt;
@@ -5501,7 +6570,7 @@ function updateGrapple(dt) {
     for (const h of hooks) {
         if (h.thrown)
             updateHook(h, dt);
-        poseHand(h, dt, grappleAim || h.launchIn >= 0 || h.windT >= 0); // 投げるまでは振りかぶったまま
+        poseHand(h, dt, h.launchIn >= 0 || h.windT >= 0); // 投げるまでは振りかぶったまま
         if (h.thrown)
             layHookChain(h);
     }
@@ -6226,7 +7295,7 @@ const SICKLE_COMBO = [SICKLE_KESA, SICKLE_HOOK, SICKLE_CROSS, SICKLE_WHEEL];
 const SICKLE_AIR_COMBO = [SICKLE_AIR_SWEEP, SICKLE_AIR_RISE, SICKLE_AIR_WHEEL, SICKLE_AIR];
 // 刃の軌跡: 左右の手ごとに、カメラに付けて残す
 const SICKLE_TRAIL_LIFE = 0.17;
-const sickleTrails = [new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(false)), new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(false))];
+const sickleTrails = [new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(SICKLE_RIBBON)), new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(SICKLE_RIBBON))];
 for (const r of sickleTrails)
     camera.add(r.mesh);
 let sickleMelee = null;
@@ -6257,6 +7326,7 @@ const OFF_HAND_TILT = 0.35;
 const meleeTip = new THREE.Vector3();
 const meleeFwdDir = new THREE.Vector3();
 const meleeBase = new THREE.Vector3();
+const meleeTrailOuter = new THREE.Vector3();
 const meleeSwing = new THREE.Vector3();
 const meleeEuler = new THREE.Euler();
 const meleeQuat = new THREE.Quaternion();
@@ -6325,7 +7395,7 @@ function applyHandRotation(h, pose) {
     if (pose.roll !== 0)
         h.rest.quaternion.multiply(meleeAxisQuat.setFromAxisAngle(ROLL_AXIS, pose.roll));
 }
-// 手元の鎌を、キーの時間 t の構えに置き、刃先と刃の中ほどのワールド座標を meleeTip / meleeBase に入れる
+// 手元の鎌を、キーの時間 t の構えに置き、刃先のワールド座標を meleeTip に、軌跡の帯の外側・内側を meleeTrailOuter / meleeBase に入れる
 // （軌跡と当たりの位置を求めるときに使う。本当の構えは、この後の poseHand で meleeHands から組み直す）
 function setHandPoseAt(h, keys, t) {
     evalHandKeys(keys, t, h.side, meleeTmpPose);
@@ -6335,7 +7405,8 @@ function setHandPoseAt(h, keys, t) {
     h.rest.position.set(0, 0, 0);
     h.held.updateWorldMatrix(true, false);
     meleeTip.copy(h.sickle.userData.bladeTip).applyMatrix4(h.held.matrixWorld);
-    meleeBase.copy(h.sickle.userData.bladeRoot).applyMatrix4(h.held.matrixWorld);
+    meleeTrailOuter.copy(h.sickle.userData.trailOuter).applyMatrix4(h.held.matrixWorld);
+    meleeBase.copy(h.sickle.userData.trailInner).applyMatrix4(h.held.matrixWorld);
 }
 // 振っている手（両手の技なら両方）
 function swingingHands(m) {
@@ -6354,9 +7425,9 @@ function sampleSickleTrails(m) {
                 if (gap)
                     ribbon.cut();
                 setHandPoseAt(h, keys, s);
-                camera.worldToLocal(meleeTip);
+                camera.worldToLocal(meleeTrailOuter);
                 camera.worldToLocal(meleeBase);
-                ribbon.push(meleeTip, meleeBase, trailNow - (m.t - s));
+                ribbon.push(meleeTrailOuter, meleeBase, trailNow - (m.t - s));
             }
             m.trailT = s;
         }
@@ -6407,7 +7478,7 @@ function updateSickleMelee(dt) {
         r.update(trailNow);
 }
 function stepSickleMelee(dt) {
-    const ready = sickleReady() && controls.isLocked && !grapple && !grappleAim;
+    const ready = sickleReady() && controls.isLocked && !grapple;
     if (sicklePressed) {
         sicklePressed = false;
         if (ready) {
@@ -6485,7 +7556,7 @@ function stepSickleMelee(dt) {
 }
 // ダッシュした瞬間、構えている鎌を両手で前回りにくるりと回す
 function twirlSickles() {
-    if (!sickleReady() || sickleMelee || grapple || grappleAim || tossing())
+    if (!sickleReady() || sickleMelee || grapple || tossing())
         return;
     for (const h of hooks)
         if (!h.thrown)
@@ -6573,7 +7644,7 @@ const tossPivotA = new THREE.Vector3();
 const tossPivotB = new THREE.Vector3();
 const TOSS_SPIN_AXIS = new THREE.Vector3(0, 0, 1);
 const tossing = () => hooks.some((h) => h.toss);
-const canToss = () => sickleReady() && !sickleMelee && !grapple && !grappleAim && !tossing() && hooks.every((h) => !h.thrown);
+const canToss = () => sickleReady() && !sickleMelee && !grapple && !tossing() && hooks.every((h) => !h.thrown);
 function startToss(h, to, apex, turns, depth = 0, inward = 0) {
     h.toss = { t: 0, to: hooks.indexOf(to), apex, turns, depth, inward, hurry: false };
     h.catchT = -1;
@@ -6597,7 +7668,7 @@ function updateTossInput() {
         tossVariant = (tossVariant + 1) % 3;
     }
     tossPressed = false;
-    if (sickleMelee || grapple || grappleAim || !sickleReady())
+    if (sickleMelee || grapple || !sickleReady())
         for (const h of hooks)
             if (h.toss)
                 h.toss.hurry = true;
@@ -6937,6 +8008,7 @@ function fireBurst(list, at, size, life, power, stretch = 1) {
     b.life = life;
     b.size = size;
     b.power = power;
+    return b;
 }
 function updateBursts(dt) {
     for (const f of flares) {
@@ -7042,14 +8114,16 @@ for (let i = 0; i < SHARD_MAX; i++)
 shardMesh.count = 0;
 shardMesh.frustumCulled = false;
 fxScene.add(shardMesh);
-function spawnShards(at, hitDir, count, lifeScale = 1, size = 1, swing) {
+// tint を渡すと、敵の色の代わりにその色で塗る（床のかけらなど）
+function spawnShards(at, hitDir, count, lifeScale = 1, size = 1, swing, tint = null) {
     for (let i = 0; i < count; i++) {
         if (shards.length >= SHARD_MAX)
             shardPool.push(shards.shift());
         const s = shardPool.pop() ?? {
             pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
-            spin: 0, scale: new THREE.Vector3(), age: 0, life: 0,
+            spin: 0, scale: new THREE.Vector3(), age: 0, life: 0, tint: null,
         };
+        s.tint = tint;
         s.pos.copy(at);
         // 攻撃の向きへ抜けるように飛ばし、上へも跳ね上げる
         s.vel.randomDirection().addScaledVector(hitDir, 0.6);
@@ -7105,7 +8179,7 @@ function updateShards(dt) {
         toShardCam.subVectors(camera.position, s.pos).normalize();
         shardNormal.set(0, 0, 1).applyQuaternion(s.quat);
         const facing = Math.abs(shardNormal.dot(toShardCam));
-        shardColor.copy(en.mat.color).multiplyScalar(0.6 + 0.5 * facing).lerp(HIT_CORE, 0.6 * facing ** 6);
+        shardColor.copy(s.tint ?? en.mat.color).multiplyScalar(0.6 + 0.5 * facing).lerp(HIT_CORE, 0.6 * facing ** 6);
         shardMesh.setColorAt(n, shardColor);
         n++;
     }
@@ -7344,6 +8418,7 @@ const lineOrigin = new THREE.Vector3();
 const lineDir = new THREE.Vector3();
 const rand = (a, b) => a + Math.random() * (b - a);
 function updateHitFx(dt) {
+    updateAxeShocks(dt);
     updateBeams(dt);
     updateBursts(dt);
     updateSparks(dt);
@@ -7353,13 +8428,20 @@ function updateHitFx(dt) {
     // ヒットストップの間は暗いまま保ち、明けてから戻す
     const after = Math.max(0, impactAge - impactHold);
     const env = impactAge < impactHold ? 1 : Math.max(0, 1 - after / 0.22) ** 2;
-    u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impactPower) * env, focusBlend * FOCUS_DIM);
+    u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impactPower) * env, Math.max(focusBlend, deadEyeBlend) * FOCUS_DIM);
     // パリィ: 止まっている間は白黒のまま、最初の一瞬だけ白黒を反転させ、スローが明けるのに合わせて色を戻す
     // 最後の 1 体を倒したときも同じ白黒を使う
     u.uMono.value = Math.max(parryMono(), finaleMono());
     u.uInvert.value = parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
+    // 世界のスロー: 遅さに合わせて色を抜き、入った瞬間だけ輪を広げる
+    // 一瞬で切り替えず、少しなめらかに寄せる
+    const slowWant = (1 - worldSlow) / (1 - WORLD_SLOW_SCALE);
+    u.uSlow.value += (slowWant - u.uSlow.value) * Math.min(1, dt * 18);
+    const ring = worldSlowRingAge / WORLD_SLOW_RING_TIME;
+    u.uRing.value = easeOutCubic(Math.min(ring, 1)) * 1.1;
+    u.uRingAmt.value = ring < 1 ? (1 - ring) ** 2 : 0;
     // 効果が無いときは全画面の処理ごと飛ばす
-    impactFxPass.enabled = u.uDim.value > 0.001 || u.uMono.value > 0.001;
+    impactFxPass.enabled = u.uDim.value > 0.001 || u.uMono.value > 0.001 || u.uSlow.value > 0.001 || u.uRingAmt.value > 0.001;
     // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
     hitFxRenderPass.enabled = fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));
 }
@@ -7368,11 +8450,10 @@ function updateHitFx(dt) {
 const TRAIL_STEP = 1 / 240;
 const TRAIL_LIFE = 0.1; // 軌跡が消えるまでの時間
 const TRAIL_MAX = 128;
-const TRAIL_TIP = new THREE.Vector3(0, 0.2, 0); // クナイのローカル座標（切っ先の少し先まで）
+// クナイのローカル座標。切っ先（0.17）からはみ出すと、縁の線が刃から離れて浮いて見えるので、ほぼ切っ先に揃える
+const TRAIL_TIP = new THREE.Vector3(0, 0.175, 0);
 const TRAIL_BASE = new THREE.Vector3(0, 0.06, 0);
-const TRAIL_BASE_THIN = new THREE.Vector3(0, 0.15, 0);
-const TRAIL_COLOR = new THREE.Color(0x2a2a2a); // 軌跡の本体
-const TRAIL_EDGE_COLOR = new THREE.Color(0x000000); // 切っ先側の縁
+const TRAIL_BASE_THIN = new THREE.Vector3(0, 0.13, 0);
 const trailSamples = [];
 let trailNow = 0;
 let lastTrailSample = -Infinity;
@@ -7390,40 +8471,8 @@ trailGeo.setAttribute('position', trailPositions);
 trailGeo.setAttribute('aFade', trailFade);
 trailGeo.setAttribute('aSide', trailSide);
 trailGeo.setIndex(trailIndex);
-const trailMesh = new THREE.Mesh(trailGeo, new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: TRAIL_COLOR }, uEdgeColor: { value: TRAIL_EDGE_COLOR } },
-    vertexShader: /* glsl */ `
-      attribute float aFade;
-      attribute float aSide;
-      varying float vFade;
-      varying float vSide;
-      void main() {
-        vFade = aFade;
-        vSide = aSide;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uColor;
-      uniform vec3 uEdgeColor;
-      varying float vFade;
-      varying float vSide;
-      void main() {
-        // 根元側は透明に、切っ先側ほど濃く。外縁はさらに濃い線で締める
-        float edge = smoothstep(0.8, 1.0, vSide);
-        float a = vFade * vFade * smoothstep(0.0, 0.9, vSide) * mix(0.6, 0.95, edge);
-        vec3 col = mix(uColor, uEdgeColor, edge);
-        gl_FragColor = vec4(col, a);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    // 刃と重なる部分でちらつかないよう、軌跡を少し奥へずらす
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 4,
-}));
+// 他の武器の軌跡と同じ帯の見た目にする
+const trailMesh = new THREE.Mesh(trailGeo, makeRibbonMaterial(KUNAI_RIBBON));
 trailMesh.frustumCulled = false;
 trailMesh.renderOrder = 10;
 camera.add(trailMesh);
@@ -7455,9 +8504,10 @@ function updateTrailMesh() {
     const n = trailSamples.length;
     for (let i = 0; i < n; i++) {
         const s = trailSamples[i];
-        trailPositions.setXYZ(i * 2, s.base.x, s.base.y, s.base.z);
-        trailPositions.setXYZ(i * 2 + 1, s.tip.x, s.tip.y, s.tip.z);
         const fade = 1 - (trailNow - s.time) / TRAIL_LIFE;
+        const base = taperBase(s.base, s.tip, fade, KUNAI_RIBBON.taper);
+        trailPositions.setXYZ(i * 2, base.x, base.y, base.z);
+        trailPositions.setXYZ(i * 2 + 1, s.tip.x, s.tip.y, s.tip.z);
         trailFade.setX(i * 2, fade);
         trailFade.setX(i * 2 + 1, fade);
     }
@@ -7827,11 +8877,12 @@ function updateChargeDash(dt) {
     const speed = chargeDashTime > 0 ? CHARGE_DASH_SPEED : CHARGE_DASH_EXIT;
     velocity.copy(chargeDashDir).multiplyScalar(speed);
 }
-// ---- 居合の構え（右クリック長押し） ----
-// 刀を右上に構えている間は時間がゆっくり流れる。視線の先の敵をロックオンし、左クリックで敵の目の前まで
-// 一気に突進して一閃を浴びせる
+// ---- 居合の構え（右クリックで発動） ----
+// 右クリックを押すと一定時間、刀を右上に構えて時間がゆっくり流れる。視線の先の敵をロックオンし、
+// 左クリックで敵の目の前まで一気に突進して一閃を浴びせる。
+// 構えるには、敵を攻撃して溜まる居合のゲージが満タンになっている必要がある（構えると空になる）
 const FOCUS_TIME_SCALE = 0.2; // 構えている間の時間の速さ
-const FOCUS_MAX = 3; // 構えていられる長さ（実時間の秒）。過ぎると解いて、押し直すまで構えられない
+const FOCUS_MAX = 3; // 構えていられる長さ（実時間の秒）。過ぎると解く
 const FOCUS_DIM = 0.3; // 構えている間に画面を暗く・色を薄くする量
 const FOCUS_ZOOM = 22; // 構えている間に狭める視野（度）
 const LOCK_RANGE = 24;
@@ -7841,9 +8892,14 @@ const RUSH_SPEED = 90;
 const RUSH_STOP = 1.5; // 敵の中心からこの距離で止まって斬る
 const RUSH_MAX_TIME = 0.6;
 const RUSH_EXIT_SPEED = 5; // 斬りつけた後に残す勢い
+const FOCUS_CHARGE_DAMAGE = 150; // 敵へ与えたダメージがこの量になるとゲージが満タンになる（どの武器でも溜まる）
+const FOCUS_EMPTY_FLASH = 0.35;
 let focusing = false;
 let focusTime = 0;
-let focusSpent = false; // 構えていられる時間を使い切った。右クリックを離すまで構え直さない
+let focusCharge = 0; // 居合のゲージ (0〜1)。1 で構えられる
+let focusEmptyFlash = 0; // 溜まっていないのに構えようとしたとき、ゲージを震わせる残り時間
+let focusShownReady = false; // 表示に反映済みの「満タン」
+let focusPressed = false; // 右クリックを押した瞬間（居合の構えを始める）
 let focusBlend = 0; // 0 = 普段の構え, 1 = 居合の構え（実時間で動かす）
 let focusLocked = false;
 let focusZoom = 0; // 構えている間のズームの効き (0〜1)。突進を始めたら一気に戻して、視野が開く勢いにする
@@ -7858,6 +8914,8 @@ const lockTo = new THREE.Vector3();
 const lockLook = new THREE.Vector3();
 const lockScreen = new THREE.Vector3();
 const lockonEl = document.getElementById('lockon');
+const focusHud = document.getElementById('focusgauge');
+const focusFill = focusHud.querySelector('.f');
 // 居合の構え: 柄を右肩の前に上げ、刀を立てて少し後ろへ寝かせる。刃は前へ向ける
 const SWORD_FOCUS_POS = new THREE.Vector3(0.08, 0.22, -0.06);
 const SWORD_FOCUS_QUAT = new THREE.Quaternion();
@@ -7894,9 +8952,16 @@ function canLockOn() {
         lockPoint.set(lockEnemy.root.position.x, lockEnemy.root.position.y + LOCK_HEIGHT, lockEnemy.root.position.z);
     return lockEnemy !== null;
 }
+// 敵へ与えたダメージの分だけゲージを溜める。構えている間と突進中は溜めない
+function chargeFocus(damage) {
+    if (focusing || rushTime >= 0)
+        return;
+    focusCharge = Math.min(1, focusCharge + damage / FOCUS_CHARGE_DAMAGE);
+}
 function startFocus() {
     focusing = true;
     focusTime = 0;
+    focusCharge = 0;
     focusLocked = false;
     swordTwirlTime = Infinity;
     sfx.playFocusStart();
@@ -7963,19 +9028,23 @@ function finishRush() {
 }
 // 構え・ロックオン・突進の状態を進める（実時間で動かす）
 function updateFocus() {
-    if (!throwHeld)
-        focusSpent = false;
-    const want = throwHeld && controls.isLocked && swordReady() && !swordAttack && rushTime < 0 && swordHold < 0 && !focusSpent;
-    if (want && !focusing)
-        startFocus();
-    else if (!want && focusing)
+    const can = controls.isLocked && swordReady() && !swordAttack && rushTime < 0 && swordHold < 0;
+    if (focusPressed && can && !focusing) {
+        if (focusCharge >= 1)
+            startFocus();
+        else {
+            focusEmptyFlash = FOCUS_EMPTY_FLASH;
+            playRing(0.5, 0.25, 0.04); // 溜まっていない鈍い「カッ」
+        }
+    }
+    else if (!can && focusing)
         endFocus();
+    focusPressed = false;
+    focusEmptyFlash = Math.max(0, focusEmptyFlash - realDt);
     if (focusing) {
         focusTime += realDt;
-        if (focusTime >= FOCUS_MAX) {
+        if (focusTime >= FOCUS_MAX)
             endFocus();
-            focusSpent = true;
-        }
     }
     if (focusing) {
         const lock = canLockOn();
@@ -7986,13 +9055,28 @@ function updateFocus() {
     if (rushArrived)
         finishRush();
     // スローは滑らかにかけ、解くときは突進で一気に戻す
-    const targetScale = focusing ? FOCUS_TIME_SCALE : 1;
+    const targetScale = focusing || deadEye !== 'off' ? FOCUS_TIME_SCALE : 1;
     timeScale += (targetScale - timeScale) * Math.min(1, realDt * 10);
     if (Math.abs(timeScale - targetScale) < 0.01)
         timeScale = targetScale;
     const holdPose = focusing || rushTime >= 0;
     focusBlend += ((holdPose ? 1 : 0) - focusBlend) * Math.min(1, realDt * (holdPose ? 14 : 8));
     focusZoom += ((focusing ? 1 : 0) - focusZoom) * Math.min(1, realDt * (focusing ? 6 : 20));
+    // クロスヘアの下の帯: 普段は溜まり具合、構えている間は構えていられる残り時間
+    const fill = focusing
+        ? Math.max(0, 1 - focusTime / FOCUS_MAX)
+        : deadEye === 'mark' ? Math.max(0, 1 - deadEyeT / DEADEYE_MAX) : focusCharge;
+    const ready = focusing || deadEye === 'mark' || focusCharge >= 1;
+    focusHud.classList.toggle('show', focusing || shownWeapon === 'sword' || shownWeapon === 'handgun');
+    focusHud.classList.toggle('ready', ready);
+    focusHud.classList.toggle('empty', focusEmptyFlash > 0);
+    focusFill.style.transform = `scaleX(${fill.toFixed(3)})`;
+    if (ready && !focusShownReady && !focusing && deadEye === 'off') {
+        focusHud.classList.remove('gain');
+        void focusHud.offsetWidth;
+        focusHud.classList.add('gain'); // 満タンになった瞬間に光らせる
+    }
+    focusShownReady = ready;
     // ロックオンの印を敵に重ねる
     lockonEl.classList.toggle('show', focusing && focusLocked);
     if (focusing && focusLocked) {
@@ -8336,10 +9420,10 @@ function pushSwordTrail(p, time) {
     camera.worldToLocal(swordTrailBase.copy(SWORD_TRAIL_BASE).applyMatrix4(sword.matrixWorld));
     swordRibbon.push(swordTrailTip, swordTrailBase, time);
 }
-// 剣の軌跡: クナイの軌跡と同じ見た目で、刃の中ほどから切っ先の少し先までの幅で残す
+// 剣の軌跡: クナイの軌跡と同じ見た目で、刃の根元から切っ先の少し先まで、刃全体の幅で残す
 const SWORD_TRAIL_TIP = new THREE.Vector3(0, SWORD_TIP + 0.03, 0); // 剣のローカル座標
-const SWORD_TRAIL_BASE = new THREE.Vector3(0, SWORD_TIP * 0.42, 0);
-const swordRibbon = new Ribbon(200, 0.13, makeRibbonMaterial(false));
+const SWORD_TRAIL_BASE = new THREE.Vector3(0, sword.userData.bladeBaseY + 0.01, 0);
+const swordRibbon = new Ribbon(240, 0.2, makeRibbonMaterial(SWORD_RIBBON));
 camera.add(swordRibbon.mesh);
 let swordLastTrail = -Infinity;
 const swordTrailPose = newSwordPose();
@@ -8357,6 +9441,1476 @@ function sampleSwordTrail() {
             swordPoseAt(def, s, swordTrailPose);
             pushSwordTrail(swordTrailPose, trailNow - (swordTime - s));
             swordLastTrail = s;
+        }
+    }
+}
+// 補間する値は 1 列に並べる: 手の位置 (3)、最初の key からの回転の積み重ね（回転軸 × 角度、カメラ空間）(3)。
+// 向きを回転の量でつなぐので、大きく回す区間でも回る速さがむらにならない
+const AXE_CHANNELS = 6;
+const AXE_HEAD = 0.95; // 握りから頭までの距離（刃先を前後の key から決めるのに使う）
+// 構えの手は体の近くに引き付けてあるので、振っている間（手の位置を持つ key）は腕を前へ伸ばす
+const AXE_SWING_CENTER = new THREE.Vector3(0, 0, -0.13);
+const AXE_REACH = 2.8;
+const AXE_HIT_ANGLE = 70 * DEG;
+const AXE_REST_UP = new THREE.Vector3(0, 1, 0).applyQuaternion(AXE_REST_QUAT);
+const AXE_REST_EDGE = new THREE.Vector3(1, 0, 0).applyQuaternion(AXE_REST_QUAT);
+const axeBasis = new THREE.Matrix4();
+const axeEvalEdge = new THREE.Vector3();
+const axeEvalFace = new THREE.Vector3();
+// 柄の向き up と刃先の向き edge から、斧の向きを作る（edge は up と直交するよう直す）
+function axeQuatOf(up, edge, out) {
+    axeEvalEdge.copy(edge).addScaledVector(up, -edge.dot(up));
+    if (axeEvalEdge.lengthSq() < 1e-8)
+        axeEvalEdge.set(0, 0, -1).addScaledVector(up, up.z);
+    axeEvalEdge.normalize();
+    axeEvalFace.crossVectors(axeEvalEdge, up);
+    return out.setFromRotationMatrix(axeBasis.makeBasis(axeEvalEdge, up, axeEvalFace));
+}
+// 斧の技の時間をまとめて縮める割合（下の技の定義に書いた時間に掛ける）。小さくするほど速く振る
+const AXE_TIME_SCALE = 0.8;
+// 技の定義に書いた時間（key・当たり・つなぎ・音・カメラの反動など）を、すべて AXE_TIME_SCALE 倍にする
+function scaleAxeTimes(def) {
+    const k = AXE_TIME_SCALE;
+    const opt = (t) => (t === undefined ? undefined : t * k);
+    return {
+        ...def,
+        keys: def.keys.map((key) => ({ ...key, t: key.t * k })),
+        trails: def.trails.map(([a, b]) => [a * k, b * k]),
+        impact: def.impact * k,
+        lungeAt: opt(def.lungeAt),
+        cancel: def.cancel * k,
+        swishes: def.swishes.map((w) => ({ ...w, at: w.at * k, dur: w.dur * k })),
+        kicks: def.kicks?.map(([t, v]) => [t * k, v]),
+        strain: def.strain && [def.strain[0] * k, def.strain[1] * k],
+        grips: def.grips?.map((t) => t * k),
+        hitUntil: opt(def.hitUntil),
+    };
+}
+function makeAxeAttack(src) {
+    const def = scaleAxeTimes(src);
+    const pos = def.keys.map((k) => (k.pos ? new THREE.Vector3(...k.pos).add(AXE_SWING_CENTER) : new THREE.Vector3()));
+    const up = def.keys.map((k) => (k.up ? new THREE.Vector3(...k.up).normalize() : AXE_REST_UP.clone()));
+    // lead の key: 頭が大きく動く先の key を探し、そこへ動く向きへ刃先を向ける
+    const head = def.keys.map((_, i) => pos[i].clone().addScaledVector(up[i], AXE_HEAD));
+    const far = (i, step) => {
+        let j = i + step;
+        while (j > 0 && j < head.length - 1 && head[j].distanceTo(head[i]) < 0.15)
+            j += step;
+        return THREE.MathUtils.clamp(j, 0, head.length - 1);
+    };
+    const quats = [];
+    const carry = new THREE.Quaternion();
+    const prevUp = new THREE.Vector3();
+    const edge = new THREE.Vector3();
+    def.keys.forEach((k, i) => {
+        const quat = new THREE.Quaternion();
+        const prev = quats[i - 1] ?? AXE_REST_QUAT;
+        if (!k.up)
+            quat.copy(AXE_REST_QUAT);
+        else if (k.edge)
+            axeQuatOf(up[i], edge.set(...k.edge), quat);
+        else if (k.lead)
+            axeQuatOf(up[i], edge.subVectors(head[far(i, 1)], head[i]), quat);
+        else if (k.spin !== undefined) {
+            carry.setFromUnitVectors(AXE_REST_UP, up[i]);
+            axeQuatOf(up[i], edge.copy(AXE_REST_EDGE).applyQuaternion(carry).applyAxisAngle(up[i], k.spin * DEG), quat);
+        }
+        else {
+            // 前の key の刃先を、柄の向きを up[i] へ最短で回す回転で運ぶ
+            carry.setFromUnitVectors(prevUp.set(0, 1, 0).applyQuaternion(prev), up[i]);
+            axeQuatOf(up[i], edge.set(1, 0, 0).applyQuaternion(prev).applyQuaternion(carry), quat);
+        }
+        quats.push(quat);
+    });
+    // 前の key からの回転（近回り）を回転ベクトルにして足していく
+    const turn = new THREE.Vector3();
+    const rel = new THREE.Quaternion();
+    const turns = quats.map((q, i) => {
+        if (i > 0)
+            turn.add(rotationVectorOf(rel.copy(quats[i - 1]).invert().premultiply(q), new THREE.Vector3()));
+        return turn.clone();
+    });
+    const ts = def.keys.map((k) => k.t);
+    const vs = def.keys.map((_, i) => [...pos[i].toArray(), ...turns[i].toArray()]);
+    const slopes = def.keys.map(() => new Array(AXE_CHANNELS).fill(0));
+    for (let c = 0; c < AXE_CHANNELS; c++) {
+        axeSlopes(ts, vs.map((v) => v[c])).forEach((m, i) => (slopes[i][c] = m));
+    }
+    const keys = def.keys.map((k, i) => ({ t: k.t, quat: quats[i], v: vs[i], slope: slopes[i] }));
+    return { ...def, keys, duration: keys[keys.length - 1].t, lungeAt: def.lungeAt ?? def.trails[0][0] };
+}
+// 回転 q（近回り）を、回転軸 × 角度のベクトルにする
+function rotationVectorOf(q, out) {
+    if (q.w < 0)
+        q.set(-q.x, -q.y, -q.z, -q.w);
+    const s = Math.sqrt(Math.max(0, 1 - q.w * q.w));
+    const angle = 2 * Math.acos(Math.min(1, q.w));
+    return s < 1e-6 ? out.set(q.x * 2, q.y * 2, q.z * 2) : out.set(q.x, q.y, q.z).multiplyScalar(angle / s);
+}
+// 各 key での変化の速さ。前後の区間の速さを時間で重み付けして平均する（頂点を通る key でも止まらずに抜ける）。
+// 速い区間と遅い区間の境では平均が大きくなりすぎて行き過ぎるので、遅い側の速さの AXE_SLOPE_LIMIT 倍までに抑える
+// （向きが反転する key では、ほぼ止まる）。最初と最後の key（構え）では止まっている
+const AXE_SLOPE_LIMIT = 3;
+function axeSlopes(ts, ys) {
+    return ys.map((y, i) => {
+        if (i === 0 || i === ys.length - 1)
+            return 0;
+        const h0 = ts[i] - ts[i - 1];
+        const h1 = ts[i + 1] - ts[i];
+        const d0 = (y - ys[i - 1]) / h0;
+        const d1 = (ys[i + 1] - y) / h1;
+        const m = (d0 * h1 + d1 * h0) / (h0 + h1);
+        const limit = AXE_SLOPE_LIMIT * Math.min(Math.abs(d0), Math.abs(d1));
+        return THREE.MathUtils.clamp(m, -limit, limit);
+    });
+}
+// ---- 振り終わりの戻し: 柄を手の中で一回転させて構えへ叩き込む ----
+// 振り抜いた所から頭を起こしながら、柄を軸に斧を回し（刃先がくるりと一周する）、構えより少し下まで勢いよく入ってから、
+// 重さを受け止めて構えに収まる。times は回している途中の 2 つの key と、構えの向きへ回り終える key の時間。
+// spin は -240 → -120 → 0 と、柄の先から見て同じ向きへ 120 度ずつ進む（key の間が 180 度を超えると逆へ回ってしまう）
+const AXE_TWIRL_SETTLE = 0.05; // 回り終えてから、沈んで重さを受け止めるまで
+const AXE_TWIRL_REST = 0.09; // 受け止めてから、構えに収まるまで
+const AXE_CATCH_KICK = [-0.5, 0, 0]; // 受け止めたときに付けるカメラの反動（度）
+const AXE_TWIRL_SWISH = { at: 0, dur: 0.16, f0: 260, f1: 700, gain: 0.16 };
+function axeTwirlBack(times, mid) {
+    const end = times[2];
+    return [
+        { t: times[0], ...mid[0], spin: -240 },
+        { t: times[1], ...mid[1], spin: -120 },
+        { t: end, pos: [0.03, 0.0, -0.01], up: [0.55, 0.78, -0.3], spin: 0 }, // 構えの少し上で回り終える
+        { t: end + AXE_TWIRL_SETTLE, pos: [0.0, -0.035, -0.02] }, // 構えより少し下まで入って、重さを受け止める
+        { t: end + AXE_TWIRL_SETTLE + AXE_TWIRL_REST },
+    ];
+}
+// 1 段目: 袈裟割り。腰を落としてから右肩の上へ担ぐように振りかぶり、重さに耐えてためてから、
+// 左下へ斜めに叩き割る。振り抜いた勢いに引かれて頭が下へ流れ、踏ん張ってから、
+// 頭を左から頭上へ跳ね上げつつ柄を手の中で一回転させ、構えへ叩き込むように収める
+const AXE_KESA = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.07, pos: [0.03, -0.05, 0.03], up: [0.56, 0.82, 0.12] }, // 腰を落とす
+        { t: 0.34, pos: [0.31, 0.31, 0.21], up: [0.33, 0.68, 0.65], lead: true }, // 右肩の上へ振りかぶって、ためる
+        { t: 0.375, pos: [0.08, 0.16, -0.02], up: [0.0, 0.92, -0.4] }, // 頭上の前を通過
+        { t: 0.41, pos: [-0.16, 0.06, -0.12], up: [-0.55, -0.08, -0.83] }, // 左下へ叩き割る
+        { t: 0.55, pos: [-0.25, -0.03, -0.08], up: [-0.45, -0.45, -0.77] }, // 重さに引かれて流れる
+        { t: 0.68, pos: [-0.24, -0.02, -0.08], up: [-0.43, -0.47, -0.77] }, // 踏ん張って止める
+        ...axeTwirlBack([0.78, 0.86, 0.93], [
+            { pos: [-0.14, 0.06, -0.02], up: [-0.55, 0.8, 0.1] }, // 頭を左上へ跳ね上げる
+            { pos: [0.02, 0.05, 0.0], up: [0.15, 0.97, 0.15] }, // 頭上で回しながら右へ
+        ]),
+    ],
+    trails: [[0.35, 0.53]],
+    impact: 0.395,
+    strain: [0.2, 0.345],
+    slash: 50,
+    kick: [-1.6, 1.4, -2.6],
+    windKick: [0.6, -0.5, 0.9],
+    kicks: [[0.12, [0.8, -0.4, 0.6]], [0.72, [0.6, -0.3, 0.4]], [0.975, AXE_CATCH_KICK]],
+    lunge: 3,
+    cancel: 0.62,
+    dip: 0.9,
+    grips: [0.05, 0.975],
+    swishes: [
+        { at: 0.09, dur: 0.24, f0: 120, f1: 320, gain: 0.12 }, // 持ち上げる
+        { at: 0.335, dur: 0.22, f0: 200, f1: 1100, gain: 0.7 },
+        { ...AXE_TWIRL_SWISH, at: 0.77 },
+    ],
+    knock: 330,
+    hitStop: 0.1,
+    fx: 1.35,
+});
+// 2 段目: 横薙ぎ。柄を立てて体の前を通し、左の後ろへ大きく引いてから、
+// 腰を回して右へ真横に薙ぐ。振り抜いた勢いのまま頭が右の後ろまで回り込み、
+// そこから柄を手の中で回しながら頭を起こして、構えへ収める
+const AXE_NAGI = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.1, pos: [-0.05, -0.04, 0.02], up: [0.1, 0.95, 0.2] }, // 柄を立てて体の前へ寄せる
+        { t: 0.34, pos: [-0.35, 0.29, 0.19], up: [-0.52, 0.5, 0.69], lead: true }, // 左の後ろへ引いて、ためる
+        { t: 0.375, pos: [-0.06, 0.16, -0.1], up: [-0.15, 0.35, -0.92] }, // 正面を通過
+        { t: 0.41, pos: [0.22, 0.14, -0.08], up: [0.85, 0.25, -0.47] }, // 右へ薙ぐ
+        { t: 0.56, pos: [0.3, 0.22, -0.02], up: [0.95, 0.12, 0.15] }, // 右の後ろへ流れる
+        { t: 0.7, pos: [0.28, 0.2, -0.02], up: [0.93, 0.1, 0.2] }, // 踏ん張って止める
+        ...axeTwirlBack([0.76, 0.82, 0.88], [
+            { pos: [0.22, 0.14, 0.04], up: [0.75, 0.6, 0.25] }, // 頭を起こす
+            { pos: [0.1, 0.07, 0.01], up: [0.3, 0.95, 0.1] }, // 回しながら体の前へ
+        ]),
+    ],
+    trails: [[0.35, 0.54]],
+    impact: 0.39,
+    strain: [0.22, 0.345],
+    slash: 4,
+    kick: [0.4, -3.2, 1.2],
+    windKick: [0, 0.6, -0.3],
+    kicks: [[0.2, [0, 1.0, -0.5]], [0.72, [0.4, 0.5, 0]], [0.925, AXE_CATCH_KICK]],
+    lunge: 3,
+    cancel: 0.62,
+    grips: [0.06, 0.925],
+    swishes: [
+        { at: 0.14, dur: 0.22, f0: 120, f1: 320, gain: 0.12 },
+        { at: 0.335, dur: 0.24, f0: 200, f1: 1000, gain: 0.7 },
+        { ...AXE_TWIRL_SWISH, at: 0.75 },
+    ],
+    knock: 320,
+    hitStop: 0.09,
+    fx: 1.3,
+});
+// 3 段目（締め）: 兜割り。深く沈み込んでから頭の後ろまで高く振りかぶり、ためきってから真っ向から叩きつける。
+// 刃が地面に食い込んだまま残心をとり、引き抜いて右肩に担ぐ。肩から弾ませて柄を手の中で一回転させ、構えへ収める
+const AXE_KABUTO = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.1, pos: [0.0, -0.08, 0.03], up: [0.45, 0.86, 0.1] }, // 沈み込む
+        { t: 0.52, pos: [0.13, 0.39, 0.1], up: [0.15, 0.6, 0.79], lead: true }, // 頭の後ろまで振りかぶって、じわりと引き絞る
+        { t: 0.56, pos: [-0.04, 0.3, -0.06], up: [-0.02, 0.92, -0.4] }, // 真上を通過
+        { t: 0.6, pos: [-0.08, 0.06, -0.22], up: [-0.03, -0.3, -0.95] }, // 真っ向から叩きつける
+        { t: 0.74, pos: [-0.08, 0.0, -0.2], up: [-0.03, -0.42, -0.9] }, // 地面に食い込む
+        { t: 0.98, pos: [-0.08, 0.01, -0.2], up: [-0.03, -0.4, -0.92] }, // 残心
+        { t: 1.1, pos: [-0.02, 0.1, -0.12], up: [0.05, -0.05, -1] }, // 引き抜く
+        { t: 1.34, pos: [0.3, 0.3, 0.14], up: [0.35, 0.7, 0.62] }, // 右肩に担ぐ
+        { t: 1.48, pos: [0.31, 0.28, 0.15], up: [0.35, 0.68, 0.64] },
+        ...axeTwirlBack([1.56, 1.63, 1.7], [
+            { pos: [0.2, 0.16, 0.06], up: [0.5, 0.82, 0.25] }, // 肩から弾ませる
+            { pos: [0.08, 0.06, 0.0], up: [0.35, 0.93, 0.05] },
+        ]),
+    ],
+    trails: [[0.53, 0.66]],
+    impact: 0.585,
+    lungeAt: 0.53,
+    strain: [0.28, 0.53],
+    slash: 88,
+    kick: [-4.2, 0, 0],
+    windKick: [-0.6, 0, 0],
+    kicks: [[0.14, [1.6, 0, 0.3]], [1.0, [1.0, 0, 0]], [1.38, [-0.8, -0.3, -0.5]], [1.745, AXE_CATCH_KICK]],
+    lunge: 5,
+    cancel: 1.0,
+    fovPunch: -8,
+    dip: 2.2,
+    ground: 1,
+    grips: [0.06, 1.0, 1.38, 1.745],
+    swishes: [
+        { at: 0.14, dur: 0.3, f0: 110, f1: 300, gain: 0.14 },
+        { at: 0.525, dur: 0.24, f0: 180, f1: 950, gain: 0.85 },
+        { at: 1.12, dur: 0.26, f0: 140, f1: 420, gain: 0.18 },
+        { ...AXE_TWIRL_SWISH, at: 1.53 },
+    ],
+    knock: 480,
+    hitStop: 0.15,
+    fx: 1.9,
+});
+// スライディング中: 足払い。頭を右の後ろの低い所へ引き、床すれすれを右から左へ大きく薙ぎ払う
+const AXE_SWEEP = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.15, pos: [0.22, -0.06, 0.16], up: [0.85, -0.18, 0.5], lead: true }, // 右の後ろの低い所へ引く
+        { t: 0.185, pos: [0.0, -0.08, -0.14], up: [0.0, -0.22, -0.98] }, // 正面の低い所を通過
+        { t: 0.22, pos: [-0.24, -0.06, -0.02], up: [-0.9, -0.2, -0.3] }, // 左へ薙ぎ払う
+        { t: 0.36, pos: [-0.3, -0.04, 0.1], up: [-0.82, -0.15, 0.55] }, // 左の後ろへ流れる
+        { t: 0.5, pos: [-0.26, -0.03, 0.06], up: [-0.8, -0.1, 0.58] },
+        ...axeTwirlBack([0.58, 0.645, 0.71], [
+            { pos: [-0.12, 0.08, 0.04], up: [-0.4, 0.85, 0.35] }, // 頭を左から起こす
+            { pos: [0.0, 0.05, 0.0], up: [0.2, 0.97, 0.1] },
+        ]),
+    ],
+    trails: [[0.15, 0.34]],
+    impact: 0.2,
+    lungeAt: 0.15,
+    slash: -4,
+    kick: [0.4, 2.8, -0.8],
+    windKick: [0, -0.6, 0],
+    kicks: [[0.755, AXE_CATCH_KICK]],
+    lunge: 0,
+    cancel: 0.46,
+    grips: [0.755],
+    swishes: [
+        { at: 0.145, dur: 0.22, f0: 200, f1: 1000, gain: 0.65 },
+        { ...AXE_TWIRL_SWISH, at: 0.56 },
+    ],
+    knock: 320,
+    hitStop: 0.09,
+    fx: 1.35,
+});
+// 空中: 叩きつけ。頭の後ろへ素早く振りかぶり、体ごと急降下しながら真下へ叩きつける
+const AXE_AIR = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.22, pos: [0.11, 0.35, 0.1], up: [0.15, 0.6, 0.79], lead: true }, // 頭の後ろへ振りかぶる
+        { t: 0.255, pos: [-0.04, 0.28, -0.06], up: [-0.02, 0.92, -0.4] }, // 真上を通過
+        { t: 0.29, pos: [-0.08, 0.04, -0.22], up: [-0.03, -0.32, -0.95] }, // 真下へ叩きつける
+        { t: 0.42, pos: [-0.08, -0.01, -0.2], up: [-0.03, -0.44, -0.9] },
+        { t: 0.6, pos: [-0.08, 0.0, -0.2], up: [-0.03, -0.42, -0.9] },
+        { t: 0.66, pos: [-0.03, 0.1, -0.12], up: [0.05, -0.05, -1] }, // 引き抜く
+        ...axeTwirlBack([0.71, 0.76, 0.81], [
+            { pos: [0.02, 0.1, -0.04], up: [0.15, 0.8, 0.55] }, // 抜いた勢いで頭を跳ね上げる
+            { pos: [0.04, 0.06, 0.0], up: [0.3, 0.95, 0.1] },
+        ]),
+    ],
+    trails: [[0.22, 0.36]],
+    impact: 0.275,
+    hitUntil: 0.6, // 落ちている途中で届いても当てる
+    lungeAt: 0.22,
+    strain: [0.12, 0.225],
+    slash: 88,
+    kick: [-3.6, 0, 0],
+    windKick: [1.2, 0, 0],
+    lunge: 0,
+    drop: 26,
+    cancel: 0.6,
+    fovPunch: -6,
+    dip: 1.8,
+    ground: 0.9,
+    kicks: [[0.855, AXE_CATCH_KICK]],
+    grips: [0.66, 0.855],
+    swishes: [
+        { at: 0.04, dur: 0.2, f0: 120, f1: 320, gain: 0.12 },
+        { at: 0.215, dur: 0.22, f0: 180, f1: 950, gain: 0.8 },
+        { ...AXE_TWIRL_SWISH, at: 0.69 },
+    ],
+    knock: 440,
+    hitStop: 0.13,
+    fx: 1.7,
+});
+// 右クリック: 打ち上げ。柄尻を上、頭を下にして、照準の右下へ斜めに下げて構える（頭は画面の外）。
+// すぐ離せばそのまま、押し続けていれば構えて止め、離したら手を押し出しながら、頭を足元の前に通して左上へかち上げる。
+// 当たったら敵と自分をまとめて打ち上げる（そのまま空中の叩きつけへつなげる）
+const AXE_LAUNCH = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.08, pos: [0.06, -0.1, 0.06], up: [0.6, 0.5, 0.4] }, // 腰を落とす
+        // 構え: 柄尻を上、頭を下にして、照準の右下へ斜めに下げる。握りから柄尻までが画面に見え、柄の中ほどから先（頭）は画面の下の外
+        { t: 0.24, pos: [0.5, 0.3, 0.1], up: [0.65, -0.72, 0.2], lead: true },
+        { t: 0.275, pos: [0.12, 0.0, -0.1], up: [0.15, -0.45, -0.88] }, // 手を押し出しながら、頭が足元の前を通過
+        { t: 0.31, pos: [-0.1, 0.2, -0.1], up: [-0.35, 0.8, -0.48] }, // 左上へかち上げる
+        { t: 0.45, pos: [-0.14, 0.3, 0.0], up: [-0.4, 0.9, 0.15] }, // 勢いの余り
+        { t: 0.6, pos: [-0.13, 0.28, 0.0], up: [-0.4, 0.89, 0.2] },
+        { t: 0.85 },
+    ],
+    trails: [[0.25, 0.42]],
+    impact: 0.29,
+    lungeAt: 0.25, // 構え（0.24）で止めている間には踏み込まない
+    strain: [0.1, 0.235],
+    slash: -88,
+    kick: [3.2, 0, 0],
+    windKick: [-0.6, 0, 0],
+    kicks: [[0.1, [0.8, 0, 0.2]]],
+    lunge: 4,
+    cancel: 0.4, // 打ち上がってすぐ叩きつけへつなげられるように
+    fovPunch: -5,
+    dip: 1.2,
+    grips: [0.05, 0.62],
+    swishes: [
+        { at: 0.1, dur: 0.2, f0: 110, f1: 300, gain: 0.12 },
+        { at: 0.25, dur: 0.22, f0: 200, f1: 1100, gain: 0.75 },
+    ],
+    knock: 380,
+    hitStop: 0.11,
+    fx: 0.9, // 打ち上げはつなぎの技なので、ダメージは軽め
+});
+// ダッシュ中・ダッシュ直後: 突進振り下ろし。押したらすぐ斧を体の右前で前回りに縦へ回し始め、回し続けたまま前へ突進する。
+// 頭が前を通るたびに軽く斬りつけ（浮いている敵は浮かせたまま）、届く所に敵を捉えるか突進しきったら、
+// 回した勢いのまま真っ向から叩き下ろす。浮いている敵は前へ大きく吹き飛ばし、壁に当たれば叩きつけになる。
+// 地上でも空中でも出せる（空中では高さを保ったまま突進する）。
+// 回転の 1 周は key の AXE_WHEEL_START 〜 AXE_WHEEL_END で、突進している間はここを繰り返す（両端は同じ姿勢）。
+// 柄の向きは前回りの角度 θ で (0, cosθ, -sinθ)、刃先は頭が進む向き (0, -sinθ, -cosθ)
+const AXE_RUSH = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.08, pos: [0.2, 0.3, 0.05], up: [0, 0.5, 0.87], edge: [0, 0.87, -0.5] }, // 頭を後ろへ倒して回し始める
+        { t: 0.16, pos: [0.2, 0.3, -0.05], up: [0, 1, 0], edge: [0, 0, -1] }, // 真上（1 周の始まり）
+        { t: 0.22, pos: [0.2, 0.26, -0.12], up: [0, 0, -1], edge: [0, -1, 0] }, // 前
+        { t: 0.28, pos: [0.2, 0.24, -0.06], up: [0, -1, 0], edge: [0, 0, 1] }, // 下
+        { t: 0.34, pos: [0.2, 0.28, 0.0], up: [0, 0, 1], edge: [0, 1, 0] }, // 後ろ
+        { t: 0.4, pos: [0.2, 0.3, -0.05], up: [0, 1, 0], edge: [0, 0, -1] }, // 真上（1 周の終わり）
+        { t: 0.43, pos: [0.14, 0.2, -0.16], up: [0, 0, -1], edge: [0, -1, 0] }, // 回した勢いのまま前へ
+        { t: 0.46, pos: [0.08, 0.04, -0.22], up: [0, -0.64, -0.77], edge: [0, -0.77, 0.64] }, // 真っ向から叩き下ろす
+        { t: 0.58, pos: [0.06, -0.02, -0.2], up: [0, -0.8, -0.6] }, // 重さに引かれて流れる
+        { t: 0.7, pos: [0.06, -0.01, -0.2], up: [0, -0.78, -0.62] }, // 踏ん張って止める
+        { t: 0.76, pos: [0.0, 0.1, -0.12], up: [0.05, -0.05, -1] }, // 引き抜く
+        ...axeTwirlBack([0.81, 0.86, 0.91], [
+            { pos: [0.02, 0.1, -0.04], up: [0.15, 0.8, 0.55] }, // 頭を跳ね上げる
+            { pos: [0.04, 0.06, 0.0], up: [0.3, 0.95, 0.1] },
+        ]),
+    ],
+    trails: [[0.08, 0.52]],
+    impact: 0.445,
+    hitUntil: 0.5,
+    lungeAt: 0.4,
+    slash: 88,
+    kick: [-3.6, 0, 0],
+    windKick: [1.0, 0, 0],
+    kicks: [[0.955, AXE_CATCH_KICK]],
+    lunge: 0,
+    cancel: 0.7,
+    fovPunch: -7,
+    dip: 1.6,
+    ground: 0.8,
+    grips: [0.04, 0.76, 0.955],
+    swishes: [
+        { at: 0.04, dur: 0.18, f0: 160, f1: 520, gain: 0.3 },
+        { at: 0.4, dur: 0.22, f0: 180, f1: 950, gain: 0.8 },
+        { ...AXE_TWIRL_SWISH, at: 0.79 },
+    ],
+    knock: 440,
+    hitStop: 0.13,
+    fx: 1.7,
+});
+// ダッシュ中・ダッシュ直後の右クリック: 突き飛ばし。走る勢いのまま頭を右の後ろへ短く引き、
+// 腰を切って体の前を右から左へ振り抜き、刃の腹で敵を照準の奥へ大きく吹き飛ばす。壁に当たれば叩きつけになる
+const AXE_DRIVE = makeAxeAttack({
+    keys: [
+        { t: 0 },
+        { t: 0.12, pos: [0.35, 0.2, 0.19], up: [0.6, 0.45, 0.66], lead: true }, // 右の後ろへ短く引く
+        { t: 0.155, pos: [0.06, 0.12, -0.12], up: [0.12, 0.3, -0.95] }, // 正面を通過
+        { t: 0.19, pos: [-0.22, 0.12, -0.08], up: [-0.85, 0.25, -0.47] }, // 左へ振り抜く
+        { t: 0.34, pos: [-0.3, 0.2, -0.02], up: [-0.95, 0.12, 0.15] }, // 左の後ろへ流れる
+        { t: 0.48, pos: [-0.28, 0.18, -0.02], up: [-0.93, 0.1, 0.2] }, // 踏ん張って止める
+        ...axeTwirlBack([0.54, 0.6, 0.66], [
+            { pos: [-0.22, 0.14, 0.04], up: [-0.75, 0.6, 0.25] }, // 頭を起こす
+            { pos: [-0.1, 0.07, 0.01], up: [-0.3, 0.95, 0.1] },
+        ]),
+    ],
+    trails: [[0.13, 0.32]],
+    impact: 0.165,
+    hitUntil: 0.24, // 走り抜ける速さでも、振り抜くまでに届いた敵は捉える
+    slash: -4,
+    kick: [0.4, 3.2, -1.2],
+    windKick: [0, -0.6, 0.3],
+    kicks: [[0.705, AXE_CATCH_KICK]],
+    lunge: 0, // 走っている勢いをそのまま使う
+    cancel: 0.5,
+    fovPunch: -6,
+    grips: [0.705],
+    swishes: [
+        { at: 0.1, dur: 0.22, f0: 200, f1: 1000, gain: 0.75 },
+        { ...AXE_TWIRL_SWISH, at: 0.53 },
+    ],
+    knock: 500,
+    hitStop: 0.12,
+    fx: 1.2,
+});
+const AXE_DRIVE_SPEED = 18; // 突き飛ばす速さ (m/s)。勢い 1 で AXE_POWER_HIGH / AXE_POWER_LOW 倍
+const AXE_DRIVE_LIFT = 4; // 突き飛ばすときに浮かせる速さ (m/s)。浮いている間は速さがほとんど落ちず、遠くまで飛ぶ
+const axeDriveDir = new THREE.Vector3();
+const AXE_WHEEL_START = AXE_RUSH.keys[2].t; // 回転の 1 周（AXE_TIME_SCALE を掛けた後の時間）
+const AXE_WHEEL_END = AXE_RUSH.keys[6].t;
+const AXE_WHEEL_CUT = AXE_WHEEL_START + (AXE_WHEEL_END - AXE_WHEEL_START) * (110 / 360); // 頭が前の少し下を通る所で斬りつける
+const AXE_WHEEL_SWISH = { at: 0, dur: 0.16, f0: 160, f1: 520, gain: 0.3 };
+// 回しながらの斬りつけ。軽く、吹き飛ばさずに押し込む
+const AXE_WHEEL_HIT = { kick: [-1.2, 0, 0], slash: 88, knock: 120, hitStop: 0.04, fx: 0.6 };
+const AXE_WHEEL_LIFT = 4; // 回しながら当てた浮いている敵を、落ちないよう支える速さ (m/s)
+const AXE_RUSH_TIME = 0.55; // 突進を続ける長さ（ゲームの時間）
+const AXE_RUSH_SPEED = 22; // 突進の速さ (m/s)
+const AXE_RUSH_REACH = 2.2; // この距離に敵を捉えたら、突進をやめる（回転が真上へ来たら叩き下ろす）
+const AXE_RUSH_EXIT = 5; // 突進をやめたときに残す水平の速さの上限 (m/s)
+const AXE_FLING_SPEED = 14; // 浮いている敵を前へ吹き飛ばす速さ (m/s)。勢い 1 で AXE_POWER_HIGH / AXE_POWER_LOW 倍
+const AXE_FLING_LIFT = 3; // 吹き飛ばすときに少しだけ浮かせる速さ (m/s)
+let axeLaunchPressed = false; // 右クリックを押した瞬間（打ち上げ）
+let axeLaunchQueued = false;
+let axeRushAirUsed = false; // 今の空中で突進を使った（着地・壁走りまで 1 回）
+let axeRushTime = -1; // 突進を始めてからの時間。負なら突進していない
+const axeRushDir = new THREE.Vector3();
+const axeWheelHits = new Set(); // 今の 1 周で斬りつけた敵
+const AXE_ATTACKS = {
+    launch: AXE_LAUNCH,
+    rush: AXE_RUSH,
+    drive: AXE_DRIVE,
+    kesa: AXE_KESA,
+    nagi: AXE_NAGI,
+    kabuto: AXE_KABUTO,
+    sweep: AXE_SWEEP,
+    air: AXE_AIR,
+};
+const AXE_COMBO = [AXE_KESA, AXE_NAGI, AXE_KABUTO];
+const AXE_COMBO_RESET = 0.5;
+const AXE_BUFFER = 0.3;
+const AXE_BITE_TIME = 0.1; // 当たったあと、刃が食い込んで振りが重くなる時間（ゲームの時間）
+const AXE_BITE_SLOW = 0.3; // 食い込んだ瞬間の振りの速さ。そこから元の速さへなめらかに戻す
+const AXE_JOLT_STIFF = 260; // 当たって跳ね返された手元を戻すばね
+const AXE_JOLT_DAMP = 16;
+const AXE_JOLT_KICK = 1.3; // 跳ね返される速さ (m/s)
+let axeAttack = null;
+// ダッシュしたら、柄を軸にくるりと一回転させる（頭の位置はそのまま）
+const AXE_DASH_SPIN_TIME = 0.42;
+const AXE_Y = new THREE.Vector3(0, 1, 0);
+let axeSpinTime = Infinity;
+const axeSpinQuat = new THREE.Quaternion();
+let axeTime = 0;
+let axeQueued = false;
+let axePressed = false;
+let axeAttackWeight = 0;
+let axeComboStep = 0;
+let axeComboTimer = 0;
+let axeFiredSwishes = 0;
+let axeFiredGrips = 0;
+let axeFiredKicks = 0;
+let axeFiredImpact = false;
+let axeFiredLunge = false;
+let axeFiredGround = false;
+let axeHitLanded = false;
+let axeBite = 0;
+// ---- 斧の勢い: 速く動いているほど、高くから落ちるほど一撃が重くなる ----
+// 振り始めと刃が当たる瞬間の水平の速さのうち大きい方で、威力・吹き飛ばし・振りの速さを決める。
+// 止まって振ると威力が下がり、ただ重くて遅い武器になる
+const AXE_POWER_MIN_SPEED = WALK_SPEED; // これ以下の速さでは勢いが 0
+const AXE_POWER_FULL_SPEED = 28; // これ以上の速さで勢いが 1（ダッシュ中・ダッシュ直後）
+const AXE_POWER_FALL_MIN = 1.5; // 叩きつけで落ちた高さ (m)。これ以下なら勢いが 0
+const AXE_POWER_FALL_FULL = 8; // これ以上落ちれば勢いが 1
+const AXE_POWER_LOW = 0.85; // 勢い 0 のときの威力の倍率
+const AXE_POWER_HIGH = 1.5; // 勢い 1 のときの威力の倍率
+const AXE_POWER_HASTE = 0.2; // 勢い 1 のとき、振りをこれだけ速める
+// ---- 右クリックの打ち上げ ----
+// 地上で右クリックを押すと打ち上げ。当たった敵は真上へ飛び、自分も同じくらい跳び上がる。空中で当たった敵は叩きつけで地面へ叩き落とす
+const AXE_LAUNCH_ENEMY_SPEED = 12; // 敵を打ち上げる速さ (m/s)。自分より少し高く上げて、叩きつけで捉えやすくする
+const AXE_LAUNCH_SELF_SPEED = 11.5;
+const AXE_LAUNCH_KEEP = 0.3; // 打ち上げたとき、自分の水平の速さをこれだけ残す（敵から離れていかないように）
+// 右クリックを押し続けていれば、振りかぶった所（AXE_LAUNCH_COCK）で止めて構え、離したら振り上げる
+const AXE_LAUNCH_COCK = AXE_LAUNCH.keys[2].t; // 構えで止める時間 = 構えの key（AXE_TIME_SCALE を掛けた後の時間）
+const AXE_STANCE_TREMBLE = 0.0018; // 構えている間に手元が震える大きさ (m)
+let axeStance = false; // 打ち上げの構えで止めている
+let axeCocked = false; // 構えきった（握り直しの音を鳴らした）
+let axeLaunchedAir = false; // 打ち上げで自分も跳び上がり、まだ着地していない（この間だけ叩きつけが出る）
+const axeDashing = () => dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW;
+const axeLaunchable = () => onGround && !sliding && !wallRunning && !axeDashing();
+let axePower = 0; // 今の攻撃の勢い (0..1)
+let axeSmashFromY = NaN; // 空中の叩きつけで落ち始めた高さ（足元）。着地するまで NaN 以外
+// 空中の叩きつけで着地したあと、斧を床に打ち込んだ重さで少しだけ動けなくなる（歩く・跳ぶ・ダッシュ・次の攻撃）
+const AXE_SLAM_RECOVER = 0.3;
+let axeSlamRecover = 0; // 残りの硬直の時間
+const axeHits = new Set(); // 今の攻撃で当てた敵（同じ敵に二度当てない）
+const axeSpeedPower = () => THREE.MathUtils.clamp((Math.hypot(velocity.x, velocity.z) - AXE_POWER_MIN_SPEED) / (AXE_POWER_FULL_SPEED - AXE_POWER_MIN_SPEED), 0, 1);
+const axeFallPower = (fall) => THREE.MathUtils.clamp((fall - AXE_POWER_FALL_MIN) / (AXE_POWER_FALL_FULL - AXE_POWER_FALL_MIN), 0, 1);
+// 勢いを乗せた当たり（使い回す）
+const axePoweredHit = { kick: [0, 0, 0] };
+function poweredAxeHit(def, power) {
+    const m = AXE_POWER_LOW + (AXE_POWER_HIGH - AXE_POWER_LOW) * power;
+    axePoweredHit.kick = def.kick;
+    axePoweredHit.slash = def.slash;
+    axePoweredHit.fx = (def.fx ?? 1) * m;
+    axePoweredHit.knock = (def.knock ?? DEFAULT_KNOCK) * m;
+    axePoweredHit.hitStop = (def.hitStop ?? DEFAULT_HIT_STOP) * (0.85 + 0.35 * power);
+    return axePoweredHit;
+}
+// ---- 叩きつけの衝撃波: 空中の叩きつけで着地したとき、まわりの敵をまとめて吹き飛ばす ----
+// 高くから落ちるほど広く強くなる。刃で直接当てた敵には当てない（浮いていれば床への叩きつけが代わりに当たる）
+const AXE_SHOCK_RADIUS_LOW = 3;
+const AXE_SHOCK_RADIUS_HIGH = 7;
+const AXE_SHOCK_FX_LOW = 0.6; // 中心での威力（勢い 0）。端では半分になる
+const AXE_SHOCK_FX_HIGH = 1.4;
+const AXE_SHOCK_HIT = { kick: [-1.2, 0, 0], slash: 0, hitStop: 0.07 };
+const axeShockAt = new THREE.Vector3();
+function axeShockwave(fall) {
+    const p = axeFallPower(fall);
+    const radius = AXE_SHOCK_RADIUS_LOW + (AXE_SHOCK_RADIUS_HIGH - AXE_SHOCK_RADIUS_LOW) * p;
+    sfx.playAxeGround(1 + 0.6 * p);
+    addTrauma(0.3 + 0.4 * p);
+    landDipVel -= 1.2 + 1.6 * p;
+    kickVel.x -= (1.5 + 2 * p) * DEG * 22;
+    spawnAxeShock(position, radius, p);
+    for (const e of enemies) {
+        if (!e.alive || axeHits.has(e))
+            continue;
+        if (Math.abs(e.root.position.y - position.y) > 1.5)
+            continue;
+        en = e;
+        hitDir.set(e.root.position.x - position.x, 0, e.root.position.z - position.z);
+        const dist = hitDir.length();
+        if (dist > radius + DUMMY_RADIUS)
+            continue;
+        if (dist > 1e-4)
+            hitDir.divideScalar(dist);
+        else
+            hitDir.set(1, 0, 0);
+        const near = 1 - 0.5 * Math.min(1, dist / radius);
+        AXE_SHOCK_HIT.fx = (AXE_SHOCK_FX_LOW + (AXE_SHOCK_FX_HIGH - AXE_SHOCK_FX_LOW) * p) * near;
+        AXE_SHOCK_HIT.knock = (300 + 250 * p) * near;
+        // 足元の、こちらを向いた側を打つ
+        axeShockAt.copy(e.root.position).addScaledVector(hitDir, -DUMMY_RADIUS);
+        axeShockAt.y += 0.4;
+        applyDummyHit(AXE_SHOCK_HIT, axeShockAt, 'axe', undefined, false);
+        if (e.alive)
+            knockEnemy(hitDir, AXE_SHOCK_HIT.knock); // 中心から外へ吹き飛ばす
+    }
+}
+// 衝撃波の見た目
+// 地面: 波打ちながら走る縁・あとを追う 2 本目の輪・波が通った所だけ光る床のグリッド・中心の焦げ跡・枝分かれして走るひび
+// 空間: 縁から立ち上がる光の壁・縁から時間差で噴き上がる土煙の筋・地を這う光線・床のかけら・横に潰れた閃光
+const AXE_SHOCK_LIFE = 0.55; // 波が広がりきるまで
+const AXE_SHOCK_ECHO = 0.1; // 2 本目の輪の遅れ（波の時間に対する割合）
+const AXE_SHOCK_WALL = 0.45; // 光の壁の高さ（勢い 0）。勢い 1 で倍
+const AXE_CRACK_LIFE = 1.8; // ひびと焦げ跡が冷えて消えるまで
+const AXE_CRACK_HEAT = 3.5; // ひびが白熱から冷える速さ
+const AXE_CRACK_MAX_SEG = 220;
+const AXE_CHUNK_TINT = new THREE.Color(0xa8a8a8); // 床のかけらの色
+// 波の縁が中心から dist まで届く時間（半径は easeOutCubic で広がる）
+const axeShockReach = (dist, radius) => (1 - Math.cbrt(Math.max(0, 1 - dist / radius))) * AXE_SHOCK_LIFE;
+const AXE_SHOCK_HASH = /* glsl */ `
+  float hash1(float n) { return fract(sin(n * 12.9898 + uSeed) * 43758.5453); }
+  // 角度方向の滑らかな揺らぎ。cells 個で一周してつながる
+  float ringNoise(float a01, float cells) {
+    float x = a01 * cells;
+    float i = floor(x);
+    float f = fract(x);
+    return mix(hash1(mod(i, cells)), hash1(mod(i + 1.0, cells)), f * f * (3.0 - 2.0 * f));
+  }
+`;
+// 地面の円盤: 白い光と暗い焦げを、乗算済みアルファで 1 枚に重ねる
+const axeShockDiscGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+const makeAxeShockDiscMat = () => new THREE.ShaderMaterial({
+    transparent: true, premultipliedAlpha: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    uniforms: {
+        uCenter: { value: new THREE.Vector2() }, uFront: { value: 0 }, uEcho: { value: -1 }, uRadius: { value: 1 },
+        uFade: { value: 0 }, uScorch: { value: 0 }, uSeed: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+    varying vec2 vXZ;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vXZ = w.xz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform vec2 uCenter;
+    uniform float uFront;
+    uniform float uEcho;
+    uniform float uRadius;
+    uniform float uFade;
+    uniform float uScorch;
+    uniform float uSeed;
+    varying vec2 vXZ;
+    ${AXE_SHOCK_HASH}
+    float gridAxis(float p, float cell, float width) {
+      float px = fwidth(p);
+      float d = abs(fract(p / cell - 0.5) - 0.5) * cell;
+      float w = max(width, px);
+      return clamp((w * 0.5 - d) / px + 0.5, 0.0, 1.0) * (width / w);
+    }
+    void main() {
+      vec2 p = vXZ - uCenter;
+      float d = length(p);
+      float a01 = atan(p.y, p.x) / 6.2831853 + 0.5;
+      // 縁を波打たせ、広がるほど崩す
+      float dd = d + (ringNoise(a01, 28.0) - 0.5) * 0.35 * (uFront / uRadius) + (ringNoise(a01, 9.0) - 0.5) * 0.2;
+      float behind = uFront - dd; // 正なら波が通り過ぎた所
+      float inside = step(0.0, behind);
+      float edge = behind < 0.0 ? exp(behind * 45.0) : exp(-behind * 9.0);
+      float wash = inside * exp(-behind * 2.0);
+      float echo = uEcho > 0.0 ? exp(-abs(uEcho - dd) * 30.0) * 0.55 : 0.0;
+      // 波の内側を外へ流れる放射状の筋
+      float streak = smoothstep(0.6, 1.0, ringNoise(a01, 110.0)) * smoothstep(0.3, 1.2, d) * wash;
+      // 波が通った所だけ、床のグリッドを光らせる
+      float minor = max(gridAxis(vXZ.x, ${ARENA_GRID_MINOR.toFixed(2)}, 0.03), gridAxis(vXZ.y, ${ARENA_GRID_MINOR.toFixed(2)}, 0.03));
+      float major = max(gridAxis(vXZ.x, ${ARENA_GRID_MAJOR.toFixed(2)}, 0.08), gridAxis(vXZ.y, ${ARENA_GRID_MAJOR.toFixed(2)}, 0.08));
+      float grid = max(minor * 0.55, major) * inside * exp(-behind * 1.1);
+      float limit = 1.0 - smoothstep(uRadius * 0.9, uRadius * 1.08, d);
+      float light = clamp(edge + wash * 0.3 + echo + streak * 0.45 + grid * 0.85, 0.0, 1.0) * uFade * limit;
+      // 中心の焦げ跡: 縁をぎざぎざにした暗い円
+      float scorchR = 0.9 + 0.35 * ringNoise(a01, 13.0);
+      float scorch = (1.0 - smoothstep(scorchR * 0.35, scorchR, d)) * 0.42 * uScorch;
+      gl_FragColor = vec4(vec3(light), 1.0 - (1.0 - light) * (1.0 - scorch));
+    }
+  `,
+});
+// 光の壁: 波の縁に沿って立つ筒。上の縁は角度ごとに高さを変えてぎざぎざにする
+const axeShockWallGeo = new THREE.CylinderGeometry(1, 1, 1, 72, 1, true).translate(0, 0.5, 0);
+const makeAxeShockWallMat = () => new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { uFade: { value: 0 }, uSeed: { value: 0 } },
+    vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform float uFade;
+    uniform float uSeed;
+    varying vec2 vUv;
+    ${AXE_SHOCK_HASH}
+    void main() {
+      float top = 0.35 + 0.65 * ringNoise(vUv.x, 40.0);
+      float band = smoothstep(0.55, 1.0, ringNoise(vUv.x, 150.0)); // 縦に走る明るい筋
+      float h = vUv.y / mix(top, 1.0, band * 0.5);
+      float a = (1.0 - smoothstep(0.0, 1.0, h)) * (0.55 + 0.45 * band);
+      a *= a * uFade;
+      gl_FragColor = vec4(vec3(1.0), a);
+    }
+  `,
+});
+// ひび: 地面に平たく置いた細い帯。中心から縁が届いた所まで走り、白熱から冷えて暗い割れ目になる
+const axeCrackIndex = new Uint16Array(AXE_CRACK_MAX_SEG * 6);
+for (let i = 0; i < AXE_CRACK_MAX_SEG; i++)
+    axeCrackIndex.set([i * 4, i * 4 + 2, i * 4 + 1, i * 4 + 1, i * 4 + 2, i * 4 + 3], i * 6);
+const makeAxeCrackMat = () => new THREE.ShaderMaterial({
+    transparent: true, premultipliedAlpha: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    uniforms: { uReach: { value: 0 }, uHeat: { value: 1 }, uFade: { value: 1 } },
+    vertexShader: /* glsl */ `
+    attribute float aDist;
+    attribute float aSide;
+    varying float vDist;
+    varying float vSide;
+    void main() {
+      vDist = aDist;
+      vSide = aSide;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform float uReach;
+    uniform float uHeat;
+    uniform float uFade;
+    varying float vDist;
+    varying float vSide;
+    void main() {
+      float shown = 1.0 - smoothstep(uReach - 0.15, uReach, vDist);
+      float across = abs(vSide);
+      float core = 1.0 - smoothstep(0.3, 0.6, across);
+      float glow = 1.0 - across;
+      // 走ったばかりの先端ほど熱い
+      float heat = uHeat * (0.6 + 0.4 * smoothstep(uReach - 1.5, uReach, vDist));
+      float k = shown * uFade;
+      vec3 col = vec3(heat * (core + glow * 0.6));
+      float a = core * 0.8 + glow * heat * 0.35;
+      gl_FragColor = vec4(col * k, clamp(a, 0.0, 1.0) * k);
+    }
+  `,
+});
+const axeShocks = [];
+function newAxeShock() {
+    const discMat = makeAxeShockDiscMat();
+    const disc = new THREE.Mesh(axeShockDiscGeo, discMat);
+    disc.renderOrder = 2;
+    const wallMat = makeAxeShockWallMat();
+    const wall = new THREE.Mesh(axeShockWallGeo, wallMat);
+    wall.renderOrder = 4;
+    const crackGeo = new THREE.BufferGeometry();
+    crackGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(AXE_CRACK_MAX_SEG * 4 * 3), 3));
+    crackGeo.setAttribute('aDist', new THREE.BufferAttribute(new Float32Array(AXE_CRACK_MAX_SEG * 4), 1));
+    crackGeo.setAttribute('aSide', new THREE.BufferAttribute(new Float32Array(AXE_CRACK_MAX_SEG * 4), 1));
+    crackGeo.setIndex(new THREE.BufferAttribute(axeCrackIndex, 1));
+    const crackMat = makeAxeCrackMat();
+    const cracks = new THREE.Mesh(crackGeo, crackMat);
+    cracks.renderOrder = 3;
+    cracks.frustumCulled = false;
+    for (const m of [disc, wall, cracks]) {
+        m.visible = false;
+        scene.add(m);
+    }
+    const s = { disc, discMat, wall, wallMat, cracks, crackGeo, crackMat, age: Infinity, radius: 1, power: 0 };
+    axeShocks.push(s);
+    return s;
+}
+// 中心から外へ、向きを揺らしながら伸ばす。途中でときどき枝分かれさせる
+let axeCrackSegs = 0;
+function growAxeCrack(geo, x, z, ang, len, width, branch) {
+    const pos = geo.attributes.position.array;
+    const dist = geo.attributes.aDist.array;
+    const side = geo.attributes.aSide.array;
+    const out = ang;
+    let walked = 0;
+    while (walked < len && axeCrackSegs < AXE_CRACK_MAX_SEG) {
+        const step = rand(0.16, 0.36);
+        ang += rand(-0.5, 0.5) + (out - ang) * 0.35; // 外向きから大きく外れないよう引き戻す
+        const nx = x + Math.cos(ang) * step;
+        const nz = z + Math.sin(ang) * step;
+        const w0 = Math.max(0.005, width * (1 - walked / len));
+        const w1 = Math.max(0.005, width * (1 - (walked + step) / len));
+        const sx = -Math.sin(ang);
+        const sz = Math.cos(ang);
+        const i = axeCrackSegs * 4;
+        pos.set([x + sx * w0, 0, z + sz * w0, x - sx * w0, 0, z - sz * w0, nx + sx * w1, 0, nz + sz * w1, nx - sx * w1, 0, nz - sz * w1], i * 3);
+        const d0 = Math.hypot(x, z);
+        const d1 = Math.hypot(nx, nz);
+        dist.set([d0, d0, d1, d1], i);
+        side.set([1, -1, 1, -1], i);
+        axeCrackSegs++;
+        if (branch && walked > 0.3 && Math.random() < 0.22) {
+            growAxeCrack(geo, nx, nz, ang + rand(0.5, 1.0) * (Math.random() < 0.5 ? -1 : 1), (len - walked) * rand(0.35, 0.7), w1 * 0.8, false);
+        }
+        x = nx;
+        z = nz;
+        walked += step;
+    }
+}
+const axeShockDir = new THREE.Vector3();
+function spawnAxeShock(at, radius, power) {
+    const s = axeShocks.find((r) => r.age >= AXE_CRACK_LIFE) ?? newAxeShock();
+    s.age = 0;
+    s.radius = radius;
+    s.power = power;
+    const seed = Math.random() * 100;
+    s.disc.position.set(at.x, at.y + 0.03, at.z);
+    s.disc.scale.setScalar(radius * 1.1);
+    s.discMat.uniforms.uCenter.value.set(at.x, at.z);
+    s.discMat.uniforms.uRadius.value = radius;
+    s.discMat.uniforms.uSeed.value = seed;
+    s.wall.position.set(at.x, at.y, at.z);
+    s.wall.rotation.y = Math.random() * Math.PI * 2;
+    s.wallMat.uniforms.uSeed.value = seed + 7;
+    // ひび: 高くから落ちるほど本数を増やし、長く太くする
+    axeCrackSegs = 0;
+    const count = 7 + Math.round(5 * power);
+    const a0 = Math.random() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+        const a = a0 + (i / count) * Math.PI * 2 + rand(-0.25, 0.25);
+        const r0 = rand(0.15, 0.35);
+        growAxeCrack(s.crackGeo, Math.cos(a) * r0, Math.sin(a) * r0, a, radius * rand(0.3, 0.6), 0.045 + 0.035 * power, true);
+    }
+    s.crackGeo.setDrawRange(0, axeCrackSegs * 6);
+    for (const name of ['position', 'aDist', 'aSide'])
+        s.crackGeo.attributes[name].needsUpdate = true;
+    s.cracks.position.set(at.x, at.y + 0.035, at.z);
+    for (const m of [s.disc, s.wall, s.cracks])
+        m.visible = true;
+    updateAxeShock(s, 0);
+    // 足元の閃光: 横に潰して、地面を叩いた形にする
+    const flash = fireBurst(flares, axeShockAt.set(at.x, at.y + 0.15, at.z), 3 + 2.5 * power, 0.3, 2.2, 2.6);
+    flash.mat.uniforms.uRot.value = 0;
+    fireBurst(flares, axeShockAt, 1.4 + power, 0.14, 2.5, 1);
+    // 地を這う光線
+    const rays = 30 + Math.round(14 * power);
+    for (let i = 0; i < rays; i++) {
+        const a = (i / rays) * Math.PI * 2 + Math.random() * 0.12;
+        axeShockDir.set(Math.cos(a), rand(0, 0.05), Math.sin(a));
+        addBeam(axeShockAt.set(at.x, at.y + rand(0.05, 0.2), at.z), axeShockDir, {
+            color: HIT_TINT,
+            len: radius * rand(0.6, 1),
+            width: rand(0.04, 0.08) * (1 + 0.5 * power),
+            offset: 0.3,
+            tail: 1,
+            reach: 1.3,
+            life: rand(0.4, 0.55),
+        });
+    }
+    // 波の縁が届いた所から、時間差で噴き上がる土煙の筋
+    const jets = 18 + Math.round(16 * power);
+    for (let i = 0; i < jets; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = radius * Math.sqrt(rand(0.04, 0.9));
+        axeShockDir.set(Math.cos(a) * rand(0.15, 0.5), 1, Math.sin(a) * rand(0.15, 0.5));
+        addBeam(axeShockAt.set(at.x + Math.cos(a) * d, at.y, at.z + Math.sin(a) * d), axeShockDir, {
+            color: HIT_TINT,
+            len: rand(0.5, 1.3) * (1 + power) * (1 - 0.5 * d / radius),
+            width: rand(0.03, 0.07),
+            tail: 1,
+            reach: rand(1.6, 2.4),
+            life: rand(0.25, 0.4),
+            age: -axeShockReach(d, radius),
+        });
+    }
+    // 床のかけらと火花を、足元の輪から外へ跳ね上げる
+    const chunks = 16 + Math.round(16 * power);
+    for (let i = 0; i < chunks; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = rand(0.3, 1.2);
+        axeShockAt.set(at.x + Math.cos(a) * d, at.y + 0.05, at.z + Math.sin(a) * d);
+        hitLook.set(Math.cos(a), rand(0.6, 1.4), Math.sin(a));
+        spawnShards(axeShockAt, hitLook, 1, rand(0.8, 1.3), rand(0.8, 1.4) * (1 + 0.4 * power), undefined, AXE_CHUNK_TINT);
+    }
+    for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        axeShockAt.set(at.x + Math.cos(a) * 0.6, at.y + 0.1, at.z + Math.sin(a) * 0.6);
+        hitLook.set(-Math.cos(a), 0.3, -Math.sin(a));
+        spawnSparks(axeShockAt, hitLook, 1 + Math.round(power), 0.9, 0.8);
+    }
+}
+function updateAxeShock(s, dt) {
+    s.age += dt;
+    if (s.age >= AXE_CRACK_LIFE) {
+        s.disc.visible = s.wall.visible = s.cracks.visible = false;
+        return;
+    }
+    const u = Math.min(1, s.age / AXE_SHOCK_LIFE);
+    const front = s.radius * easeOutCubic(u);
+    const echoU = (s.age / AXE_SHOCK_LIFE - AXE_SHOCK_ECHO) / (1 - AXE_SHOCK_ECHO);
+    const du = s.discMat.uniforms;
+    du.uFront.value = front;
+    du.uEcho.value = echoU > 0 && echoU < 1 ? s.radius * 0.85 * easeOutCubic(echoU) : -1;
+    du.uFade.value = (1 - u) ** 1.5;
+    const cool = s.age / AXE_CRACK_LIFE;
+    du.uScorch.value = Math.min(1, s.age / 0.05) * (1 - THREE.MathUtils.smoothstep(cool, 0.5, 1));
+    // 壁は一気に立ち上がり、広がりながら低く薄くなる
+    s.wall.visible = u < 1;
+    const h = AXE_SHOCK_WALL * (1 + s.power) * Math.min(1, s.age / 0.04) * (1 - u) ** 0.6;
+    s.wall.scale.set(Math.max(0.01, front), Math.max(0.01, h), Math.max(0.01, front));
+    s.wallMat.uniforms.uFade.value = 0.6 * (1 - u) ** 2;
+    const cu = s.crackMat.uniforms;
+    cu.uReach.value = s.radius * easeOutCubic(Math.min(1, u * 1.4));
+    cu.uHeat.value = Math.exp(-s.age * AXE_CRACK_HEAT);
+    cu.uFade.value = 1 - THREE.MathUtils.smoothstep(cool, 0.55, 1);
+}
+function updateAxeShocks(dt) {
+    for (const s of axeShocks)
+        if (s.age < AXE_CRACK_LIFE)
+            updateAxeShock(s, dt);
+}
+const axeJolt = new THREE.Vector3();
+const axeJoltVel = new THREE.Vector3();
+const axeReady = () => shownWeapon === 'axe' && wantWeapon === 'axe' && holster === 0;
+const newAxePose = () => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion().copy(AXE_REST_QUAT) });
+const axeFrom = newAxePose(); // 攻撃を始めた瞬間の構え
+const axeCur = newAxePose();
+const axeTmp = newAxePose();
+const axeTmpHit = newAxePose();
+const axeTrailPose = newAxePose();
+const axeEvalTurn = new THREE.Vector3();
+const axeEvalV = new Array(AXE_CHANNELS).fill(0);
+// 手の位置と回転の積み重ねを同じ曲線でつなぎ、区間の始まりの key の向きから、積み重ねの差の分だけ回す
+function evalAxeAttack(def, t, out) {
+    const keys = def.keys;
+    let i = 0;
+    while (i < keys.length - 2 && t >= keys[i + 1].t)
+        i++;
+    const k0 = keys[i];
+    const k1 = keys[i + 1];
+    const h = k1.t - k0.t;
+    const u = THREE.MathUtils.clamp((t - k0.t) / h, 0, 1);
+    const u2 = u * u;
+    const u3 = u2 * u;
+    const a0 = 2 * u3 - 3 * u2 + 1;
+    const b0 = (u3 - 2 * u2 + u) * h;
+    const a1 = -2 * u3 + 3 * u2;
+    const b1 = (u3 - u2) * h;
+    for (let c = 0; c < AXE_CHANNELS; c++) {
+        axeEvalV[c] = a0 * k0.v[c] + b0 * k0.slope[c] + a1 * k1.v[c] + b1 * k1.slope[c];
+    }
+    const v = axeEvalV;
+    out.pos.set(v[0], v[1], v[2]);
+    axeEvalTurn.set(v[3] - k0.v[3], v[4] - k0.v[4], v[5] - k0.v[5]);
+    const angle = axeEvalTurn.length();
+    if (angle < 1e-9)
+        out.quat.copy(k0.quat);
+    else
+        out.quat.setFromAxisAngle(axeEvalTurn.divideScalar(angle), angle).multiply(k0.quat);
+}
+// 振りかぶりの key までの間に、攻撃開始時の構えから滑らかに移る
+function axePoseAt(def, t, out) {
+    evalAxeAttack(def, t, axeTmp);
+    const w = easeInOutCubic(THREE.MathUtils.clamp(t / def.keys[1].t, 0, 1));
+    out.pos.lerpVectors(axeFrom.pos, axeTmp.pos, w);
+    out.quat.slerpQuaternions(axeFrom.quat, axeTmp.quat, w);
+}
+function applyAxePose(p) {
+    axeRest.position.copy(p.pos);
+    axeRest.quaternion.copy(p.quat);
+}
+function startAxeAttack(def) {
+    axeFrom.pos.copy(axeCur.pos);
+    axeFrom.quat.copy(axeCur.quat);
+    axeAttack = def;
+    axeRushTime = -1;
+    if (def === AXE_RUSH)
+        startAxeRush();
+    axeSpinTime = Infinity; // 回している途中に振ったら、回すのはやめる
+    axeTime = 0;
+    axeQueued = false;
+    axeFiredSwishes = 0;
+    axeFiredGrips = 0;
+    axeFiredKicks = 0;
+    axeFiredImpact = false;
+    axeFiredLunge = false;
+    axeFiredGround = false;
+    axeHitLanded = false;
+    axeBite = 0;
+    axePower = axeSpeedPower();
+    axeHits.clear();
+    axeStance = false;
+    axeLastTrail = -Infinity;
+    axeRibbon.cut();
+    axeSlamRibbon.cut();
+    axeSlamHold = 0;
+    if (def.windKick) {
+        kickVel.x += def.windKick[0] * DEG * 10;
+        kickVel.y += def.windKick[1] * DEG * 10;
+        kickVel.z += def.windKick[2] * DEG * 10;
+    }
+}
+function chooseAxeAttack() {
+    if (sliding)
+        return AXE_SWEEP;
+    // ダッシュ中・ダッシュ直後は突進振り下ろし（空中では 1 回だけ）
+    if ((dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) && !wallRunning && (onGround || !axeRushAirUsed))
+        return AXE_RUSH;
+    // 空中の叩きつけは、打ち上げで跳び上がっている間だけ（1 回の打ち上げにつき 1 回）
+    if (axeLaunchedAir && !onGround && !wallRunning) {
+        axeLaunchedAir = false;
+        return AXE_AIR;
+    }
+    const def = AXE_COMBO[axeComboStep];
+    axeComboStep = (axeComboStep + 1) % AXE_COMBO.length;
+    return def;
+}
+// ---- 吸い寄せ: 踏み込むとき、前にいる敵の方へ少しだけ引き寄せる ----
+// 照準の近くにいる一番近い敵へ向けて、届く距離まで寄るぶんの速さを足す（足す速さには上限がある）。
+// 敵の方へまっすぐ寄るので、少し外れた向きで振っても当たりやすい
+const AXE_PULL_RANGE = 3.5; // 届く距離（AXE_REACH）より、さらにこれだけ先の敵まで引き寄せる (m)
+const AXE_PULL_ANGLE = 35 * DEG; // 照準からこの角度の内側にいる敵だけ
+const AXE_PULL_STOP = 0.6; // 届く距離のこの割合まで寄ったら、それ以上は引き寄せない
+const AXE_PULL_GAIN = 2; // 残りの距離 1m あたりに足す速さ (m/s)
+const AXE_PULL_MAX = 5; // 足す速さの上限 (m/s)
+const axePullLook = new THREE.Vector3();
+const axePullDir = new THREE.Vector3();
+function pullTowardAxeTarget() {
+    camera.getWorldDirection(axePullLook);
+    axePullLook.y = 0;
+    if (axePullLook.lengthSq() < 1e-6)
+        return;
+    axePullLook.normalize();
+    let best = null;
+    let bestDist = AXE_REACH + AXE_PULL_RANGE + DUMMY_RADIUS;
+    for (const e of enemies) {
+        if (!e.alive || e.riseTime < RESPAWN_RISE_TIME)
+            continue;
+        if (Math.abs(e.root.position.y - position.y) > DUMMY_HEIGHT + 0.5)
+            continue;
+        axePullDir.set(e.root.position.x - position.x, 0, e.root.position.z - position.z);
+        const d = axePullDir.length();
+        if (d >= bestDist || d < 1e-4)
+            continue;
+        if (axePullDir.divideScalar(d).angleTo(axePullLook) > AXE_PULL_ANGLE)
+            continue;
+        best = e;
+        bestDist = d;
+    }
+    if (!best)
+        return;
+    const gap = bestDist - DUMMY_RADIUS - AXE_REACH * AXE_PULL_STOP;
+    if (gap <= 0)
+        return;
+    axePullDir.set(best.root.position.x - position.x, 0, best.root.position.z - position.z).normalize();
+    // 今その向きへ出ている速さを差し引いて、足りないぶんだけ足す（ダッシュ中などに速くなりすぎないように）
+    const want = Math.min(AXE_PULL_MAX, gap * AXE_PULL_GAIN);
+    const along = velocity.x * axePullDir.x + velocity.z * axePullDir.z;
+    const add = Math.max(0, want - Math.max(0, along) * 0.5);
+    velocity.x += axePullDir.x * add;
+    velocity.z += axePullDir.z * add;
+}
+// 敵を dir（水平）へ大きく吹き飛ばす（壁に当たれば叩きつけ）。速さは勢いに応じて増やす
+function flingEnemy(dir, speed, lift, power) {
+    if (enemyHeld())
+        return;
+    const m = AXE_POWER_LOW + (AXE_POWER_HIGH - AXE_POWER_LOW) * power;
+    en.knockVel.copy(dir).multiplyScalar(speed * m / AXE_POWER_LOW);
+    en.flung = true;
+    en.airVel = Math.max(en.airVel, lift);
+    en.vel.set(0, 0, 0);
+    en.moving = false;
+    en.spiked = false;
+}
+// 刃先の中ほどが敵を捉えた場所を当たりの位置にする
+const AXE_HIT_EDGE = new THREE.Vector3(0.27, 0.93, 0); // 斧のローカル座標
+const axeHitTip = new THREE.Vector3();
+const axeSwing = new THREE.Vector3();
+function axeEdgeAt(def, t, out) {
+    axePoseAt(def, t, axeTmpHit);
+    applyAxePose(axeTmpHit);
+    heldAxeModel.updateWorldMatrix(true, false);
+    return out.copy(AXE_HIT_EDGE).applyMatrix4(heldAxeModel.matrixWorld);
+}
+// 回しながらの斬りつけ: 届く範囲にいる敵（今の 1 周でまだ当てていないもの）すべてに軽く当てる
+function tryAxeWheelHit() {
+    let any = false;
+    for (const e of enemies) {
+        if (axeWheelHits.has(e))
+            continue;
+        en = e;
+        if (!inReachOf(AXE_REACH, AXE_HIT_ANGLE))
+            continue;
+        if (!any) {
+            camera.updateMatrixWorld();
+            axeEdgeAt(AXE_RUSH, Math.max(0, axeTime - SWING_SAMPLE), axeSwing);
+            axeSwing.subVectors(axeEdgeAt(AXE_RUSH, axeTime + SWING_SAMPLE, axeHitTip), axeSwing);
+            axeEdgeAt(AXE_RUSH, axeTime, axeHitTip);
+        }
+        any = true;
+        axeWheelHits.add(e);
+        hitPointFromTip(axeHitTip, hitPoint);
+        const hit = poweredAxeHit(AXE_WHEEL_HIT, axePower);
+        applyDummyHit(hit, hitPoint, 'axe', axeSwing);
+        if (!e.alive)
+            continue;
+        if (e.airY > 0.3) {
+            e.airVel = Math.max(e.airVel, AXE_WHEEL_LIFT);
+            e.spiked = false;
+        }
+        else
+            knockEnemy(hitDir, hit.knock ?? DEFAULT_KNOCK);
+    }
+    if (any) {
+        axeBite = AXE_BITE_TIME * 0.5;
+        axeJoltVel.copy(axeSwing).transformDirection(camera.matrixWorldInverse).multiplyScalar(-AXE_JOLT_KICK * 0.5);
+    }
+    return any;
+}
+// 届く範囲にいる敵（今の攻撃でまだ当てていないもの）すべてに当てる
+function tryAxeHit(def) {
+    let any = false;
+    const speedPower = axeSpeedPower();
+    for (const e of enemies) {
+        if (axeHits.has(e))
+            continue;
+        en = e;
+        if (!inReachOf(def.reach ?? AXE_REACH, AXE_HIT_ANGLE))
+            continue;
+        if (!any) {
+            camera.updateMatrixWorld();
+            axeEdgeAt(def, Math.max(0, axeTime - SWING_SAMPLE), axeSwing);
+            axeSwing.subVectors(axeEdgeAt(def, axeTime + SWING_SAMPLE, axeHitTip), axeSwing);
+            axeEdgeAt(def, axeTime, axeHitTip);
+        }
+        any = true;
+        axeHits.add(e);
+        // 勢い: 振り始めと今の速さ、叩きつけなら敵の足元までの高さ
+        // 突進振り下ろしは、突進の速さではなく出す前の速さで決める
+        let power = def === AXE_RUSH ? axePower : Math.max(axePower, speedPower);
+        if (!Number.isNaN(axeSmashFromY))
+            power = Math.max(power, axeFallPower(axeSmashFromY - e.root.position.y));
+        hitPointFromTip(axeHitTip, hitPoint);
+        const hit = poweredAxeHit(def, power);
+        applyDummyHit(hit, hitPoint, 'axe', axeSwing);
+        if (!e.alive)
+            continue;
+        // 打ち上げは真上へ飛ばし、振り下ろし（空中の叩きつけ・兜割り）は浮いている敵を床へ叩き落とすので、横へは吹き飛ばさない
+        if (def === AXE_RUSH && e.airY > 0.3)
+            flingEnemy(axeRushDir, AXE_FLING_SPEED, AXE_FLING_LIFT, power);
+        else if (def === AXE_DRIVE) {
+            camera.getWorldDirection(axeDriveDir);
+            axeDriveDir.y = 0;
+            if (axeDriveDir.lengthSq() < 1e-6)
+                axeDriveDir.set(0, 0, -1);
+            flingEnemy(axeDriveDir.normalize(), AXE_DRIVE_SPEED, AXE_DRIVE_LIFT, power);
+        }
+        else if ((def === AXE_AIR || def === AXE_KABUTO) && e.airY > 0.2)
+            spikeEnemy();
+        else if (def !== AXE_LAUNCH && def !== AXE_AIR)
+            knockEnemy(hitDir, hit.knock ?? DEFAULT_KNOCK);
+        if (def === AXE_LAUNCH)
+            launchEnemy();
+    }
+    if (!any)
+        return false;
+    if (def === AXE_LAUNCH && onGround) { // 構えたまま跳んで空中で振ったときは、自分は跳び上がらない
+        velocity.y = AXE_LAUNCH_SELF_SPEED;
+        velocity.x *= AXE_LAUNCH_KEEP;
+        velocity.z *= AXE_LAUNCH_KEEP;
+        onGround = false;
+        sliding = false;
+        axeLaunchedAir = true;
+    }
+    // 刃が食い込んで振りが重くなり、手元は振っていた向きと逆へ跳ね返される
+    axeBite = AXE_BITE_TIME;
+    axeJoltVel.copy(axeSwing).transformDirection(camera.matrixWorldInverse).multiplyScalar(-AXE_JOLT_KICK);
+    return true;
+}
+function startAxeRush() {
+    axeRushTime = 0;
+    axeWheelHits.clear();
+    if (!onGround)
+        axeRushAirUsed = true;
+    camera.getWorldDirection(axeRushDir);
+    axeRushDir.y = 0;
+    if (axeRushDir.lengthSq() < 1e-6)
+        axeRushDir.set(0, 0, -1);
+    axeRushDir.normalize();
+}
+function endAxeRush() {
+    axeRushTime = -1;
+    const h = Math.hypot(velocity.x, velocity.z);
+    if (h > AXE_RUSH_EXIT) {
+        velocity.x *= AXE_RUSH_EXIT / h;
+        velocity.z *= AXE_RUSH_EXIT / h;
+    }
+}
+// 突進振り下ろしの、axeTime を進めた直後に呼ぶ。before は進める前の axeTime
+// 突進している間: 照準の向きへ一定の速さで進み（空中では高さを保つ）、届く所に敵を捉えるか時間が来たらやめる。
+// 回転の 1 周の間は、頭が前を通るたびに斬りつけ、突進が続いていれば 1 周の始まりへ戻って回し続ける
+function updateAxeRush(dt, before) {
+    if (axeRushTime >= 0) {
+        axeRushTime += dt;
+        camera.getWorldDirection(axeRushDir);
+        axeRushDir.y = 0;
+        if (axeRushDir.lengthSq() > 1e-6)
+            axeRushDir.normalize();
+        velocity.x = axeRushDir.x * AXE_RUSH_SPEED;
+        velocity.z = axeRushDir.z * AXE_RUSH_SPEED;
+        if (!onGround)
+            velocity.y = Math.max(velocity.y, 0);
+        let caught = axeRushTime >= AXE_RUSH_TIME;
+        for (const e of enemies) {
+            en = e;
+            if (!caught && inReachOf(AXE_RUSH_REACH, AXE_HIT_ANGLE))
+                caught = true;
+        }
+        if (caught)
+            endAxeRush();
+    }
+    if (before < AXE_WHEEL_CUT && axeTime >= AXE_WHEEL_CUT) {
+        if (tryAxeWheelHit())
+            axeHitLanded = true;
+        axeWheelHits.clear();
+    }
+    if (axeRushTime >= 0 && axeTime >= AXE_WHEEL_END) {
+        const period = AXE_WHEEL_END - AXE_WHEEL_START;
+        axeTime -= period;
+        axeLastTrail -= period; // 軌跡を途切れさせずに続ける
+        playSwish(AXE_WHEEL_SWISH, 'axe');
+    }
+}
+function startAxeLaunch() {
+    axeLaunchQueued = false;
+    axeQueued = false;
+    startAxeAttack(AXE_LAUNCH);
+    axeStance = true; // 右クリックを押している間は振りかぶった所で構えておく
+    axeCocked = false;
+}
+function updateAxeAttack(dt) {
+    // 右クリック: 打ち上げ（地上だけ）
+    if (axeLaunchPressed) {
+        axeLaunchPressed = false;
+        // ダッシュ中・ダッシュ直後なら突き飛ばし（地上でも空中でも）
+        if (axeReady() && axeDashing() && !wallRunning && axeAttack !== AXE_DRIVE && axeSlamRecover <= 0) {
+            if (!axeAttack || axeTime >= axeAttack.cancel) {
+                axeLaunchQueued = false;
+                startAxeAttack(AXE_DRIVE);
+            }
+        }
+        else if (axeReady() && axeLaunchable() && axeAttack !== AXE_LAUNCH) {
+            if (axeSlamRecover > 0) {
+                axeLaunchQueued = true; // 硬直が解けたら出す
+                axeQueued = false;
+            }
+            else if (!axeAttack || axeTime >= axeAttack.cancel)
+                startAxeLaunch();
+            else if (axeTime >= axeAttack.cancel - AXE_BUFFER) {
+                axeLaunchQueued = true;
+                axeQueued = false;
+            }
+        }
+    }
+    if (axePressed) {
+        axePressed = false;
+        if (axeReady()) {
+            if (!axeAttack && axeSlamRecover <= 0)
+                startAxeAttack(chooseAxeAttack());
+            else if (!axeAttack)
+                axeQueued = true; // 硬直が解けたら出す
+            else if (axeTime >= axeAttack.cancel - AXE_BUFFER) {
+                axeQueued = true;
+                axeLaunchQueued = false;
+            }
+        }
+    }
+    if (axeAttack) {
+        const def = axeAttack;
+        // 食い込んでいる間は、振りの時間をゆっくり進める（急に元の速さへ戻ると引っかかって見えるので、なめらかに戻す）
+        const axeTimeBefore = axeTime;
+        const r = 1 - Math.max(0, axeBite) / AXE_BITE_TIME;
+        axeBite -= dt;
+        // 勢いがあるほど速く振る
+        axeTime += dt * (AXE_BITE_SLOW + (1 - AXE_BITE_SLOW) * r * r * (3 - 2 * r)) * (1 + AXE_POWER_HASTE * axePower);
+        // 打ち上げの構え: 押している間は振りかぶった所で止める。離したら、その瞬間の速さも勢いに数えて振り上げる
+        if (axeStance) {
+            if (throwHeld && controls.isLocked) {
+                if (axeTime >= AXE_LAUNCH_COCK) {
+                    axeTime = AXE_LAUNCH_COCK;
+                    if (!axeCocked) {
+                        axeCocked = true;
+                        playGrip();
+                        addTrauma(0.06);
+                    }
+                }
+            }
+            else {
+                axeStance = false;
+                axePower = Math.max(axePower, axeSpeedPower());
+            }
+        }
+        if (def === AXE_RUSH)
+            updateAxeRush(dt, axeTimeBefore);
+        while (axeFiredSwishes < def.swishes.length && axeTime >= def.swishes[axeFiredSwishes].at) {
+            playSwish(def.swishes[axeFiredSwishes++], 'axe');
+        }
+        const grips = def.grips ?? [];
+        while (axeFiredGrips < grips.length && axeTime >= grips[axeFiredGrips]) {
+            axeFiredGrips++;
+            playGrip();
+        }
+        const kicks = def.kicks ?? [];
+        while (axeFiredKicks < kicks.length && axeTime >= kicks[axeFiredKicks][0]) {
+            const k = kicks[axeFiredKicks++][1];
+            kickVel.x += k[0] * DEG * 10;
+            kickVel.y += k[1] * DEG * 10;
+            kickVel.z += k[2] * DEG * 10;
+        }
+        if (!axeFiredLunge && axeTime >= def.lungeAt) {
+            axeFiredLunge = true;
+            applyLunge(def.lunge);
+            if (def !== AXE_AIR && def !== AXE_RUSH)
+                pullTowardAxeTarget();
+            if (def.drop && !onGround) {
+                velocity.y = Math.min(velocity.y, -def.drop);
+                axeSmashFromY = position.y; // 着地したらここからの高さで衝撃波を出す
+            }
+        }
+        if (!axeFiredImpact && axeTime >= def.impact) {
+            axeFiredImpact = true;
+            kickVel.x += def.kick[0] * DEG * 22;
+            kickVel.y += def.kick[1] * DEG * 22;
+            kickVel.z += def.kick[2] * DEG * 22;
+            addTrauma(0.1);
+            fovKick += def.fovPunch ?? 0;
+            landDipVel -= def.dip ?? 0;
+            axeHitLanded = tryAxeHit(def);
+        }
+        else if (axeFiredImpact && def.hitUntil !== undefined && axeTime <= def.hitUntil) {
+            // 落ちている途中で届いた敵にも、1 体ずつ当てていく
+            if (tryAxeHit(def))
+                axeHitLanded = true;
+        }
+        // 空振りでも、足が着いていれば地面を叩いた重さを返す（空中の叩きつけは着地の衝撃波が代わりに返す）
+        if (def.ground && !def.drop && axeFiredImpact && !axeFiredGround && !axeHitLanded && onGround
+            && axeTime <= (def.hitUntil ?? def.impact) + 0.05) {
+            axeFiredGround = true;
+            sfx.playAxeGround(def.ground);
+            addTrauma(0.25 * def.ground);
+            landDipVel -= 1.2 * def.ground;
+            kickVel.x -= 1.5 * DEG * 22 * def.ground;
+        }
+        if (axeLaunchQueued && axeTime >= def.cancel && axeSlamRecover <= 0) {
+            if (axeLaunchable())
+                startAxeLaunch();
+            else
+                axeLaunchQueued = false;
+        }
+        else if (axeQueued && axeTime >= def.cancel && axeSlamRecover <= 0) {
+            startAxeAttack(chooseAxeAttack());
+        }
+        else if (axeTime >= def.duration) {
+            axeAttack = null;
+            axeComboTimer = AXE_COMBO_RESET;
+        }
+    }
+    else if (axeSlamRecover <= 0 && axeReady() && (axeQueued || axeLaunchQueued)) {
+        // 硬直の間に押していた攻撃を、解けたら出す
+        if (axeLaunchQueued && axeLaunchable())
+            startAxeLaunch();
+        else if (axeQueued)
+            startAxeAttack(chooseAxeAttack());
+        axeQueued = axeLaunchQueued = false;
+    }
+    else if (axeComboTimer > 0) {
+        axeComboTimer -= dt;
+        if (axeComboTimer <= 0)
+            axeComboStep = 0;
+    }
+    if (axeLaunchedAir && (onGround || wallRunning || shownWeapon !== 'axe' || grapple !== null))
+        axeLaunchedAir = false;
+    if (onGround || wallRunning)
+        axeRushAirUsed = false;
+    // 叩きつけで落ちている途中に着地したら衝撃波（攻撃の時間が過ぎてから着いても出す）
+    if (!Number.isNaN(axeSmashFromY)) {
+        if (onGround) {
+            axeShockwave(axeSmashFromY - position.y);
+            axeSmashFromY = NaN;
+            axeSlamRecover = AXE_SLAM_RECOVER;
+        }
+        else if (wallRunning || shownWeapon !== 'axe' || grapple !== null) {
+            axeSmashFromY = NaN;
+        }
+    }
+    // 持ち替えたら最初の段から
+    if (shownWeapon !== 'axe') {
+        axeAttack = null;
+        axeComboStep = 0;
+        axeStance = false;
+        axeSpinTime = Infinity;
+        axeLaunchQueued = false;
+        axeRushTime = -1;
+    }
+    if (axeAttack) {
+        sampleAxeTrail();
+        axePoseAt(axeAttack, axeTime, axeCur);
+        // 持ち上げた重さに耐えて、手元が小刻みに震える
+        const strain = axeAttack.strain;
+        if (strain && axeTime > strain[0] && axeTime < strain[1]) {
+            const u = (axeTime - strain[0]) / (strain[1] - strain[0]);
+            const a = 0.0025 * Math.sin(Math.PI * u) * (0.4 + 0.6 * u);
+            axeCur.pos.x += Math.sin(axeTime * 61) * a;
+            axeCur.pos.y += Math.sin(axeTime * 79 + 1.3) * a;
+        }
+        // 構えている間は、持ち上げた重さに耐えて手元が震え続ける（止まっている axeTime ではなく実時間で揺らす）
+        if (axeStance && axeCocked) {
+            const s = trailNow;
+            axeCur.pos.x += Math.sin(s * 61) * AXE_STANCE_TREMBLE;
+            axeCur.pos.y += Math.sin(s * 79 + 1.3) * AXE_STANCE_TREMBLE;
+        }
+    }
+    else {
+        axeCur.pos.set(0, 0, 0);
+        axeCur.quat.copy(AXE_REST_QUAT);
+        if (axeSpinTime < AXE_DASH_SPIN_TIME) {
+            axeSpinTime += dt;
+            const u = Math.min(1, axeSpinTime / AXE_DASH_SPIN_TIME);
+            axeCur.quat.multiply(axeSpinQuat.setFromAxisAngle(AXE_Y, -Math.PI * 2 * easeOutCubic(u)));
+        }
+    }
+    // 当たって跳ね返された手元を、ばねで戻す
+    axeJoltVel.addScaledVector(axeJolt, -AXE_JOLT_STIFF * dt).multiplyScalar(Math.max(0, 1 - AXE_JOLT_DAMP * dt));
+    axeJolt.addScaledVector(axeJoltVel, dt);
+    axeRest.position.copy(axeCur.pos).add(axeJolt);
+    axeRest.quaternion.copy(axeCur.quat);
+    axeRibbon.update(trailNow);
+    // 叩きつけの軌跡: 振り終えてから着地するまでは時計を止めて、振り下ろした弧を残したまま落ちる。
+    // 着地すると時計が進み、衝撃と一緒に削れて消える
+    const falling = axeAttack === AXE_AIR && axeTime >= AXE_AIR.trails[0][1] && !Number.isNaN(axeSmashFromY);
+    if (falling && axeSlamHold < AXE_SLAM_TRAIL_HOLD)
+        axeSlamHold += dt;
+    else
+        axeSlamClock += dt;
+    axeSlamRibbon.update(axeSlamClock);
+}
+// 斧の軌跡: 刃先の端から端までの幅で残す。重い一撃なので剣より少し長く残す
+const AXE_TRAIL_TIP = new THREE.Vector3(0.23, 1.1, 0); // 斧のローカル座標
+const AXE_TRAIL_BASE = new THREE.Vector3(0.25, 0.7, 0); // 太い帯で重さを見せる
+const axeRibbon = new Ribbon(200, 0.12, makeRibbonMaterial(AXE_RIBBON));
+camera.add(axeRibbon.mesh);
+// 空中の叩きつけだけは、刃先の外まで広げた太い帯を、長めに残す
+const AXE_SLAM_TRAIL_TIP = new THREE.Vector3(0.23, 1.16, 0);
+const AXE_SLAM_TRAIL_BASE = new THREE.Vector3(0.25, 0.6, 0);
+const AXE_SLAM_TRAIL_LIFE = 0.2;
+const AXE_SLAM_TRAIL_HOLD = 0.45; // 落ちている間に軌跡を止めておく最長の時間（着地しないまま残り続けないように）
+const axeSlamRibbon = new Ribbon(200, AXE_SLAM_TRAIL_LIFE, makeRibbonMaterial(AXE_SLAM_RIBBON));
+camera.add(axeSlamRibbon.mesh);
+let axeSlamClock = 0; // 叩きつけの軌跡の時計（落ちている間は止める）
+let axeSlamHold = 0; // 今の叩きつけで時計を止めていた時間
+let axeLastTrail = -Infinity;
+const axeTrailTip = new THREE.Vector3();
+const axeTrailBase = new THREE.Vector3();
+function pushAxeTrail(p, time, slam) {
+    applyAxePose(p);
+    heldAxeModel.updateWorldMatrix(true, false);
+    camera.worldToLocal(axeTrailTip.copy(slam ? AXE_SLAM_TRAIL_TIP : AXE_TRAIL_TIP).applyMatrix4(heldAxeModel.matrixWorld));
+    camera.worldToLocal(axeTrailBase.copy(slam ? AXE_SLAM_TRAIL_BASE : AXE_TRAIL_BASE).applyMatrix4(heldAxeModel.matrixWorld));
+    (slam ? axeSlamRibbon : axeRibbon).push(axeTrailTip, axeTrailBase, time);
+}
+function sampleAxeTrail() {
+    const def = axeAttack;
+    if (!def)
+        return;
+    for (const [from, to] of def.trails) {
+        const end = Math.min(to, axeTime);
+        for (let s = Math.max(from, axeLastTrail + TRAIL_STEP); s <= end; s += TRAIL_STEP) {
+            if (s - axeLastTrail > TRAIL_STEP * 1.5)
+                axeRibbon.cut(); // 別の時間帯の軌跡とはつながない
+            axePoseAt(def, s, axeTrailPose);
+            if (def === AXE_AIR)
+                pushAxeTrail(axeTrailPose, axeSlamClock - (axeTime - s), true);
+            else
+                pushAxeTrail(axeTrailPose, trailNow - (axeTime - s), false);
+            axeLastTrail = s;
         }
     }
 }
@@ -8438,7 +10992,24 @@ const TRACER_AXIS = new THREE.Vector3(0, 0, 1);
 const bulletFrom = new THREE.Vector3();
 const bulletAim = new THREE.Vector3();
 const bulletBack = new THREE.Vector3();
-function fireGun() {
+// 照準の先で最初に当たる所（なければ射程の端）を out に入れ、当たる敵を返す。
+// パッドでは照準のすぐ近くに敵がいれば胸を狙う
+function findGunAim(out) {
+    const target = findAssistTarget();
+    if (target && target.angle < target.size * ASSIST_SNAP) {
+        out.copy(target.point);
+        return target.enemy;
+    }
+    camera.getWorldDirection(throwDir);
+    if (castThrow(camera.position, throwDir, BULLET_RANGE)) {
+        out.copy(castHit.point);
+        return castHit.enemy;
+    }
+    out.copy(camera.position).addScaledVector(throwDir, BULLET_RANGE);
+    return null;
+}
+// at を渡すとそこへ向けて撃つ（デッドアイ。target はその敵）。省くと照準の先へ
+function fireGun(at, target) {
     // 回している途中でも、撃てば即座に構え直す
     if (twirlT >= 0)
         endTwirl(false);
@@ -8446,14 +11017,26 @@ function fireGun() {
     slideSpinHold = SLIDE_SPIN_HOLD;
     gunAmmo--;
     gunCooldown = GUN_FIRE_INTERVAL;
-    gunMuzzle.updateWorldMatrix(true, false);
+    // 画面のクロスヘアは揺れと反動を足した向きを指しているので、狙いも銃口もその向きで求める
+    applyCameraOffset();
+    camera.updateMatrixWorld(true);
     bulletFrom.setFromMatrixPosition(gunMuzzle.matrixWorld);
-    findThrowAim(bulletAim);
+    let aimEnemy = target ?? null;
+    if (at)
+        bulletAim.copy(at);
+    else
+        aimEnemy = findGunAim(bulletAim);
+    camera.quaternion.copy(savedQuat);
+    camera.updateMatrixWorld(true);
+    const aimDist = bulletFrom.distanceTo(bulletAim);
     const dir = bulletAim.sub(bulletFrom).normalize().clone();
     const mesh = new THREE.Mesh(tracerGeo, tracerMat);
     mesh.frustumCulled = false;
     scene.add(mesh);
-    bullets.push({ pos: bulletFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh });
+    bullets.push({
+        pos: bulletFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, deadEye: !!at,
+        aimEnemy: aimEnemy ?? undefined, aimDist,
+    });
     // 反動: 銃を跳ね上げ、視点も少し上へ蹴る
     gunRecoil = 1;
     gunRecoilHold = GUN_RECOIL_HOLD;
@@ -8698,6 +11281,179 @@ function onCraneClose() {
     kickVel.z -= 2 * DEG * 22;
     addTrauma(0.04);
 }
+// ---- デッドアイ ----
+// 居合と同じゲージを使う。右クリック（ZL）を押している間は時間が遅くなり、照準でなぞった敵に印を付ける（残弾の数まで）。
+// 同じ敵に照準を留めていれば印を重ねる。離すか、撃つか、弾の数だけ付けると、印へ視点を振りながら一気に撃ち抜く
+const DEADEYE_MAX = 3; // 印を付けていられる長さ（実時間の秒）。過ぎると撃つ
+const DEADEYE_RANGE = 60;
+const DEADEYE_RESTACK = 0.22; // 同じ敵に照準を留めたとき、次の印を重ねるまで（実時間）
+const DEADEYE_FULL_DELAY = 0.15; // 弾の数だけ付けたら、この間をおいて撃ち始める（実時間）
+const DEADEYE_SHOT_GAP = 0.09; // 撃つ間隔（実時間）。間に次の印へ視点を振る
+const DEADEYE_AFTER = 0.3; // 撃ち終えてからスローを解くまで（実時間）
+const DEADEYE_ZOOM = 8; // 印を付けている間に狭める視野（度）
+const DEADEYE_TURN = 30; // 次の印へ視点を寄せる速さ (1/s)
+const DEADEYE_STACK_OFFSET = 9; // 同じ敵に重ねた印を、画面上でずらす量 (px)
+const DEADEYE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1 };
+let deadEye = 'off';
+let deadEyePressed = false; // 右クリックを押した瞬間
+let deadEyeT = 0; // 今の段に入ってからの時間（実時間）
+let deadEyeFullT = 0;
+let deadEyeBlend = 0; // 画面を暗くし、視野を狭める効き (0〜1)
+let deadEyeOver = null; // 照準が今乗っている敵
+let deadEyeDwell = 0;
+const deadEyeMarks = [];
+const deadEyeLook = new THREE.Vector3();
+const deadEyeAt = new THREE.Vector3();
+const deadEyeScreen = new THREE.Vector3();
+function startDeadEye() {
+    deadEye = 'mark';
+    deadEyeT = deadEyeFullT = deadEyeDwell = 0;
+    deadEyeOver = null;
+    if (twirlT >= 0)
+        endTwirl(false);
+    endSlideSpin();
+    sfx.playDeadEyeStart();
+}
+function endDeadEye() {
+    deadEye = 'off';
+    for (const m of deadEyeMarks)
+        m.el.remove();
+    deadEyeMarks.length = 0;
+}
+function addDeadEyeMark(e, at) {
+    e.root.updateMatrixWorld();
+    const el = document.createElement('div');
+    el.className = 'deadeye-mark';
+    el.innerHTML = '<svg viewBox="0 0 20 20"><path d="M4 4 L16 16 M16 4 L4 16" /></svg>';
+    document.body.appendChild(el);
+    deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false });
+    sfx.playDeadEyeMark(deadEyeMarks.length);
+}
+const markWorld = (m, out) => m.enemy.root.localToWorld(out.copy(m.local));
+// 照準の先の敵に印を付ける。パッドでは照準のすぐ近くの敵の胸にも付ける
+function markUnderCrosshair() {
+    camera.getWorldDirection(deadEyeLook);
+    let e = null;
+    if (castThrow(camera.position, deadEyeLook, DEADEYE_RANGE) && castHit.enemy) {
+        e = castHit.enemy;
+        deadEyeAt.copy(castHit.point);
+    }
+    else {
+        const t = findAssistTarget();
+        if (t && t.angle < t.size * ASSIST_SNAP) {
+            e = t.enemy;
+            deadEyeAt.copy(t.point);
+        }
+    }
+    if (e !== deadEyeOver) {
+        deadEyeOver = e;
+        deadEyeDwell = 0;
+        if (e)
+            addDeadEyeMark(e, deadEyeAt);
+    }
+    else if (e) {
+        deadEyeDwell += realDt;
+        if (deadEyeDwell >= DEADEYE_RESTACK) {
+            deadEyeDwell = 0;
+            addDeadEyeMark(e, deadEyeAt);
+        }
+    }
+}
+// 視点を at へ寄せる（居合の突進と同じやり方）
+function turnViewTo(at, k) {
+    lockTo.subVectors(at, camera.position);
+    lookEuler.setFromQuaternion(camera.quaternion);
+    const yaw = Math.atan2(-lockTo.x, -lockTo.z);
+    lookEuler.y += wrapAngle(yaw - lookEuler.y) * k;
+    lookEuler.x += (Math.atan2(lockTo.y, Math.hypot(lockTo.x, lockTo.z)) - lookEuler.x) * k;
+    lookEuler.z = 0;
+    camera.quaternion.setFromEuler(lookEuler);
+}
+// 実時間で進める。updateGun の頭で呼ぶ（クリックを普段の射撃より先に拾う）
+function updateDeadEye() {
+    const pressed = deadEyePressed;
+    deadEyePressed = false;
+    if (deadEye !== 'off' && (!gunReady() || !controls.isLocked || playerHp <= 0))
+        endDeadEye();
+    if (deadEye === 'off') {
+        if (pressed && gunReady() && !gunReloading && controls.isLocked) {
+            if (focusCharge >= 1 && gunAmmo > 0)
+                startDeadEye();
+            else {
+                focusEmptyFlash = FOCUS_EMPTY_FLASH;
+                playRing(0.5, 0.25, 0.04); // 溜まっていない鈍い「カッ」
+            }
+        }
+    }
+    else if (deadEye === 'mark') {
+        deadEyeT += realDt;
+        const left = deadEyeMarks.length < gunAmmo;
+        if (left)
+            markUnderCrosshair();
+        else
+            deadEyeFullT += realDt;
+        if (fireQueued || !throwHeld || deadEyeT >= DEADEYE_MAX || deadEyeFullT >= DEADEYE_FULL_DELAY) {
+            if (deadEyeMarks.length === 0)
+                endDeadEye(); // 1 つも付けずに離したら、ゲージは減らさない
+            else {
+                deadEye = 'fire';
+                deadEyeT = DEADEYE_SHOT_GAP * 0.5; // 最初の 1 発は少し早く
+                focusCharge = 0;
+                sfx.playDeadEyeFire();
+            }
+        }
+    }
+    else if (deadEye === 'fire') {
+        // 先の弾で倒した敵に残った印は飛ばす
+        const m = deadEyeMarks.find((d) => !d.done && d.enemy.alive);
+        if (!m) {
+            deadEye = 'after';
+            deadEyeT = 0;
+        }
+        else {
+            markWorld(m, deadEyeAt);
+            turnViewTo(deadEyeAt, 1 - Math.exp(-realDt * DEADEYE_TURN));
+            deadEyeT += realDt;
+            if (deadEyeT >= DEADEYE_SHOT_GAP && gunAmmo > 0) {
+                deadEyeT = 0;
+                m.done = true;
+                m.el.remove();
+                fireGun(deadEyeAt, m.enemy);
+            }
+        }
+    }
+    else {
+        deadEyeT += realDt;
+        if (deadEyeT >= DEADEYE_AFTER)
+            endDeadEye();
+    }
+    // 印を付けている間と撃っている間は、普段の射撃と装填を受け付けない
+    if (deadEye !== 'off')
+        fireQueued = reloadQueued = false;
+    const on = deadEye === 'mark' || deadEye === 'fire';
+    deadEyeBlend += ((on ? 1 : 0) - deadEyeBlend) * Math.min(1, realDt * (on ? 8 : 6));
+}
+// 印を敵の体に重ねる。同じ敵に重ねた印は少しずつずらす
+function placeDeadEyeMarks() {
+    for (const [i, m] of deadEyeMarks.entries()) {
+        if (m.done)
+            continue;
+        if (!m.enemy.alive) {
+            m.done = true;
+            m.el.remove();
+            continue;
+        }
+        deadEyeScreen.copy(markWorld(m, deadEyeAt)).project(camera);
+        m.el.style.display = deadEyeScreen.z > 1 ? 'none' : '';
+        let stack = 0;
+        for (let j = 0; j < i; j++)
+            if (!deadEyeMarks[j].done && deadEyeMarks[j].enemy === m.enemy)
+                stack++;
+        const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth + stack * DEADEYE_STACK_OFFSET;
+        const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight + stack * DEADEYE_STACK_OFFSET;
+        m.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    }
+}
 // ---- 落ちた薬莢 ----
 const CASING_MAX = 48;
 const CASING_LIFE = 8;
@@ -8780,7 +11536,15 @@ function updateBullets(dt) {
             const moved = b.pos.distanceTo(castHit.point);
             b.tail = Math.min(maxTail, b.tail + moved);
             b.pos.copy(castHit.point);
-            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried);
+            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye);
+        }
+        else if (b.aimEnemy?.alive && b.traveled + step >= b.aimDist) {
+            // 狙った所まで来た: クロスヘアが捉えていた敵に当てる
+            b.hit = true;
+            const moved = b.aimDist - b.traveled;
+            b.tail = Math.min(maxTail, b.tail + moved);
+            b.pos.addScaledVector(b.dir, moved);
+            onBulletHit(b.pos.clone(), b.dir, b.aimEnemy, b.parried, b.deadEye);
         }
         else {
             b.pos.addScaledVector(b.dir, step);
@@ -8799,14 +11563,14 @@ function updateBullets(dt) {
         b.mesh.scale.set(width, width, b.tail);
     }
 }
-function onBulletHit(at, dir, onDummy, parried = false) {
+function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false) {
     if (onDummy) {
         en = onDummy;
         hitDir.set(dir.x, 0, dir.z);
         if (hitDir.lengthSq() < 1e-6)
             hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
         hitDir.normalize();
-        applyDummyHit(parried ? PARRY_RETURN_HIT : BULLET_HIT, at, 'bullet');
+        applyDummyHit(parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT, at, 'bullet');
         if (parried)
             parryReturnAge = 0;
     }
@@ -8842,6 +11606,9 @@ const ENEMY_TRACER_LEN = 2.2;
 const ENEMY_TRACER_WIDTH = 0.022;
 const ENEMY_HIT_RADIUS = PLAYER_RADIUS * 0.8;
 const ENEMY_FLASH_SCALE = 2; // 遠くからでも見えるよう、マズルフラッシュを大きくする
+const ENEMY_BRACE_TIME = 0.4; // 撃つこの時間前から構え始める
+const ENEMY_BRACE_RATE = 9; // 構えへ近づく速さ（解くときはこの半分）
+const ENEMY_BRACE_READY = 0.8; // 構えがここまで進むまでは撃たない
 const enemyTracerMat = new THREE.MeshBasicMaterial({
     color: 0xffb080,
     transparent: true,
@@ -8883,11 +11650,14 @@ function updateEnemyFire(dt) {
     en.flashAge += dt;
     en.muzzleFx.visible = en.flashAge < MUZZLE_FLASH_LIFE;
     en.cooldown -= dt;
-    if (!en.alive || playerHp <= 0 || en.riseTime < RESPAWN_RISE_TIME || en.cooldown > 0)
+    // 撃つ少し前から腰を落として構える。構えきるまでは撃たない（見てからかわせる合図）
+    const canAim = en.alive && playerHp > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
+        && en.dodgeT <= 0;
+    const braceWant = canAim && en.cooldown < ENEMY_BRACE_TIME ? 1 : 0;
+    en.brace += (braceWant - en.brace) * Math.min(1, dt * (braceWant > en.brace ? ENEMY_BRACE_RATE : ENEMY_BRACE_RATE * 0.5));
+    if (!canAim || en.cooldown > 0 || en.brace < ENEMY_BRACE_READY)
         return;
     // 攻撃を受けてよろけている間は撃たない。当たってからしばらくと、上体の反りや銃の跳ね上がりが残っている間
-    if (en.flashT < ENEMY_HIT_RECOVER)
-        return;
     if (Math.abs(en.gunSpring.x.x) > ENEMY_STAGGER_LIMIT || en.leanSpring.x.length() > ENEMY_LEAN_LIMIT)
         return;
     if (en.footState.some((f) => f.t < 1))
@@ -8950,6 +11720,8 @@ function updateEnemyBullets(dt) {
                 b.hit = true;
                 b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
                 b.pos.copy(enemyOnPath);
+                if (b.from)
+                    b.from.hitPlayer = true;
                 onPlayerShot(b.dir);
             }
             else if (wall < step) {
@@ -9134,7 +11906,7 @@ const ammoHud = document.getElementById('ammo');
 const weaponHud = document.getElementById('weapon');
 const weaponName = weaponHud.querySelector('.name span');
 const weaponIcons = [...weaponHud.querySelectorAll('.icon svg')];
-const WEAPON_LABELS = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE' };
+const WEAPON_LABELS = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE' };
 let weaponHudShown = null;
 // 右下の武器表示: 構えている武器のアイコンと名前。持ち替えたら差し込み直す
 function updateWeaponHud() {
@@ -9154,8 +11926,76 @@ function updateWeaponHud() {
         el.classList.add('in');
     }
 }
+const WEAPON_CONTROLS = {
+    kunai: [
+        { label: '攻撃', keys: [{ input: 'attack' }] },
+        { label: '溜め投げ', keys: [{ input: 'aim', hold: true }] },
+    ],
+    handgun: [
+        { label: '射撃', keys: [{ input: 'attack' }] },
+        { label: 'リロード', keys: [{ input: 'reload' }] },
+        { label: 'デッドアイ', keys: [{ input: 'aim', hold: true }] },
+    ],
+    sword: [
+        { label: '斬る', keys: [{ input: 'attack' }] },
+        { label: '溜め斬り', keys: [{ input: 'attack', hold: true }] },
+        { label: '構え', keys: [{ input: 'aim' }] },
+        { label: '一閃', keys: [{ input: 'aim' }, { input: 'attack' }] },
+    ],
+    sickle: [
+        { label: '攻撃', keys: [{ input: 'attack' }] },
+        { label: '鎖を投げる', keys: [{ input: 'aim' }, { input: 'attack' }] },
+        { label: '持ち替え', keys: [{ input: 'reload' }] },
+    ],
+    axe: [
+        { label: '攻撃', keys: [{ input: 'attack' }] },
+        { label: '打ち上げ', keys: [{ input: 'attack', hold: true }] },
+    ],
+};
+// マウス: 押すボタンの側を塗る
+const mouseIcon = (side) => `<svg viewBox="0 0 20 28"><path class="f" d="${side === 'left' ? 'M10 1 V11 H1 V10 A9 9 0 0 1 10 1 Z' : 'M10 1 V11 H19 V10 A9 9 0 0 0 10 1 Z'}"/>` +
+    `<rect class="o" x="1" y="1" width="18" height="26" rx="9"/><path class="o" d="M10 1 V11 M1 11 H19"/></svg>`;
+const keyIcon = (label) => `<svg viewBox="0 0 24 24"><rect class="o" x="1" y="1" width="22" height="22" rx="3"/><text class="t" x="12" y="12.5">${label}</text></svg>`;
+// パッドのトリガー: 肩の形の枠に名前
+const triggerIcon = (label) => `<svg viewBox="0 0 30 24"><path class="o" d="M1 23 V9 Q1 1 9 1 H21 Q29 1 29 9 V23 Z"/><text class="t" x="15" y="13">${label}</text></svg>`;
+// パッドの右の 4 ボタン: 押す位置だけ塗る（機種で名前が違っても位置は同じ）
+const faceIcon = (pos) => {
+    const at = { up: [12, 4.5], right: [19.5, 12], down: [12, 19.5], left: [4.5, 12] };
+    return `<svg viewBox="0 0 24 24">${Object.keys(at)
+        .map((p) => `<circle class="${p === pos ? 'f' : 'o'}" cx="${at[p][0]}" cy="${at[p][1]}" r="3.6"/>`)
+        .join('')}</svg>`;
+};
+const CONTROL_ICONS = {
+    attack: [mouseIcon('left'), triggerIcon('ZR')],
+    aim: [mouseIcon('right'), triggerIcon('ZL')],
+    reload: [keyIcon('R'), faceIcon('left')],
+};
+const controlsHud = document.getElementById('controls');
+let controlsHudKey = '';
+function updateControlsHud() {
+    const key = `${shownWeapon}:${usingPad}`;
+    if (key === controlsHudKey)
+        return;
+    const weaponChanged = !controlsHudKey.startsWith(`${shownWeapon}:`);
+    controlsHudKey = key;
+    const pad = usingPad ? 1 : 0;
+    controlsHud.innerHTML = WEAPON_CONTROLS[shownWeapon]
+        .map(({ label, keys }) => {
+        const icons = keys
+            .map((b) => `<span class="k">${CONTROL_ICONS[b.input][pad]}${b.hold ? '<small>HOLD</small>' : ''}</span>`)
+            .join('<span class="plus">+</span>');
+        return `<div class="row"><span class="label">${label}</span><span class="keys">${icons}</span></div>`;
+    })
+        .join('');
+    if (!weaponChanged)
+        return;
+    controlsHud.classList.remove('in');
+    void controlsHud.getBoundingClientRect(); // 続けて持ち替えても頭から流し直す
+    controlsHud.classList.add('in');
+}
 function updateGun(dt) {
     gunCooldown = Math.max(0, gunCooldown - dt);
+    updateDeadEye();
     // 頂点で一瞬止めたあと、腕で反動を押し戻すように重たく戻す
     if (gunRecoilHold > 0)
         gunRecoilHold -= dt;
@@ -9177,6 +12017,8 @@ function updateGun(dt) {
             startReload();
     }
     if (gunReloading) {
+        // 装填中のクリックは溜めない（終わった瞬間に勝手に撃たないように）
+        fireQueued = false;
         const prevT = gunReloadT;
         gunReloadT += dt;
         while (reloadEvent < RELOAD_EVENTS.length && gunReloadT >= RELOAD_EVENTS[reloadEvent].at) {
@@ -9217,10 +12059,17 @@ function updateGun(dt) {
     muzzleFlashAge += dt;
     muzzleFlash.visible = muzzleFlashAge < MUZZLE_FLASH_LIFE;
     updateBullets(dt);
+    placeDeadEyeMarks();
     ammoHud.classList.toggle('hidden', shownWeapon !== 'handgun');
     ammoHud.classList.toggle('reloading', gunReloading);
-    ammoPips.forEach((p, i) => p.classList.toggle('spent', i >= gunAmmo));
+    // 印を付けた分の弾は、撃つ順に右から光らせる
+    const marked = deadEye === 'mark' ? deadEyeMarks.length : deadEyeMarks.filter((m) => !m.done).length;
+    ammoPips.forEach((p, i) => {
+        p.classList.toggle('spent', i >= gunAmmo);
+        p.classList.toggle('marked', i < gunAmmo && i >= gunAmmo - marked);
+    });
     updateWeaponHud();
+    updateControlsHud();
 }
 // ---- ポストエフェクト: 周辺ブラー・ビネット・集中線 ----
 // これより速いと効果が出始め、SPEED_FX_FULL で最大になる
@@ -9309,6 +12158,10 @@ const ImpactFxShader = {
         uDim: { value: 0 },
         uMono: { value: 0 },
         uInvert: { value: 0 },
+        uSlow: { value: 0 }, // 世界だけのスローの効き (0〜1)
+        uRing: { value: 0 }, // スローに入った瞬間に中心から広がる歪みの輪の半径（画面の高さ基準）
+        uRingAmt: { value: 0 },
+        uAspect: { value: window.innerWidth / window.innerHeight },
     },
     vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -9322,13 +12175,32 @@ const ImpactFxShader = {
     uniform float uDim;
     uniform float uMono;
     uniform float uInvert;
+    uniform float uSlow;
+    uniform float uRing;
+    uniform float uRingAmt;
+    uniform float uAspect;
     varying vec2 vUv;
 
     void main() {
-      vec4 col = texture2D(tDiffuse, vUv);
+      // 世界のスローに入った瞬間: 中心から広がる輪の所だけ、画を外へ押し出して歪ませる
+      vec2 c = vUv - 0.5;
+      c.x *= uAspect;
+      float r = length(c);
+      float wave = exp(-pow((r - uRing) / 0.09, 2.0)) * uRingAmt;
+      vec2 push = r > 1e-4 ? c / r * wave * 0.007 : vec2(0.0);
+      push.x /= uAspect;
+      vec2 uv = vUv - push;
+      // 遅い間は、四隅ほど色の三原色をずらしてにじませる
+      float edge = dot(c, c) * uSlow;
+      vec2 ca = c / max(uAspect, 1.0) * edge * 0.005;
+      vec4 col = texture2D(tDiffuse, uv);
+      col.r = texture2D(tDiffuse, uv + ca).r;
+      col.b = texture2D(tDiffuse, uv - ca).b;
       // 色を抜いて暗くし、あとから重ねる白い光を際立たせる
       float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
       col.rgb = mix(col.rgb, vec3(lum), uDim * 0.6) * (1.0 - uDim * 0.6);
+      // 世界のスロー: 色を少しだけ抜く（暗くはしない）
+      col.rgb = mix(col.rgb, vec3(lum), uSlow * 0.25);
       // パリィ: 明暗を強く分けた白黒にする（ここは色調補正前の明るさなので、暗い側を広く取る）
       float m = smoothstep(0.015, 0.45, lum);
       m = mix(m, 1.0 - m, uInvert);
@@ -9468,8 +12340,54 @@ function runSwordDebug(def, params) {
         camera.quaternion.copy(savedQuat);
     });
 }
+// 斧の攻撃を確かめる: ?axe=kesa&t=0.4（その時間で止める）、&onion（軌道を色の違う斧で重ねて描く）、&near（敵の目の前で振る）
+function runAxeDebug(def, params) {
+    overlay.classList.add('hidden');
+    document.body.classList.remove('on-title');
+    wantWeapon = shownWeapon = 'axe';
+    const step = 1 / 120;
+    if (params.has('near'))
+        position.set(en.root.position.x, 0, en.root.position.z + 1.8);
+    for (let i = 0; i < 30; i++)
+        update(step);
+    startAxeAttack(def);
+    const tEnd = Number(params.get('t') ?? def.duration);
+    if (!params.has('onion')) {
+        while (axeAttack && axeTime + step <= tEnd) {
+            update(step);
+            updateHitFx(step);
+        }
+    }
+    else {
+        camera.updateMatrixWorld();
+        const toCamera = camera.matrixWorld.clone().invert();
+        const from = Number(params.get('from') ?? 0);
+        const interval = Number(params.get('step') ?? 0.02);
+        for (let s = from; s <= tEnd + 1e-6; s += interval) {
+            axePoseAt(def, s, axeTrailPose);
+            applyAxePose(axeTrailPose);
+            heldAxeModel.updateWorldMatrix(true, false);
+            const ghost = heldAxeModel.clone();
+            const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(0.66 * (1 - (s - from) / (tEnd - from)), 0.9, 0.5) });
+            ghost.traverse((o) => {
+                if (o instanceof THREE.Mesh)
+                    o.material = mat;
+            });
+            ghost.matrixAutoUpdate = false;
+            ghost.matrix.multiplyMatrices(toCamera, heldAxeModel.matrixWorld);
+            camera.add(ghost);
+        }
+        heldAxeModel.visible = false;
+    }
+    updateSpeedFx(0);
+    renderer.setAnimationLoop(() => {
+        applyCameraOffset();
+        composer.render(0);
+        camera.quaternion.copy(savedQuat);
+    });
+}
 // 居合の構えを確かめる: ?focus=0.5（構えてからの実時間）&rush=0.2（突進を始めてからの時間。省くと構えたまま）
-// ステージの見た目を確かめる: ?stage=station（組み上がった状態を始めの位置から見る）。
+// ステージの見た目を確かめる: ?stage=station / warehouse（組み上がった状態を始めの位置から見る）。
 // &x=0&y=1.6&z=4（目の位置。省くと始めの位置）&yaw=0&pitch=0（度。yaw は左へ回すと正）
 // &sim=5 で、その秒数だけゲームを進めてから見る（敵の歩きを確かめる。1 秒ごとの敵の位置を console に出す）
 function runStageDebug(params) {
@@ -9513,7 +12431,8 @@ function runFocusDebug(params) {
     position.set(en.root.position.x + 1.5, 0, en.root.position.z + 9);
     for (let i = 0; i < 30; i++)
         update(step);
-    throwHeld = true;
+    throwHeld = focusPressed = true;
+    focusCharge = 1;
     const tick = () => {
         realDt = step;
         update(step * timeScale);
@@ -9552,7 +12471,7 @@ function runGrappleDebug(params) {
     throwHeld = throwPressed = true;
     const log = [];
     for (let t = 0; t < 2; t += step) {
-        if (t >= 0.1)
+        if (t >= 0.2)
             throwHeld = false;
         if (!params.has('now') && t >= wAt)
             keys.add('KeyW');
@@ -9586,7 +12505,7 @@ let riseT = -1; // せり上がりの経過時間。-1 = 伸びきった（ま�
 const riseMatrix = new THREE.Matrix4();
 const easeOutQuart = (k) => 1 - (1 - k) ** 4;
 function setViewModelsVisible(v) {
-    viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = v;
+    viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = axeViewModel.visible = v;
 }
 // 床に広がる輪: 円くくり抜かれて広がるグリッドの縁に、細い線を引いて輪郭をはっきりさせる
 const RISE_RING_MAX = 160; // ここまで広がったら消す
@@ -9694,7 +12613,7 @@ function updateStageRise(dt) {
         riseT = -1;
     }
 }
-const STAGE_BUILDERS = { station: buildStation };
+const STAGE_BUILDERS = { station: buildStation, warehouse: buildWarehouse };
 let pendingStage = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
@@ -9744,11 +12663,13 @@ function enterStage(id) {
     riseRing.position.set(start.x, 0.025, start.z);
     position.set(start.x, start.y, start.z);
     // 訓練場の的を外し、難易度で決まる数の敵を用意する。倒された後と同じ扱いにしておき、
-    // ゲームの時間が進み始めてから（操作を返してから）、起き上がりの仕組み（respawnDummy）で 1 体ずつ出現位置に現れさせる
+    // ゲームの時間が進み始めてから（操作を返してから）、起き上がりの仕組み（respawnDummy）で 1 体ずつ出現位置に現れさせる。
+    // 出現位置の無いステージ（作りかけ）では敵を出さず、時間も測らずに歩き回るだけにする
     while (enemies.length > 0)
         removeEnemy(enemies[0]);
     enemySpawns = layout.enemySpawns;
-    for (let i = 0; i < STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]]; i++) {
+    const hasEnemies = enemySpawns.length > 0;
+    for (let i = 0; hasEnemies && i < STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]]; i++) {
         en = createEnemy(true);
         en.alive = false;
         en.root.visible = false;
@@ -9763,7 +12684,8 @@ function enterStage(id) {
     const root = new THREE.Group();
     scene.add(root);
     stageRoot = root;
-    beginStageRun();
+    if (hasEnemies)
+        beginStageRun();
     // 見た目の箱は、線の引き方と格子の起点ごとに 1 つのメッシュにまとめる。遠景は操作を返すのを待たないので別にする
     for (const [list, inArena] of [[[...layout.boxes, ...layout.decor], true], [layout.scenery, false]]) {
         for (const group of groupStageBoxes(list))
@@ -9833,6 +12755,19 @@ function getStagePreview(id) {
     previews.set(id, p);
     return p;
 }
+// 初めて選んだときに組むと引っかかるので、タイトルを見ている間の空き時間に 1 つずつ組んでおく
+function prebuildStagePreviews() {
+    const ids = stageButtons.map((b) => b.dataset.stage).filter((id) => !!id && id in STAGE_BUILDERS);
+    const idle = (fn) => 'requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 2000 }) : setTimeout(fn, 200);
+    const next = () => {
+        const id = ids.shift();
+        if (!id)
+            return;
+        getStagePreview(id);
+        idle(next);
+    };
+    idle(next);
+}
 // ステージ選択で選んでいるステージを背景に出す（null でタイトルへ戻す）
 function showStagePreview(id) {
     if (id === previewWant)
@@ -9844,9 +12779,13 @@ function showStagePreview(id) {
     if (id)
         getStagePreview(id); // 沈めている間に組んでおく
 }
+// 画が動いたかを返す（動いていなければ描き直さなくてよい）
 function updateStagePreview(dt) {
     if (!previewWant && !previewShown && previewCamK >= 1)
-        return;
+        return false;
+    // 武器の選択画面で覆っている間は、組み上がって寄りきっていれば揺らさずに止めて描き直さない（閉じたら続きから揺れる）
+    if (pickerOpen() && previewShown === previewWant && previewK >= 1 && previewCamK >= 1)
+        return false;
     previewTime += dt;
     // 景色: 出したいものと違うものが出ていれば沈め、沈みきったら入れ替えて伸ばす
     if (previewShown !== previewWant) {
@@ -9892,6 +12831,7 @@ function updateStagePreview(dt) {
     const c = easeInOutCubic(previewCamK);
     camera.position.lerpVectors(previewCamFromPos, previewEye, c);
     camera.quaternion.slerpQuaternions(previewCamFromQuat, previewQuat, c);
+    return true;
 }
 // 景色をすべて外し、床のグリッドと波の中心をタイトルのときに戻す
 function clearStagePreview() {
@@ -9914,8 +12854,11 @@ function startStageIntro() {
 function switchToStage() {
     introSwitched = true;
     clearStagePreview();
-    if (pendingStage)
+    if (pendingStage) {
         enterStage(pendingStage);
+        wantWeapon = shownWeapon = selectedLoadout(); // 選んだ武器を構えた状態で始める
+        holster = 0;
+    }
     endOverlayLeave();
     camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     camera.quaternion.identity();
@@ -10005,13 +12948,17 @@ en.riseDelay = riseDelayAt(0, -10);
 const debugParams = new URLSearchParams(location.search);
 const debugAttack = ATTACKS[debugParams.get('attack') ?? ''];
 const debugSword = SWORD_ATTACKS[debugParams.get('sword') ?? ''];
+const debugAxe = AXE_ATTACKS[debugParams.get('axe') ?? ''];
 if (debugAttack) {
     runAttackDebug(debugAttack, debugParams);
 }
 else if (debugSword) {
     runSwordDebug(debugSword, debugParams);
 }
-else if (debugParams.get('stage') === 'station') {
+else if (debugAxe) {
+    runAxeDebug(debugAxe, debugParams);
+}
+else if ((debugParams.get('stage') ?? '') in STAGE_BUILDERS) {
     runStageDebug(debugParams);
 }
 else if (debugParams.has('focus')) {
@@ -10035,6 +12982,7 @@ else {
         setInterval(next, 3500);
     }
     setupTitleStage();
+    prebuildStagePreviews();
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
         const rawFrame = clock.getDelta();
@@ -10042,14 +12990,16 @@ else {
         // パッドの視点は「倒している時間 × 速さ」で回すので、重いフレームで時間を切ると回り足りずに引っかかる。
         // 視点だけは実際にかかった時間で回す（タブを離れていたときの大きな飛びだけは抑える）
         updatePad(Math.min(rawFrame, 0.25));
-        // タイトルと一時停止の間はゲームの時間を止め、今の画をそのまま描き続ける
+        // タイトルと一時停止の間はゲームの時間を止める。画が止まっている間は描き直さず、キャンバスに残った画を見せておく
         if (!controls.isLocked) {
             pressed.clear();
             attackPressed = false;
-            updateStagePreview(realFrame);
-            applyCameraOffset();
-            composer.render(0);
-            camera.quaternion.copy(savedQuat);
+            if (updateStagePreview(realFrame) || menuRedraw) {
+                menuRedraw = false;
+                applyCameraOffset();
+                composer.render(0);
+                camera.quaternion.copy(savedQuat);
+            }
             return;
         }
         updateStageRise(realFrame);
@@ -10086,7 +13036,7 @@ else {
             airborne: !onGround && !wallRunning,
             sliding: sliding && controls.isLocked,
             focusing,
-            timeScale: timeScale * slow,
+            timeScale: timeScale * slow * worldSlow, // 世界だけのスローでも音はこもらせる
         });
         applyCameraOffset();
         updateFinishMark();
@@ -10094,10 +13044,40 @@ else {
         camera.quaternion.copy(savedQuat);
     });
 }
+// ---- 画質 ----
+// maxRatio: 描画の解像度（画面の画素に対する倍率の上限）、msaa: アンチエイリアスのサンプル数
+const QUALITY_PRESETS = {
+    low: { maxRatio: 0.75, shadows: false, shadowMap: 1024, msaa: 0 },
+    medium: { maxRatio: 1, shadows: true, shadowMap: 1024, msaa: 2 },
+    high: { maxRatio: 2, shadows: true, shadowMap: 2048, msaa: 4 },
+};
+function applyQuality() {
+    const q = QUALITY_PRESETS[options.quality];
+    const ratio = Math.min(window.devicePixelRatio, q.maxRatio);
+    renderer.setPixelRatio(ratio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    // サンプル数は描き込み先を作り直さないと変わらない（捨てておけば次に描くときに作り直される）
+    for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
+        if (rt.samples === q.msaa)
+            continue;
+        rt.samples = q.msaa;
+        rt.dispose();
+    }
+    composer.setPixelRatio(ratio);
+    if (sun.shadow.mapSize.x !== q.shadowMap) {
+        sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+        sun.shadow.map?.dispose();
+        sun.shadow.map = null;
+    }
+    setShadows(q.shadows && !shadowParamOff);
+}
+applyQuality();
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     composer.setSize(window.innerWidth, window.innerHeight);
     speedFxPass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+    impactFxPass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+    menuRedraw = true; // 大きさを変えるとキャンバスが消えるので、止まっている画面でも描き直す
 });

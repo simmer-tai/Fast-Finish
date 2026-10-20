@@ -22,17 +22,30 @@ export function fmtTime(t: number) {
 }
 const fmtInt = (n: number) => Math.round(n).toLocaleString('en-US');
 
-// ランク: 1 体あたりのスコアで決め、受けたダメージが多いほど割り引く（目安。遊びながら詰める）
+// 最終スコア: 倒して稼いだ点数に、速く倒しきるほど大きい倍率を掛ける。受けたダメージは関係させない
+// 時間の倍率は開始時がいちばん高く、時間とともに下がって、倒した数から決める基準タイムで ×1.0 になる。
+// それより遅くても ×1.0 のまま（下回らない）。基準タイムは画面には出さない
+const PAR_PER_KILL = 10; // 1 体あたりの基準秒数
+const TIME_MAX = 3; // 開始時の倍率
+function timeMultiplier(time: number, kills: number) {
+  const r = Math.min(1, time / (PAR_PER_KILL * Math.max(1, kills))); // 基準タイムとの比
+  return TIME_MAX - (TIME_MAX - 1) * r;
+}
+export function finalScore(killScore: number, time: number, kills: number) {
+  return Math.round(killScore * timeMultiplier(time, kills));
+}
+
+// ランク: 最終スコアだけで決める。ステージごとに敵の数が違うので、しきい値は「1 体あたりの点数 × 倒した数」（目安。遊びながら詰める）
+// 時間の倍率が乗るので、1 体 5 秒ペース（×2.0）を中心に据えている。SS は S の上に置いた、詰めきった人向けの段
 const RANKS = [
-  ['S', 320, 'SUPERB'],
-  ['A', 230, 'GREAT'],
-  ['B', 160, 'GOOD'],
+  ['SS', 800, 'ULTIMATE'],
+  ['S', 600, 'SUPERB'],
+  ['A', 420, 'GREAT'],
+  ['B', 260, 'GOOD'],
   ['C', 0, 'CLEAR'],
 ] as const;
-const DAMAGE_FULL_PENALTY = 300; // これだけ受けると半分まで割り引く
 function rankOf(d: ResultData) {
-  const per = (d.score / Math.max(1, d.kills)) * Math.max(0.5, 1 - (0.5 * d.damage) / DAMAGE_FULL_PENALTY);
-  return RANKS.find(([, min]) => per >= min)!;
+  return RANKS.find(([, per]) => d.score >= per * d.kills)!;
 }
 
 // 出す順番（秒）
@@ -63,7 +76,23 @@ const rows = {
 };
 const score = q('.rv-score');
 const scoreVal = score.querySelector<HTMLElement>('b')!;
-const scoreBar = score.querySelector<HTMLElement>('.bar')!;
+const meter = q('.rv-meter');
+const meterFill = meter.querySelector<HTMLElement>('.fill')!;
+// メーターの右端は S の地点。目印の位置は 1 体あたりのしきい値の比なので、倒した数によらず同じ
+const METER_MAX = RANKS[0][1];
+const marks = RANKS.map(([letter, per]) => {
+  const mk = document.createElement('i');
+  mk.className = 'mk';
+  mk.style.setProperty('--x', `${(per / METER_MAX) * 100}%`);
+  mk.innerHTML = `<span>${letter}</span>`;
+  meter.append(mk);
+  return { mk, at: per / METER_MAX };
+});
+// メーターを p（0〜1）まで伸ばし、届いた目印を点ける
+function setMeter(p: number) {
+  meterFill.style.setProperty('--p', String(p));
+  for (const m of marks) if (p >= m.at && !m.mk.classList.contains('on')) m.mk.classList.add('on');
+}
 const rank = q('.rv-rank');
 const rankLetter = q('.rv-letter');
 const rankNote = q('.rv-rank-note');
@@ -154,7 +183,8 @@ export function showResult(d: ResultData, done?: () => void) {
   rankLetter.dataset.rank = letter;
   rankNote.textContent = note;
   scoreVal.textContent = '0';
-  scoreBar.style.setProperty('--p', '0');
+  setMeter(0);
+  const meterTo = Math.min(1, d.score / (METER_MAX * Math.max(1, d.kills)));
 
   steps.push({
     at: T_HEAD,
@@ -180,11 +210,11 @@ export function showResult(d: ResultData, done?: () => void) {
         set: (k) => {
           const e = 1 - (1 - k) ** 3;
           scoreVal.textContent = fmtInt(d.score * e);
-          scoreBar.style.setProperty('--p', String(e));
+          setMeter(meterTo * e);
         },
         done: () => {
           scoreVal.textContent = fmtInt(d.score);
-          scoreBar.style.setProperty('--p', '1');
+          setMeter(meterTo);
         },
       });
     },
@@ -205,7 +235,7 @@ export function showResult(d: ResultData, done?: () => void) {
       // 文字が落ちきる瞬間に合わせて鳴らし、揺らす
       setTimeout(() => {
         sfx.playResultRank(letter);
-        shakeView(letter === 'S' ? 18 : 12);
+        shakeView(letter === 'SS' ? 24 : letter === 'S' ? 18 : 12);
         restart(flash, 'on');
       }, quiet ? 0 : 180);
     },

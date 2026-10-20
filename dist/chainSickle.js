@@ -65,6 +65,7 @@ export function createChainSickle(mats, headOnly = false) {
     const n = new THREE.Vector3();
     const angle = (s) => -BEND * s * s;
     const bladeMid = new THREE.Vector3(); // 刃の中ほど（軌跡の根元側に使う）
+    let spineR = 0; // 握りから棟までのいちばん遠い距離
     for (let i = 0; i <= N; i++) {
         const s = i / N;
         if (i > 0) {
@@ -85,6 +86,7 @@ export function createChainSickle(mats, headOnly = false) {
         const w = W * (1 - 0.5 * s);
         const t = T * (1 - 0.3 * s);
         const at = (a, z) => p.clone().addScaledVector(n, a).setZ(z);
+        spineR = Math.max(spineR, Math.hypot(p.x - n.x * w / 2, p.y - n.y * w / 2));
         rings.push([
             at(-w / 2, t * 0.35),
             at(-w * 0.1, t / 2),
@@ -111,7 +113,12 @@ export function createChainSickle(mats, headOnly = false) {
     }
     g.userData.bladeTip = p.clone();
     g.userData.bladeMid = bladeMid;
-    g.userData.bladeRoot = new THREE.Vector3(0.006, SHAFT_TOP - 0.012, 0); // 刃の根元（軌跡を刃全体の幅にする）
+    // 軌跡の帯: 刃は握りを中心にほぼ同じ半径の円に沿って曲がっていて、振ると刃に沿う向きへ進む。
+    // 刃の根元 → 刃先で帯を張ると帯が進む向きに寝て潰れるので、刃先の所で握りからの向き（振りの半径の向き）に張る。
+    // 外側は棟の円に揃え、内側は刃の内へ少し食い込ませて三日月形に残す
+    const radial = new THREE.Vector3(p.x, p.y, 0).normalize();
+    g.userData.trailOuter = radial.clone().multiplyScalar(spineR);
+    g.userData.trailInner = radial.clone().multiplyScalar(spineR * 0.72);
     g.userData.capTip = SHAFT_TOP + 0.045; // 柄の先の尖りの先端（原点からの高さ）
     g.userData.chainAnchor = new THREE.Vector3(0, JOINT_Y, 0); // 鎖が付く所: 頭の付け根 = 握りの先（継ぎ目の中心）
     g.userData.head = head;

@@ -6,7 +6,7 @@
 // そのために、出している間だけステージを別にもう一度描き、ピクセルごとに一番手前の面までの距離と、その面が縦かどうかを記録する（マスク）
 import * as THREE from 'three';
 
-const FONT = '"Barlow Condensed", "Arial Narrow", sans-serif';
+const FONT = '"Oswald", "Arial Narrow", sans-serif'; // Barlow は角が丸いので、角の立った字形のものを使う
 const INK = '#333333';
 const SKEW = Math.tan((24 * Math.PI) / 180); // タイトル画面の帯と同じ傾き
 
@@ -26,6 +26,14 @@ const HOLD_END = 1.05; // ここから払い始める
 const WIPE_TIME = 0.28;
 export const STAGE_TITLE_END = HOLD_END + WIPE_TIME + FINISH_DELAY;
 
+// 大文字の高さが CAP_H px になる文字の大きさ。フォントで字の背の高さが違うので測って合わせる
+const CAP_H = 280;
+function fontFor(ctx: CanvasRenderingContext2D): string {
+  ctx.font = `600 400px ${FONT}`;
+  const cap = ctx.measureText('H').actualBoundingBoxAscent || 280;
+  return `600 ${Math.round((400 * CAP_H) / cap)}px ${FONT}`;
+}
+
 const easeOutCubic = (k: number) => 1 - (1 - k) ** 3;
 const easeInCubic = (k: number) => k * k * k;
 
@@ -33,12 +41,12 @@ const easeInCubic = (k: number) => k * k * k;
 function drawFast(): HTMLCanvasElement {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
-  const size = 400;
-  ctx.font = `600 ${size}px ${FONT}`;
+  const font = fontFor(ctx);
+  ctx.font = font;
   const w = Math.ceil(ctx.measureText('FAST').width);
   c.width = w + 24;
   c.height = 330;
-  ctx.font = `600 ${size}px ${FONT}`;
+  ctx.font = font;
   ctx.fillStyle = INK;
   ctx.textBaseline = 'alphabetic';
   ctx.fillText('FAST', 12, 306);
@@ -48,8 +56,8 @@ function drawFast(): HTMLCanvasElement {
 function drawFinish(): HTMLCanvasElement {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
-  const size = 400;
-  ctx.font = `600 ${size}px ${FONT}`;
+  const font = fontFor(ctx);
+  ctx.font = font;
   const textW = Math.ceil(ctx.measureText('FINISH').width);
   const h = 360;
   const off = h * SKEW;
@@ -63,7 +71,7 @@ function drawFinish(): HTMLCanvasElement {
   ctx.lineTo(0, h);
   ctx.closePath();
   ctx.fill();
-  ctx.font = `600 ${size}px ${FONT}`;
+  ctx.font = font;
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText('FINISH', (c.width - textW) / 2, 322);
