@@ -2,9 +2,10 @@ import type { WeaponId } from '../weapons/ids.js';
 
 // ---- 右の操作一覧 ----
 // 構えている武器の操作を並べる。最後に触ったのがパッドならパッドのボタンで出す
-type ControlInput = 'attack' | 'aim' | 'reload';
+type ControlInput = 'attack' | 'aim' | 'reload' | 'wheel' | 'dash';
 interface ControlBind { input: ControlInput; hold?: boolean }
-const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[] }[]> = {
+// padKeys: パッドだけ押し方が違うとき
+const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; padKeys?: ControlBind[] }[]> = {
   kunai: [
     { label: '攻撃', keys: [{ input: 'attack' }] },
     { label: '溜め投げ', keys: [{ input: 'aim', hold: true }] },
@@ -28,6 +29,7 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[] }[]
   axe: [
     { label: '攻撃', keys: [{ input: 'attack' }] },
     { label: '打ち上げ', keys: [{ input: 'attack', hold: true }] },
+    { label: '突き飛ばし', keys: [{ input: 'wheel' }], padKeys: [{ input: 'dash' }, { input: 'aim' }] },
   ],
   chakram: [], // 技はまだ無い
 };
@@ -35,6 +37,10 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[] }[]
 const mouseIcon = (side: 'left' | 'right') =>
   `<svg viewBox="0 0 20 28"><path class="f" d="${side === 'left' ? 'M10 1 V11 H1 V10 A9 9 0 0 1 10 1 Z' : 'M10 1 V11 H19 V10 A9 9 0 0 0 10 1 Z'}"/>` +
   `<rect class="o" x="1" y="1" width="18" height="26" rx="9"/><path class="o" d="M10 1 V11 M1 11 H19"/></svg>`;
+// マウス: ホイールを塗る
+const wheelIcon = () =>
+  `<svg viewBox="0 0 20 28"><rect class="o" x="1" y="1" width="18" height="26" rx="9"/><path class="o" d="M10 1 V3.5 M10 9.5 V11 M1 11 H19"/>` +
+  `<rect class="f" x="8" y="3.5" width="4" height="6" rx="2"/></svg>`;
 const keyIcon = (label: string) =>
   `<svg viewBox="0 0 24 24"><rect class="o" x="1" y="1" width="22" height="22" rx="3"/><text class="t" x="12" y="12.5">${label}</text></svg>`;
 // パッドのトリガー: 肩の形の枠に名前
@@ -51,6 +57,8 @@ const CONTROL_ICONS: Record<ControlInput, [string, string]> = {
   attack: [mouseIcon('left'), triggerIcon('ZR')],
   aim: [mouseIcon('right'), triggerIcon('ZL')],
   reload: [keyIcon('R'), faceIcon('left')],
+  wheel: [wheelIcon(), wheelIcon()],
+  dash: [keyIcon('⇧'), keyIcon('L3')],
 };
 const controlsHud = document.getElementById('controls')!;
 let controlsHudKey = '';
@@ -61,8 +69,8 @@ export function updateControlsHud(shownWeapon: WeaponId, usingPad: boolean) {
   controlsHudKey = key;
   const pad = usingPad ? 1 : 0;
   controlsHud.innerHTML = WEAPON_CONTROLS[shownWeapon]
-    .map(({ label, keys }) => {
-      const icons = keys
+    .map(({ label, keys, padKeys }) => {
+      const icons = (usingPad && padKeys ? padKeys : keys)
         .map((b) => `<span class="k">${CONTROL_ICONS[b.input][pad]}${b.hold ? '<small>HOLD</small>' : ''}</span>`)
         .join('<span class="plus">+</span>');
       return `<div class="row"><span class="label">${label}</span><span class="keys">${icons}</span></div>`;

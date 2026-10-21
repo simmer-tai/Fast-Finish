@@ -640,6 +640,10 @@ document.addEventListener('mousedown', (e) => {
         game.attackPressed = true;
         game.attackHeld = true;
     }
+    if (controls.isLocked && e.button === 1) {
+        e.preventDefault(); // 自動スクロールを出さない
+        axeState.axeDrivePressed = true;
+    }
     if (controls.isLocked && e.button === 2)
         game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
 });
@@ -690,7 +694,7 @@ function downPlayer() {
 function dropPlayerInput() {
     keys.clear();
     pressed.clear();
-    game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = false;
+    game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = axeState.axeDrivePressed = gunState.deadEyePressed = false;
     gunState.reloadQueued = sickleState.tossPressed = false;
     padMove.x = padMove.y = 0;
     padState.padSprint = false;

@@ -33,6 +33,7 @@ import { hooks } from '../game/hooks.js';
 // 本体からも読み書きする値
 export const axeState = {
   axeLaunchPressed: false, // 右クリックを押した瞬間（打ち上げ）
+  axeDrivePressed: false, // ホイールを押した瞬間（突き飛ばし）
   axeRushAirUsed: false, // 今の空中で突進を使った（着地・壁走りまで 1 回）
   axeAttack: null as AxeAttackDef | null,
   axeSpinTime: Infinity,
@@ -775,16 +776,22 @@ export function startAxeLaunch() {
 }
 
 export function updateAxeAttack(dt: number) {
-  // 右クリック: 打ち上げ（地上だけ）
-  if (axeState.axeLaunchPressed) {
+  // ホイール: 突き飛ばし（地上でも空中でも）。パッドにはホイールが無いので、ダッシュ中・ダッシュ直後の ZL で出す
+  const drivePressed = axeState.axeDrivePressed || (axeState.axeLaunchPressed && game.usingPad && axeDashing());
+  axeState.axeDrivePressed = false;
+  if (drivePressed) {
     axeState.axeLaunchPressed = false;
-    // ダッシュ中・ダッシュ直後なら突き飛ばし（地上でも空中でも）
-    if (axeReady() && axeDashing() && !player.wallRunning && axeState.axeAttack !== AXE_DRIVE && axeState.axeSlamRecover <= 0) {
+    if (axeReady() && !player.wallRunning && axeState.axeAttack !== AXE_DRIVE && axeState.axeSlamRecover <= 0) {
       if (!axeState.axeAttack || axeState.axeTime >= axeState.axeAttack.cancel) {
         axeLaunchQueued = false;
         startAxeAttack(AXE_DRIVE);
       }
-    } else if (axeReady() && axeLaunchable() && axeState.axeAttack !== AXE_LAUNCH) {
+    }
+  }
+  // 右クリック: 打ち上げ（地上だけ）
+  if (axeState.axeLaunchPressed) {
+    axeState.axeLaunchPressed = false;
+    if (axeReady() && axeLaunchable() && axeState.axeAttack !== AXE_LAUNCH) {
       if (axeState.axeSlamRecover > 0) {
         axeLaunchQueued = true; // 硬直が解けたら出す
         axeQueued = false;

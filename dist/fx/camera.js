@@ -95,14 +95,14 @@ export function upgradeAttackOnDash() {
         if (i >= 0 || j >= 0)
             startSickleMove(SICKLE_DASH);
     }
-    // 斧: 普段の攻撃は突進振り下ろし、打ち上げは突き飛ばしへ
+    // 斧: 普段の攻撃は突進振り下ろし、打ち上げは突き飛ばしへ（突き飛ばしをダッシュ＋ZL で出すパッドだけ）
     if (axeState.axeAttack && axeState.axeTime < DASH_ATTACK_GRACE && !axeState.axeFiredImpact && !player.wallRunning) {
         const i = AXE_COMBO.indexOf(axeState.axeAttack);
         if (i >= 0 && (player.onGround || !axeState.axeRushAirUsed)) {
             axeState.axeComboStep = i;
             startAxeAttack(AXE_RUSH);
         }
-        else if (axeState.axeAttack === AXE_LAUNCH && axeState.axeSlamRecover <= 0) {
+        else if (axeState.axeAttack === AXE_LAUNCH && game.usingPad && axeState.axeSlamRecover <= 0) {
             startAxeAttack(AXE_DRIVE);
         }
     }
