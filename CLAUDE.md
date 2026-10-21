@@ -1,5 +1,37 @@
 # fast-finish
 
+## コードの構成
+
+three.js の一人称アクション。`src/` の TypeScript を `npm run build`（tsc）で `dist/` に書き出す。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。
+
+### フォルダーの役割
+
+- `main.ts`: 全体をつなぐ部分。当たりの処理（ダメージ・スコア・倒したときの演出）、敵の更新と出現、ステージの流れ、毎フレームのループ。
+- `weapons/`: 武器ごとのモデル（`kunai.ts`, `sword.ts` …）、攻撃の定義（`*Attacks.ts`）、攻撃の処理（`*Combat.ts`）、手元の武器の動き（`viewModelMotion.ts`）。
+- `enemy/`: 敵の体・状態・動き・よろめき・破片・射撃。
+- `player/`: 動きの設定・状態・移動・視点・パッドの割り当て・エイムアシスト・倒れたとき。
+- `fx/`: カメラ演出・当たりの光・切り跡・斬撃の帯・ポストエフェクト。
+- `ui/`: HUD・オプション・武器選択・操作一覧・タイトルと一時停止の画面。
+- `world/`: アリーナ・箱と坂・せり上がり・床のグリッドの広がり・レイの当たり判定。
+- `combat/`: パリィ。
+- `game/`: 武器や演出をまたいで共有する値（`state.ts`）と、本体へのフック（`hooks.ts`）。
+- 直下: 描画の土台（`core.ts`）、入力、音（`audio.ts`）、ステージの組み立て（`station.ts` など）、記録とスコア。
+
+### 決まり
+
+- ほかのファイルから書き換える値は、`let` で export しない（import した側からは代入できない）。オブジェクトにまとめてそのプロパティを書き換える: 共有の値は `game`、プレイヤーは `player`、武器ごとは `swordState` などの `*State`。
+- 分けたファイルから `main.ts` は import しない（循環する）。当たりの処理など本体にある処理は、`game/hooks.ts` の `hooks` を通して呼ぶ。本体が起動時に `initGameHooks` で中身を入れる。敵は `enemy/env.ts`（`initEnemyEnv`）、移動は `initMovement`、当たりの光は `initHitFx` が同じ役目。
+- 互いに import し合うファイルでは、読み込みの最初（関数の外）で相手の値を使わない。
+
+### 動きを確かめる URL
+
+`index.html` に付けると、その場面から始まる。`&near` で敵の目の前に立ち、`&t=0.2` でその時刻で止める。
+
+- `?attack=slash1`（クナイ: slash1 / slash2 / finisher / slideUp / dashSlash）
+- `?sword=kesa`（剣: kesa / gyaku / karatake / sweep / charge / issen / thrust）
+- `?axe=kesa`（斧: kesa / nagi / kabuto / sweep / air / launch / rush / drive）
+- `?grapple`（鎖鎌の引き寄せ）、`?focus`（剣の構え）、`?stage=station`（station / warehouse / parking）
+
 ## 武器のプレビュー動画
 
 武器選択画面は `previews/<武器ID>.mp4` を音なしでループ再生する（`src/ui/weaponPicker.ts` の `showPickerVideo`）。武器ID は `index.html` の `data-weapon`（kunai / handgun / sword / sickle / axe）。
