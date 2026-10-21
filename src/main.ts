@@ -3,7 +3,6 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import {
   SICKLE_VIEW_MODEL_POS, createChainSickle, createHeldSickle, createLongChain, layChain, layLongChain,
 } from './weapons/chainSickle.js';
@@ -21,7 +20,12 @@ import { buildParking } from './parking.js';
 import { createStageTitle, STAGE_TITLE_END } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
 import { WEAPON_KEYS, type WeaponId } from './weapons/ids.js';
-import { mulberry32 } from './random.js';
+import { mulberry32, rand } from './random.js';
+import {
+  HEAVY_FX, HIT_TINT, addBeam, fireBurst, flares, fxScene, hitFxVisible, impact, initHitFx,
+  spawnFinaleFx, spawnHitFx, spawnKillFx, spawnShards, spawnSparks, updateHitParticles,
+} from './fx/hitFx.js';
+import { addSlashScar, clearScars, updateScars, type Scar } from './fx/scars.js';
 import { createWeaponMats } from './weapons/materials.js';
 import { createKunai } from './weapons/kunai.js';
 import { createRevolver, createRound } from './weapons/revolver.js';
@@ -3486,7 +3490,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   kickVel.z += def.kick[2] * DEG * 12 * fx;
   playHit(fx, kind);
   spawnHitFx(at, hitDir, def, swing);
-  if (scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) addSlashScar(at, def, kind, swing);
+  if (scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) addSlashScar(en, camera, at, hitDir, def, kind, swing);
 
   const damage = hitDamage(def, kind) * dmgScale * (headshot ? HEADSHOT_MULT : 1);
   en.hp -= damage;
@@ -3518,9 +3522,9 @@ function killDummy(kind?: HitKind, swing?: THREE.Vector3) {
   for (const t of thrown) if (t.phase === 'stuck' && isOnDummy(t.mesh)) startReturn(t);
   breakDummy(hitDir, kind === 'axe', swing);
   en.root.visible = false;
-  spawnKillFx(hitDir);
+  spawnKillFx(en.root.position, hitDir);
   if (finale) {
-    spawnFinaleFx(hitDir);
+    spawnFinaleFx(en.root.position, hitDir);
     sfx.playFinale(FINALE_HIT_STOP);
     finaleHud.classList.add('on');
     document.body.classList.add('finale'); // キルスコアを FINISH の帯の上へ逃がす
@@ -3673,7 +3677,7 @@ function respawnDummy() {
   en.root.position.y = en.baseY;
   resetDummyStagger();
   clearDebris();
-  clearScars();
+  clearScars(en);
   en.root.visible = true;
   en.riseTime = 0;
   en.flashT = 0;
@@ -4026,167 +4030,7 @@ function hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3) {
   out.copy(hitOnAxis).add(hitOffset).addScaledVector(hitDir, -depth);
 }
 
-// ---- 切り跡 ----
-// 刀とクナイで斬った所に、斬った向きの細い傷を敵の装甲へ貼る。斬った瞬間は白く灼けていて、すぐ黒い傷へ冷める。
-// 傷は当たった部品の子にするので、よろめいても体に付いたまま動き、砕けたときは破片にも残る。起き上がると消える
-const SCAR_MAX = 24; // これより多くなったら古いものから消す
-const SCAR_COOL = 0.35; // 白から黒へ冷めきるまで
-const SCAR_DEPTH = 0.25; // 貼り付ける奥行き（体の裏側まで届かない程度）
-const SCAR_COLD = new THREE.Color(0x140808);
-const SCAR_JITTER = 6; // 傷の向きを毎回少しずらす（度）
-// 傷の形: 中央が太く両端がとがった線。中心ほど濃く、ふちはやわらかく抜く
-const scarTexture = (() => {
-  const w = 256, h = 32;
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d')!;
-  const img = g.createImageData(w, h);
-  for (let x = 0; x < w; x++) {
-    const u = x / (w - 1);
-    const half = (h / 2 - 2) * Math.sin(Math.PI * u) ** 0.7; // その位置での傷の半分の太さ
-    for (let y = 0; y < h; y++) {
-      const d = Math.abs(y + 0.5 - h / 2);
-      const a = THREE.MathUtils.clamp((half - d) / 1.5 + 0.5, 0, 1) * (d < half * 0.45 ? 1 : 0.85);
-      const i = (y * w + x) * 4;
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
-      img.data[i + 3] = a * 255;
-    }
-  }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-})();
-interface Scar { meshes: THREE.Mesh[]; mat: THREE.MeshBasicMaterial; age: number }
-const scarRaycaster = new THREE.Raycaster();
-const scarView = new THREE.Vector3();
-const scarAlong = new THREE.Vector3();
-const scarUp = new THREE.Vector3();
-const scarBasis = new THREE.Matrix4();
-const scarEuler = new THREE.Euler();
-const scarSize = new THREE.Vector3();
-const scarInv = new THREE.Matrix4();
-const scarA = new THREE.Vector3();
-const scarB = new THREE.Vector3();
-const scarC = new THREE.Vector3();
-
-function addSlashScar(at: THREE.Vector3, def: HitDef, kind: HitKind, swing?: THREE.Vector3) {
-  en.root.updateMatrixWorld(true);
-  camera.updateMatrixWorld();
-  camRight.setFromMatrixColumn(camera.matrixWorld, 0);
-  camUp.setFromMatrixColumn(camera.matrixWorld, 1);
-
-  // 視点から当たった場所を通る線で、実際の装甲の表面を探す。輪郭ぎりぎりで外れたら攻撃の向きで探し直す
-  scarView.subVectors(at, camera.position).normalize();
-  scarRaycaster.set(camera.position, scarView);
-  let hit = scarRaycaster.intersectObjects(en.parts, false)[0];
-  if (!hit) {
-    scarRaycaster.set(scarA.copy(at).addScaledVector(hitDir, -0.6), hitDir);
-    hit = scarRaycaster.intersectObjects(en.parts, false)[0];
-    if (!hit) return;
-    scarView.copy(hitDir);
-  }
-
-  // 傷の向き: 刃が動いた向きのうち画面に沿った成分。わからなければ技の斬撃の角度を使う
-  let slashing = false;
-  if (swing && swing.lengthSq() > 1e-8) {
-    scarAlong.copy(swing).addScaledVector(scarView, -swing.dot(scarView));
-    slashing = scarAlong.lengthSq() > SWING_MIN_SIDE ** 2 * swing.lengthSq();
-  }
-  if (!slashing && def.slash !== undefined) {
-    const a = def.slash * DEG;
-    scarAlong.copy(camRight).multiplyScalar(Math.cos(a)).addScaledVector(camUp, Math.sin(a));
-    slashing = true;
-  }
-  if (!slashing) scarAlong.copy(camRight); // 突きは短い刺し傷にする
-  scarAlong.applyAxisAngle(scarView, (Math.random() - 0.5) * SCAR_JITTER * DEG).normalize();
-  scarUp.crossVectors(scarView, scarAlong).normalize();
-  scarAlong.crossVectors(scarUp, scarView);
-  scarEuler.setFromRotationMatrix(scarBasis.makeBasis(scarAlong, scarUp, scarView));
-
-  const fx = Math.sqrt(def.fx ?? 1);
-  const len = slashing ? (kind === 'sword' ? 0.6 : kind === 'axe' ? 0.5 : 0.36) * fx * rand(0.85, 1.15) : 0.14;
-  scarSize.set(len, (kind === 'sword' ? 0.07 : kind === 'axe' ? 0.11 : 0.05) * fx, SCAR_DEPTH); // 斧は厚い刃で太く割る
-
-  const mat = new THREE.MeshBasicMaterial({
-    map: scarTexture, transparent: true, depthWrite: false,
-    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-  });
-  const scar: Scar = { meshes: [], mat, age: 0 };
-  // 傷が部品の境目をまたいでも切れないよう、近くの部品すべてへ貼る
-  for (const part of en.parts) {
-    const geo = new DecalGeometry(part, hit.point, scarEuler, scarSize);
-    if (!keepFrontFaces(geo, scarView)) {
-      geo.dispose();
-      continue;
-    }
-    // ワールド座標で作られるので、部品のローカル座標へ直して子にする
-    geo.applyMatrix4(scarInv.copy(part.matrixWorld).invert());
-    const m = new THREE.Mesh(geo, mat);
-    m.renderOrder = 1;
-    part.add(m);
-    scar.meshes.push(m);
-  }
-  if (scar.meshes.length === 0) {
-    mat.dispose();
-    return;
-  }
-  en.scars.push(scar);
-  if (en.scars.length > SCAR_MAX) removeScar(en.scars.shift()!);
-  updateScarColor(scar);
-}
-
-// 貼り付けの箱は裏側の面も拾うので、こちらへ向いた三角形だけを残す。残らなければ false
-function keepFrontFaces(geo: THREE.BufferGeometry, view: THREE.Vector3): boolean {
-  const pos = geo.getAttribute('position');
-  if (!pos || pos.count === 0) return false;
-  const uv = geo.getAttribute('uv');
-  const keepPos: number[] = [];
-  const keepUv: number[] = [];
-  for (let i = 0; i + 2 < pos.count; i += 3) {
-    scarA.fromBufferAttribute(pos, i);
-    scarB.fromBufferAttribute(pos, i + 1).sub(scarA);
-    scarC.fromBufferAttribute(pos, i + 2).sub(scarA);
-    if (scarB.cross(scarC).dot(view) >= 0) continue;
-    for (let k = i; k < i + 3; k++) {
-      keepPos.push(pos.getX(k), pos.getY(k), pos.getZ(k));
-      keepUv.push(uv.getX(k), uv.getY(k));
-    }
-  }
-  if (keepPos.length === 0) return false;
-  geo.deleteAttribute('normal');
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(keepPos, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(keepUv, 2));
-  return true;
-}
-
-function removeScar(scar: Scar) {
-  for (const m of scar.meshes) {
-    m.removeFromParent();
-    m.geometry.dispose();
-  }
-  scar.mat.dispose();
-}
-
-function clearScars() {
-  for (const s of en.scars) removeScar(s);
-  en.scars.length = 0;
-}
-
-function updateScarColor(scar: Scar) {
-  const t = Math.min(1, scar.age / SCAR_COOL);
-  scar.mat.color.copy(HIT_CORE).lerp(SCAR_COLD, 1 - (1 - t) ** 3);
-  scar.mat.opacity = 0.92;
-}
-
-function updateScars(dt: number) {
-  for (const s of en.scars) {
-    if (s.age >= SCAR_COOL) continue;
-    s.age += dt;
-    updateScarColor(s);
-  }
-}
+// ---- 切り跡 ----（fx/scars.ts）
 
 // ---- 当たったときのよろめき ----
 // 腰の位置、上体の反りとひねり、首、銃を構えた腕をそれぞれ別のばねで動かす。
@@ -4652,7 +4496,7 @@ function removeEnemy(e: Enemy) {
   en = e;
   for (const t of thrown) if (t.phase === 'stuck' && isOnDummy(t.mesh)) startReturn(t);
   clearDebris();
-  clearScars();
+  clearScars(en);
   e.root.removeFromParent();
   e.finishEl.remove();
   e.threatEl.remove();
@@ -4767,7 +4611,7 @@ function updateDummy(dt: number) {
     updateDebris(dt);
     if (en.deadTime >= RESPAWN_TIME && canSpawnEnemy()) respawnDummy();
   }
-  updateScars(dt);
+  updateScars(en, dt);
 
   // 起き上がり: 地面から伸びるように縦に大きくなり、少し行き過ぎて収まる
   en.riseTime += dt;
@@ -7768,681 +7612,28 @@ function updateThrow(dt: number) {
   updateThrown(dt);
 }
 
-// ---- 当たりの光の演出 ----
-// 中心の閃光・放射状に伸びる光線・斬撃に沿った光の線・光の粒を、加算で重ねる。
-// 画面を暗くする後処理のあとに fxScene として描くので、光だけは暗くならない
-const HIT_TINT = new THREE.Color(0xffffff); // 光の色（ゲームの配色に合わせて白一色）
-const HIT_CORE = new THREE.Color(0xffffff); // 中心の色
-const HIT_RAYS = 9; // fx = 1 のときの放射状の光線の数
+// ---- 当たりの光の演出 ----（光線・閃光・火花・破片は fx/hitFx.ts）
+// 画面全体の暗転・白黒・スローの後処理は、ここでゲームの状態から決める
 const HIT_DIM = 0.38; // fx = 1 のときに画面を暗くする量
-const HEAVY_FX = 1.5; // fx がこれ以上の攻撃（締めの技）は長く・整った形で見せる
-const QUICK_LIFE = 0.6; // それ以外の攻撃の光の長さの倍率
-const fxScene = new THREE.Scene();
-const ADDITIVE = { transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false } as const;
-
-const easeOut3 = (t: number) => 1 - (1 - t) ** 3;
-const camRight = new THREE.Vector3();
-const camUp = new THREE.Vector3();
-
-// -- 光線（伸びて飛んでいく細い光） --
-// 先の尖った細い紡錘形の立体。y: 0（根元）〜1（先端）。正面を向いた面ほど明るくして、光る棒に見せる
-interface Beam {
-  origin: THREE.Vector3;
-  dir: THREE.Vector3;
-  len: number;
-  width: number;
-  offset: number; // 根元を中心からどれだけ離すか
-  tail: number; // 根元が追いかけて飛んでいく割合（0 なら根元は残る）
-  reach: number; // 先端が伸び切るまでの速さ（寿命に対する倍率）
-  age: number; // 負なら出るまでの待ち時間
-  life: number;
-  color: THREE.Color;
-}
-const BEAM_MAX = 192;
-const beams: Beam[] = [];
-const beamPool: Beam[] = [];
-// 断面の半径（太さ 1 = 直径 1）を根元から先端へ: 根元は細く、先端の手前で最も太く、先端で尖る
-const beamGeo = new THREE.LatheGeometry(
-  [[0, 0], [0.12, 0.2], [0.32, 0.55], [0.5, 0.82], [0.3, 0.94], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y)),
-  10,
-);
-const beamMesh = new THREE.InstancedMesh(
-  beamGeo,
-  new THREE.ShaderMaterial({
-    ...ADDITIVE,
-    vertexShader: /* glsl */ `
-      varying float vAlong;
-      varying float vFacing;
-      varying vec3 vColor;
-      void main() {
-        vAlong = position.y;
-        #ifdef USE_INSTANCING_COLOR
-          vColor = instanceColor;
-        #else
-          vColor = vec3(1.0);
-        #endif
-        vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-        // 軸ごとに伸縮しているので、法線は各軸の長さの 2 乗で割って向きを保つ
-        mat3 m = mat3(instanceMatrix);
-        m[0] /= dot(m[0], m[0]);
-        m[1] /= dot(m[1], m[1]);
-        m[2] /= dot(m[2], m[2]);
-        vec3 n = normalize(normalMatrix * (m * normal));
-        vFacing = abs(dot(n, normalize(-mv.xyz)));
-        gl_Position = projectionMatrix * mv;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying float vAlong;
-      varying float vFacing;
-      varying vec3 vColor;
-      void main() {
-        // 輪郭ほど透け、芯は白く飛ばす
-        float glow = pow(vFacing, 1.5);
-        float core = pow(vFacing, 10.0);
-        float along = smoothstep(0.0, 0.25, vAlong) * (0.35 + 0.65 * vAlong);
-        float peak = max(vColor.r, max(vColor.g, vColor.b));
-        gl_FragColor = vec4((vColor * glow + vec3(peak) * core) * along, 1.0);
-      }
-    `,
-  }),
-  BEAM_MAX,
-);
-beamMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-for (let i = 0; i < BEAM_MAX; i++) beamMesh.setColorAt(i, HIT_TINT); // instanceColor を作っておく
-beamMesh.count = 0;
-beamMesh.frustumCulled = false;
-fxScene.add(beamMesh);
-
-function addBeam(origin: THREE.Vector3, dir: THREE.Vector3, opts: Partial<Omit<Beam, 'origin' | 'dir' | 'color'>> & { color: THREE.Color }) {
-  if (beams.length >= BEAM_MAX) beamPool.push(beams.shift()!);
-  const b = beamPool.pop() ?? {
-    origin: new THREE.Vector3(), dir: new THREE.Vector3(), color: new THREE.Color(),
-    len: 0, width: 0, offset: 0, tail: 0, reach: 0, age: 0, life: 0,
-  };
-  b.origin.copy(origin);
-  b.dir.copy(dir).normalize();
-  b.color.copy(opts.color);
-  b.len = opts.len ?? 1;
-  b.width = opts.width ?? 0.05;
-  b.offset = opts.offset ?? 0;
-  b.tail = opts.tail ?? 0.9;
-  b.reach = opts.reach ?? 1.4;
-  b.age = opts.age ?? 0;
-  b.life = opts.life ?? 0.2;
-  beams.push(b);
-}
-
-// -- カメラへ向けた板を、伸ばす向きに合わせて置く（火花で使う） --
-const stripMatrix = new THREE.Matrix4();
-const stripDir = new THREE.Vector3();
-const stripSide = new THREE.Vector3();
-const stripNormal = new THREE.Vector3();
-function setStrip(from: THREE.Vector3, dir: THREE.Vector3, len: number, width: number) {
-  stripDir.copy(dir);
-  stripSide.subVectors(camera.position, from).cross(stripDir);
-  if (stripSide.lengthSq() < 1e-8) stripSide.set(0, 1, 0).cross(stripDir);
-  stripSide.normalize();
-  stripNormal.crossVectors(stripDir, stripSide);
-  stripMatrix.makeBasis(stripDir.multiplyScalar(len), stripSide.multiplyScalar(width), stripNormal);
-  stripMatrix.setPosition(from);
-  return stripMatrix;
-}
-
-// 立体の棒を、根元 from から dir の向きへ長さ len・太さ width で置く
-const rodMatrix = new THREE.Matrix4();
-const rodX = new THREE.Vector3();
-const rodY = new THREE.Vector3();
-const rodZ = new THREE.Vector3();
-function setRod(from: THREE.Vector3, dir: THREE.Vector3, len: number, width: number) {
-  rodY.copy(dir);
-  rodX.set(0, 1, 0).cross(rodY);
-  if (rodX.lengthSq() < 1e-6) rodX.set(1, 0, 0).cross(rodY);
-  rodX.normalize();
-  rodZ.crossVectors(rodX, rodY);
-  rodMatrix.makeBasis(rodX.multiplyScalar(width), rodY.multiplyScalar(len), rodZ.multiplyScalar(width));
-  rodMatrix.setPosition(from);
-  return rodMatrix;
-}
-
-const beamFrom = new THREE.Vector3();
-const beamColor = new THREE.Color();
-function updateBeams(dt: number) {
-  let n = 0;
-  let drawn = 0;
-  for (let i = 0; i < beams.length; i++) {
-    const b = beams[i];
-    b.age += dt;
-    if (b.age >= b.life) {
-      beamPool.push(b);
-      continue;
-    }
-    beams[n++] = b;
-    if (b.age < 0) continue;
-    const t = b.age / b.life;
-    const head = b.offset + b.len * easeOut3(Math.min(1, t * b.reach));
-    const tail = b.offset + b.len * b.tail * t * t;
-    const len = head - tail;
-    if (len <= 1e-4) continue;
-    beamFrom.copy(b.origin).addScaledVector(b.dir, tail);
-    beamMesh.setMatrixAt(drawn, setRod(beamFrom, b.dir, len, b.width * (1 - t)));
-    beamMesh.setColorAt(drawn, beamColor.copy(b.color).multiplyScalar(Math.sqrt(1 - t)));
-    drawn++;
-  }
-  beams.length = n;
-  beamMesh.count = drawn;
-  beamMesh.instanceMatrix.needsUpdate = true;
-  if (beamMesh.instanceColor) beamMesh.instanceColor.needsUpdate = true;
-}
-
-// -- 中心の閃光（カメラへ向けた板） --
-const billboardVertex = /* glsl */ `
-  uniform float uScale;
-  uniform float uRot;
-  uniform float uStretch; // 縦横の比。毎回変えて光芒の形を崩す
-  varying vec2 vUv;
-  void main() {
-    vUv = uv * 2.0 - 1.0;
-    vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-    float c = cos(uRot), s = sin(uRot);
-    mv.xy += mat2(c, s, -s, c) * (position.xy * vec2(uStretch, 1.0 / uStretch)) * uScale;
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-const billboardGeo = new THREE.PlaneGeometry(1, 1);
-
-interface Burst { mesh: THREE.Mesh; mat: THREE.ShaderMaterial; age: number; life: number; size: number; power: number }
-function makeBursts(count: number, fragmentShader: string): Burst[] {
-  return Array.from({ length: count }, () => {
-    const mat = new THREE.ShaderMaterial({
-      ...ADDITIVE,
-      uniforms: {
-        uScale: { value: 1 }, uRot: { value: 0 }, uStretch: { value: 1 }, uI: { value: 0 },
-        uColor: { value: HIT_TINT }, uCore: { value: HIT_CORE },
-      },
-      vertexShader: billboardVertex,
-      fragmentShader,
-    });
-    const mesh = new THREE.Mesh(billboardGeo, mat);
-    mesh.frustumCulled = false;
-    mesh.visible = false;
-    fxScene.add(mesh);
-    return { mesh, mat, age: Infinity, life: 1, size: 1, power: 1 };
-  });
-}
-
-// 白い芯・色のついた光暈・十字と斜めの光芒
-const flares = makeBursts(4, /* glsl */ `
-  uniform vec3 uColor;
-  uniform vec3 uCore;
-  uniform float uI;
-  varying vec2 vUv;
-  void main() {
-    float r2 = dot(vUv, vUv);
-    float core = exp(-r2 * 120.0);
-    float halo = exp(-r2 * 10.0) * 0.3;
-    vec2 a = abs(vUv);
-    float star = exp(-a.x * 70.0) * exp(-a.y * 2.2) + exp(-a.y * 70.0) * exp(-a.x * 2.2);
-    vec2 b = abs(mat2(0.7071, 0.7071, -0.7071, 0.7071) * vUv);
-    float star2 = (exp(-b.x * 110.0) * exp(-b.y * 5.0) + exp(-b.y * 110.0) * exp(-b.x * 5.0)) * 0.6;
-    float edge = 1.0 - smoothstep(0.8, 1.0, sqrt(r2));
-    vec3 col = uCore * (core * 2.5 + star * 0.9) + uColor * (halo + star * 0.8 + star2);
-    gl_FragColor = vec4(col * uI * edge, 1.0);
-  }
-`);
-
-function fireBurst(list: Burst[], at: THREE.Vector3, size: number, life: number, power: number, stretch = 1) {
-  const b = list.reduce((a, c) => (c.age > a.age ? c : a)); // いちばん古いものを使い回す
-  b.mesh.position.copy(at);
-  b.mat.uniforms.uRot.value = Math.random() * Math.PI;
-  b.mat.uniforms.uStretch.value = stretch;
-  b.age = 0;
-  b.life = life;
-  b.size = size;
-  b.power = power;
-  return b;
-}
-
-function updateBursts(dt: number) {
-  for (const f of flares) {
-    f.age += dt;
-    const t = f.age / f.life;
-    f.mesh.visible = t >= 0 && t < 1;
-    if (!f.mesh.visible) continue;
-    // 一瞬で大きく開き、しぼみながら消える
-    const pop = Math.min(1, f.age / 0.03);
-    f.mat.uniforms.uScale.value = f.size * (0.4 + 0.8 * pop) * (1 - 0.5 * t);
-    f.mat.uniforms.uI.value = f.power * (1 - t) ** 2;
-  }
-}
-
-// -- 光の粒（火花） --
-const SPARK_MAX = 128;
-const SPARK_GRAVITY = 14;
-const SPARK_DRAG = 5; // 空気抵抗。速く飛び出してすぐ失速させる
-const SPARK_STRETCH = 0.04; // 速さ 1 m/s あたりの尾の長さ
-
-interface Spark { pos: THREE.Vector3; vel: THREE.Vector3; age: number; life: number; width: number }
-const sparks: Spark[] = [];
-const sparkPool: Spark[] = [];
-
-const sparkGeo = new THREE.BufferGeometry();
-// +x が先頭。先頭寄りを太くして尾を細くする（根元が原点）
-sparkGeo.setAttribute('position', new THREE.Float32BufferAttribute([1, 0, 0, 0.8, 0.5, 0, 0, 0, 0, 0.8, -0.5, 0], 3));
-sparkGeo.setIndex([0, 1, 2, 0, 2, 3]);
-const sparkMesh = new THREE.InstancedMesh(sparkGeo, new THREE.MeshBasicMaterial({ ...ADDITIVE, side: THREE.DoubleSide }), SPARK_MAX);
-sparkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-for (let i = 0; i < SPARK_MAX; i++) sparkMesh.setColorAt(i, HIT_CORE); // instanceColor を作っておく
-sparkMesh.count = 0;
-sparkMesh.frustumCulled = false;
-fxScene.add(sparkMesh);
-
-// swing（単位ベクトル）を渡すと、その向きへ寄せて飛ばす
-function spawnSparks(at: THREE.Vector3, hitDir: THREE.Vector3, count: number, lifeScale = 1, size = 1, swing?: THREE.Vector3) {
-  for (let i = 0; i < count; i++) {
-    if (sparks.length >= SPARK_MAX) sparkPool.push(sparks.shift()!);
-    const s = sparkPool.pop() ?? { pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0, life: 0, width: 0 };
-    s.pos.copy(at);
-    // 攻撃した側へ跳ね返りつつ、横と上へ大きく散らす
-    s.vel.randomDirection().addScaledVector(hitDir, -0.35);
-    if (swing) s.vel.addScaledVector(swing, 1.3);
-    s.vel.y += swing ? 0.15 : 0.4;
-    s.vel.normalize().multiplyScalar((4 + Math.random() * 8) * size);
-    s.age = 0;
-    s.life = (0.15 + Math.random() * 0.3) * lifeScale;
-    s.width = (0.012 + Math.random() * 0.018) * size;
-    sparks.push(s);
-  }
-}
-
-const sparkFrom = new THREE.Vector3();
-const sparkDir = new THREE.Vector3();
-const sparkColor = new THREE.Color();
-function updateSparks(dt: number) {
-  const drag = Math.max(0, 1 - SPARK_DRAG * dt);
-  let n = 0;
-  for (let i = 0; i < sparks.length; i++) {
-    const s = sparks[i];
-    s.age += dt;
-    if (s.age >= s.life) {
-      sparkPool.push(s);
-      continue;
-    }
-    s.vel.y -= SPARK_GRAVITY * dt;
-    s.vel.multiplyScalar(drag);
-    s.pos.addScaledVector(s.vel, dt);
-    sparks[n] = s;
-
-    // 白から光の色へ変わりながら、短く細く暗くなって消える
-    const t = s.age / s.life;
-    const k = 1 - t;
-    const speed = s.vel.length();
-    const len = Math.max(0.03, speed * SPARK_STRETCH) * k;
-    sparkDir.copy(s.vel).divideScalar(speed || 1);
-    sparkFrom.copy(s.pos).addScaledVector(sparkDir, -len);
-    sparkMesh.setMatrixAt(n, setStrip(sparkFrom, sparkDir, len, s.width * (0.4 + 0.6 * k)));
-    const near = THREE.MathUtils.smoothstep(s.pos.distanceTo(camera.position), 0.5, 1.0); // 目の前に来た粒は大きく映りすぎるので消す
-    sparkColor.lerpColors(HIT_CORE, HIT_TINT, Math.min(1, t * 2)).multiplyScalar(1.6 * k * near);
-    sparkMesh.setColorAt(n, sparkColor);
-    n++;
-  }
-  sparks.length = n;
-  sparkMesh.count = n;
-  sparkMesh.instanceMatrix.needsUpdate = true;
-  if (sparkMesh.instanceColor) sparkMesh.instanceColor.needsUpdate = true;
-}
-
-// -- 三角形の破片 --
-const SHARD_MAX = 256;
-const SHARD_GRAVITY = 18;
-const SHARD_DRAG = 2.5; // 火花より重く、遠くまで飛ぶ
-const SHARD_BOUNCE = 0.35; // 床で跳ね返るときに残す速さ
-
-interface Shard { pos: THREE.Vector3; vel: THREE.Vector3; quat: THREE.Quaternion; axis: THREE.Vector3; spin: number; scale: THREE.Vector3; age: number; life: number; tint: THREE.Color | null }
-const shards: Shard[] = [];
-const shardPool: Shard[] = [];
-
-const shardGeo = new THREE.BufferGeometry();
-// 少し歪んだ三角形。インスタンスごとに縦横の比を変えて形をばらつかせる
-shardGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.6, 0, -0.45, -0.35, 0, 0.55, -0.25, 0], 3));
-// 敵の体のかけらに見えるよう、光の演出と違って加算にせず敵の色で塗る
-const shardMesh = new THREE.InstancedMesh(shardGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthTest: false, depthWrite: false }), SHARD_MAX);
-shardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-for (let i = 0; i < SHARD_MAX; i++) shardMesh.setColorAt(i, HIT_CORE); // instanceColor を作っておく
-shardMesh.count = 0;
-shardMesh.frustumCulled = false;
-fxScene.add(shardMesh);
-
-// tint を渡すと、敵の色の代わりにその色で塗る（床のかけらなど）
-function spawnShards(at: THREE.Vector3, hitDir: THREE.Vector3, count: number, lifeScale = 1, size = 1, swing?: THREE.Vector3, tint: THREE.Color | null = null) {
-  for (let i = 0; i < count; i++) {
-    if (shards.length >= SHARD_MAX) shardPool.push(shards.shift()!);
-    const s = shardPool.pop() ?? {
-      pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
-      spin: 0, scale: new THREE.Vector3(), age: 0, life: 0, tint: null,
-    };
-    s.tint = tint;
-    s.pos.copy(at);
-    // 攻撃の向きへ抜けるように飛ばし、上へも跳ね上げる
-    s.vel.randomDirection().addScaledVector(hitDir, 0.6);
-    if (swing) s.vel.addScaledVector(swing, 1.1);
-    s.vel.y += swing ? 0.35 : 0.6;
-    s.vel.normalize().multiplyScalar(rand(3, 9) * size);
-    s.quat.setFromAxisAngle(s.axis.randomDirection(), Math.random() * Math.PI * 2);
-    s.axis.randomDirection();
-    s.spin = rand(10, 30) * (Math.random() < 0.5 ? -1 : 1);
-    const r = rand(0.04, 0.11) * size;
-    s.scale.set(r * rand(0.6, 1.4), r * rand(0.6, 1.4), 1);
-    s.age = 0;
-    s.life = rand(0.45, 0.9) * lifeScale;
-    shards.push(s);
-  }
-}
-
-const shardRot = new THREE.Quaternion();
-const shardMatrix = new THREE.Matrix4();
-const shardColor = new THREE.Color();
-const shardScale = new THREE.Vector3();
-function updateShards(dt: number) {
-  const drag = Math.max(0, 1 - SHARD_DRAG * dt);
-  let n = 0;
-  for (let i = 0; i < shards.length; i++) {
-    const s = shards[i];
-    s.age += dt;
-    if (s.age >= s.life) {
-      shardPool.push(s);
-      continue;
-    }
-    s.vel.y -= SHARD_GRAVITY * dt;
-    s.vel.multiplyScalar(drag);
-    s.pos.addScaledVector(s.vel, dt);
-    // 床に当たったら跳ねて、回転も落とす
-    const floor = floorAt(s.pos.x, s.pos.z, s.pos.y + 0.05);
-    if (s.pos.y < floor && s.vel.y < 0) {
-      s.pos.y = floor;
-      s.vel.y *= -SHARD_BOUNCE;
-      s.vel.x *= 0.6;
-      s.vel.z *= 0.6;
-      s.spin *= 0.5;
-    }
-    s.quat.premultiply(shardRot.setFromAxisAngle(s.axis, s.spin * dt));
-    shards[n] = s;
-
-    // 最後の 4 割で縮んで消える。目の前に来た破片は大きく映りすぎるので縮めて消す
-    const t = s.age / s.life;
-    const k = Math.min(1, (1 - t) / 0.4);
-    const near = THREE.MathUtils.smoothstep(s.pos.distanceTo(camera.position), 0.5, 1.0);
-    shardMatrix.compose(s.pos, s.quat, shardScale.copy(s.scale).multiplyScalar(k * near));
-    shardMesh.setMatrixAt(n, shardMatrix);
-    // 敵の色で塗り、回転で面がこちらを向いたときに白くきらめかせる。向きによって明暗もつける
-    toShardCam.subVectors(camera.position, s.pos).normalize();
-    shardNormal.set(0, 0, 1).applyQuaternion(s.quat);
-    const facing = Math.abs(shardNormal.dot(toShardCam));
-    shardColor.copy(s.tint ?? en.mat.color).multiplyScalar(0.6 + 0.5 * facing).lerp(HIT_CORE, 0.6 * facing ** 6);
-    shardMesh.setColorAt(n, shardColor);
-    n++;
-  }
-  shards.length = n;
-  shardMesh.count = n;
-  shardMesh.instanceMatrix.needsUpdate = true;
-  if (shardMesh.instanceColor) shardMesh.instanceColor.needsUpdate = true;
-}
-const toShardCam = new THREE.Vector3();
-const shardNormal = new THREE.Vector3();
-
-// -- 画面全体の暗転の時間変化 --
-let impactAge = Infinity;
-let impactHold = 0; // ヒットストップの長さ。この間は暗転を保つ
-let impactPower = 0;
-
-// 演出は空間に置くので、遠いほど小さく映る。ただし遠くの当たりが見えなくならないよう、
-// 実際の大きさは距離の平方根で少し大きくする（近いと小さめ、遠いと大きめ）
-const HIT_FX_REF_DIST = 1.6; // この距離で大きさ 1 倍
-const HIT_FX_MIN_SCALE = 0.7;
-const HIT_FX_MAX_SCALE = 4;
-
-// 刀の振りの向きへ流す演出
-const SWING_MIN_SIDE = 0.35; // 振りのうち画面に沿った成分がこの割合より小さければ（突きなど）向きを使わない
-const SWING_AHEAD = 1.3; // 斬撃の線の、斬り抜けた側の長さの倍率
-const SWING_BEHIND = 0.3; // 振り始めの側の長さの倍率
-const SWING_STREAKS = 6; // fx = 1 のときに斬り抜けた向きへ噴き出す光の筋の数
-const SWING_SPREAD = 0.45; // 光の筋の広がり（大きいほど扇が開く）
-const swingFlow = new THREE.Vector3();
-
-const rayDir = new THREE.Vector3();
-const toCamera = new THREE.Vector3();
-function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitDef, swing?: THREE.Vector3) {
-  const fx = def.fx ?? 1;
-  camera.updateMatrixWorld();
-  camRight.setFromMatrixColumn(camera.matrixWorld, 0);
-  camUp.setFromMatrixColumn(camera.matrixWorld, 1);
-  toCamera.subVectors(camera.position, at);
-  const dist = Math.max(toCamera.length(), 1e-3);
-  toCamera.divideScalar(dist);
-  const size = THREE.MathUtils.clamp(Math.sqrt(dist / HIT_FX_REF_DIST), HIT_FX_MIN_SCALE, HIT_FX_MAX_SCALE);
-
-  // 刃が動いていた向きのうち、画面に沿った成分。突きのように奥へ向かう振りでは使わない
-  let flow: THREE.Vector3 | undefined;
-  if (swing && swing.lengthSq() > 1e-8) {
-    swingFlow.copy(swing).addScaledVector(toCamera, -swing.dot(toCamera));
-    if (swingFlow.lengthSq() > SWING_MIN_SIDE ** 2 * swing.lengthSq()) flow = swingFlow.normalize();
-  }
-
-  // 連打で何度も出る通常の攻撃は、短く・毎回形を変えてうるさくならないようにする。締めの技はじっくり見せる
-  const heavy = fx >= HEAVY_FX;
-  const lifeK = heavy ? 1 : QUICK_LIFE;
-
-  // 中心の閃光: 大きさ・縦横比・向きを毎回変える
-  fireBurst(flares, at, 1.1 * Math.sqrt(fx) * size * rand(0.7, 1.25), (0.14 + 0.04 * fx) * lifeK, 0.6 + 0.25 * fx, heavy ? 1 : rand(0.55, 1.6));
-
-  // 放射状の光線: 当たった場所から空間の全方向へ、攻撃した側へ少し寄せて飛ばす
-  // 通常の攻撃は本数・長さをばらばらにする
-  const rays = Math.round(HIT_RAYS * fx * (heavy ? 1.2 : rand(0.6, 1.2)));
-  for (let i = 0; i < rays; i++) {
-    // 目に刺さる向きは避ける
-    for (let tries = 0; tries < 4; tries++) {
-      rayDir.randomDirection().addScaledVector(hitDir, -0.5);
-      if (flow) rayDir.addScaledVector(flow, 0.6);
-      rayDir.normalize();
-      if (rayDir.dot(toCamera) < 0.6) break;
-    }
-    const len = heavy
-      ? (Math.random() < 0.3 ? 1.8 : 0.7 + Math.random() * 0.7) * fx
-      : (0.25 + Math.random() ** 2 * 1.4) * fx; // 短いものが多く、ときどき長いもの
-    addBeam(at, rayDir, {
-      color: HIT_TINT,
-      len: len * size,
-      width: rand(0.03, 0.08) * Math.sqrt(fx) * size,
-      offset: rand(0.06, 0.16) * size,
-      tail: 0.9,
-      reach: rand(1.3, 2),
-      life: rand(0.14, 0.24) * lifeK,
-      age: -Math.random() * 0.02 * lifeK,
-    });
-  }
-
-  // 斬撃に沿って走る光の線（突きは視線の奥へ向かうので、代わりに横一文字の光を出す）。
-  // 刃の向きがわかるときは実際に振った向きへ線を引き、斬り抜けた側へ長く、振り始めの側は短くする
-  const slash = flow ? Math.atan2(flow.dot(camUp), flow.dot(camRight)) / DEG : def.slash ?? 0;
-  const jitter = flow ? (heavy ? 4 : 10) : heavy ? 8 : 22;
-  const lines = (def.slash === undefined && !flow) || heavy || Math.random() < 0.6 ? 1 : 2; // ときどき 2 本に割る
-  for (let l = 0; l < lines; l++) {
-    const a = (slash + (Math.random() - 0.5) * jitter) * DEG;
-    rayDir.copy(camRight).multiplyScalar(Math.cos(a)).addScaledVector(camUp, Math.sin(a));
-    // 線の中心を少しずらして、左右の長さも変える
-    const shift = l > 0 ? rand(-0.08, 0.08) * size : 0;
-    lineOrigin.copy(at).addScaledVector(camRight, -Math.sin(a) * shift).addScaledVector(camUp, Math.cos(a) * shift);
-    const thin = (l > 0 ? 0.5 : 1) * size;
-    const baseLen = (def.slash === undefined ? 3.2 : 2.6) * fx * thin;
-    for (const sign of [1, -1]) {
-      lineDir.copy(rayDir).multiplyScalar(sign);
-      const ahead = flow ? (sign > 0 ? SWING_AHEAD : SWING_BEHIND) : 1;
-      const len = baseLen * ahead * (heavy ? 1 : rand(0.45, 1.1));
-      const life = (def.slash === undefined ? 0.24 : 0.2) * lifeK * rand(0.8, 1.1);
-      addBeam(lineOrigin, lineDir, { color: HIT_TINT, len, width: rand(0.07, 0.12) * thin, tail: 0.5, reach: 3, life });
-      addBeam(lineOrigin, lineDir, { color: HIT_CORE, len: len * 0.85, width: 0.035 * thin, tail: 0.5, reach: 3, life: life * 0.8 });
-    }
-  }
-
-  // 斬り抜けた向きへ、細い光の筋を扇状に噴き出させる（刃が通り過ぎたあとに勢いが抜けていくように）
-  if (flow) {
-    const streaks = Math.round(SWING_STREAKS * fx * (heavy ? 1.2 : rand(0.7, 1.2)));
-    for (let i = 0; i < streaks; i++) {
-      for (let tries = 0; tries < 4; tries++) {
-        rayDir.randomDirection().multiplyScalar(SWING_SPREAD).add(flow).normalize();
-        if (rayDir.dot(toCamera) < 0.5) break;
-      }
-      addBeam(at, rayDir, {
-        color: HIT_TINT,
-        len: rand(0.5, 1.5) * fx * size,
-        width: rand(0.02, 0.05) * Math.sqrt(fx) * size,
-        offset: rand(0.1, 0.3) * size,
-        tail: 1,
-        reach: rand(1.6, 2.4),
-        life: rand(0.16, 0.28) * lifeK,
-        age: -rand(0.01, 0.04) * lifeK, // 刃が抜けてから少し遅れて出す
-      });
-    }
-  }
-
-  spawnSparks(at, hitDir, Math.round(16 * fx * (heavy ? 1 : rand(0.5, 1.1))), lifeK, size, flow);
-  spawnShards(at, hitDir, Math.round(8 * fx * (heavy ? 1.3 : rand(0.6, 1.1))), heavy ? 1.3 : 1, size, flow);
-
-  impactAge = 0;
-  impactHold = def.hitStop ?? DEFAULT_HIT_STOP;
-  // 遠くの当たりで画面全体が暗くならないよう、離れるほど弱める
-  impactPower = fx * THREE.MathUtils.clamp(HIT_FX_REF_DIST / dist, 0.2, 1);
-}
-// とどめ: 体じゅうから破片を噴き出させ、大きな閃光・全方向への長い光線・腰の高さに広がる光の輪を重ねる
-const killCenter = new THREE.Vector3();
-const killPoint = new THREE.Vector3();
-function spawnKillFx(dir: THREE.Vector3) {
-  killCenter.set(en.root.position.x, en.root.position.y + 1, en.root.position.z);
-  toCamera.subVectors(camera.position, killCenter).normalize();
-
-  // 体の形に沿って、足元から頭まで破片を割り出す
-  for (let i = 0; i < 18; i++) {
-    const y = en.root.position.y + 0.1 + (i / 17) * (DUMMY_HEIGHT - 0.15);
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.random() * DUMMY_RADIUS;
-    killPoint.set(en.root.position.x + Math.cos(a) * r, y, en.root.position.z + Math.sin(a) * r);
-    spawnShards(killPoint, dir, 8, rand(1.8, 2.6), rand(1.2, 1.8));
-  }
-  spawnSparks(killCenter, dir, 70, 2.2, 1.7);
-
-  // 閃光を 2 枚: 大きく長いものと、鋭く短いもの
-  fireBurst(flares, killCenter, 5, 0.45, 2.6, 1);
-  fireBurst(flares, killCenter, 2.4, 0.2, 2, rand(1.6, 2.2));
-
-  // 全方向への長い光線（目に刺さる向きは避ける）
-  for (let i = 0; i < 28; i++) {
-    for (let tries = 0; tries < 4; tries++) {
-      rayDir.randomDirection().addScaledVector(dir, 0.4).normalize();
-      if (rayDir.dot(toCamera) < 0.5) break;
-    }
-    addBeam(killCenter, rayDir, {
-      color: HIT_TINT,
-      len: rand(2.5, 6),
-      width: rand(0.08, 0.18),
-      offset: rand(0.1, 0.3),
-      tail: 0.95,
-      reach: rand(1.4, 2.2),
-      life: rand(0.35, 0.6),
-      age: -Math.random() * 0.05,
-    });
-  }
-
-  // 水平に広がる衝撃の輪
-  for (let i = 0; i < 40; i++) {
-    const a = (i / 40) * Math.PI * 2 + Math.random() * 0.1;
-    rayDir.set(Math.cos(a), rand(-0.03, 0.06), Math.sin(a)).normalize();
-    addBeam(killPoint.set(en.root.position.x, en.root.position.y + rand(0.15, 0.4), en.root.position.z), rayDir, {
-      color: HIT_TINT,
-      len: rand(3, 4.5),
-      width: rand(0.05, 0.09),
-      offset: 0.3,
-      tail: 1,
-      reach: 1.2,
-      life: rand(0.5, 0.65),
-    });
-  }
-
-  impactAge = 0;
-  impactHold = KILL_HIT_STOP;
-  impactPower = 2.5;
-}
-
-// 最後の 1 体: とどめの演出に重ねて、天へ伸びる光の柱・時間差で広がる 3 重の輪・さらに大きな閃光を足す
-function spawnFinaleFx(dir: THREE.Vector3) {
-  // 天へ伸びる柱: 束ねた太い光線を、わずかに散らして真上へ
-  for (let i = 0; i < 10; i++) {
-    rayDir.set(rand(-0.06, 0.06), 1, rand(-0.06, 0.06)).normalize();
-    addBeam(killPoint.set(en.root.position.x, en.root.position.y, en.root.position.z), rayDir, {
-      color: HIT_TINT,
-      len: rand(14, 26),
-      width: rand(0.12, 0.3),
-      offset: 0,
-      tail: 1,
-      reach: rand(1.5, 2.2),
-      life: rand(0.9, 1.3),
-      age: -rand(0, 0.04),
-    });
-  }
-  // 足元から時間差で広がる輪。外側の輪ほど遅れて、遠くまで届く
-  for (let ring = 0; ring < 3; ring++) {
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2 + ring * 0.4 + Math.random() * 0.08;
-      rayDir.set(Math.cos(a), rand(-0.02, 0.04), Math.sin(a)).normalize();
-      addBeam(killPoint.set(en.root.position.x, en.root.position.y + 0.08 + ring * 0.05, en.root.position.z), rayDir, {
-        color: HIT_TINT,
-        len: rand(5, 7) + ring * 3,
-        width: rand(0.06, 0.1),
-        offset: 0.4 + ring * 0.8,
-        tail: 1,
-        reach: 1.6 + ring * 0.6,
-        life: rand(0.8, 1.0),
-        age: -ring * 0.12,
-      });
-    }
-  }
-  // 斬り抜けた向きへ噴き出す、長い光線の束
-  for (let i = 0; i < 16; i++) {
-    rayDir.randomDirection().multiplyScalar(0.35).add(dir).normalize();
-    addBeam(killCenter, rayDir, {
-      color: HIT_TINT,
-      len: rand(6, 12),
-      width: rand(0.1, 0.22),
-      offset: rand(0.2, 0.5),
-      tail: 0.95,
-      reach: rand(1.8, 2.6),
-      life: rand(0.6, 0.9),
-      age: -Math.random() * 0.06,
-    });
-  }
-  spawnSparks(killCenter, dir, 120, 3.2, 2.2);
-  fireBurst(flares, killCenter, 9, 0.9, 3, 1);
-  fireBurst(flares, killCenter, 4, 0.4, 2.4, rand(2.4, 3));
-  impactHold = FINALE_HIT_STOP;
-  impactPower = 4;
-}
-
-const lineOrigin = new THREE.Vector3();
-const lineDir = new THREE.Vector3();
-const rand =(a: number, b: number) => a + Math.random() * (b - a);
+initHitFx({
+  camera,
+  floorAt,
+  shardTint: () => en.mat.color,
+  bodyHeight: DUMMY_HEIGHT,
+  bodyRadius: DUMMY_RADIUS,
+  hitStop: { normal: DEFAULT_HIT_STOP, kill: KILL_HIT_STOP, finale: FINALE_HIT_STOP },
+});
 
 function updateHitFx(dt: number) {
   updateAxeShocks(dt);
-  updateBeams(dt);
-  updateBursts(dt);
-  updateSparks(dt);
-  updateShards(dt);
+  updateHitParticles(dt);
 
-  impactAge += dt;
+  impact.age += dt;
   const u = impactFxPass.uniforms;
   // ヒットストップの間は暗いまま保ち、明けてから戻す
-  const after = Math.max(0, impactAge - impactHold);
-  const env = impactAge < impactHold ? 1 : Math.max(0, 1 - after / 0.22) ** 2;
-  u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impactPower) * env, Math.max(focusBlend, deadEyeBlend) * FOCUS_DIM);
+  const after = Math.max(0, impact.age - impact.hold);
+  const env = impact.age < impact.hold ? 1 : Math.max(0, 1 - after / 0.22) ** 2;
+  u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impact.power) * env, Math.max(focusBlend, deadEyeBlend) * FOCUS_DIM);
 
   // パリィ: 止まっている間は白黒のまま、最初の一瞬だけ白黒を反転させ、スローが明けるのに合わせて色を戻す
   // 最後の 1 体を倒したときも同じ白黒を使う
@@ -8459,7 +7650,8 @@ function updateHitFx(dt: number) {
   // 効果が無いときは全画面の処理ごと飛ばす
   impactFxPass.enabled = u.uDim.value > 0.001 || u.uMono.value > 0.001 || u.uSlow.value > 0.001 || u.uRingAmt.value > 0.001;
   // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
-  hitFxRenderPass.enabled = fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));
+  // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
+  hitFxRenderPass.enabled = hitFxVisible();
 }
 
 // ---- 斬撃の軌跡 ----

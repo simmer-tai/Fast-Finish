@@ -7,3 +7,6 @@ export function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+// a 以上 b 未満の一様乱数
+export const rand = (a: number, b: number) => a + Math.random() * (b - a);
