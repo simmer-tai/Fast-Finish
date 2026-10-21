@@ -21,6 +21,7 @@ export const game = {
     usingPad: false, // 最後に触ったのがパッドか（マウスを触ったら外れる）
     playerHp: PLAYER_MAX_HP,
     parryReturnAge: Infinity, // 返した弾が当たってからの実時間
+    attackPressed: false,
 };
 // カメラの反動（ばね）
 export const kick = new THREE.Vector3();

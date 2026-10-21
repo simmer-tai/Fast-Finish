@@ -7,7 +7,7 @@ import { SICKLE_VIEW_MODEL_POS } from './weapons/chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './weapons/battleAxe.js';
 import { CHAKRAM_VIEW_MODEL_POS } from './weapons/chakram.js';
 import * as sfx from './audio.js';
-import { ensureAudio, playGrip, playHit, playRing, playSwish, type HitKind } from './audio.js';
+import { ensureAudio, playHit, playRing, playSwish, type HitKind } from './audio.js';
 import { showKillScore, totalScore, updateScoreHud, type KillBonus } from './score.js';
 import { finalScore, fmtTime, showResult, skipResult } from './result.js';
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
@@ -40,7 +40,6 @@ import {
   updateHitParticles,
 } from './fx/hitFx.js';
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
-import { REST_TIP, THROW_RANGE, createKunai } from './weapons/kunai.js';
 import { createPistol } from './weapons/pistol.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './weapons/sword.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
@@ -48,8 +47,7 @@ import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selecte
 import { loadBest, saveBest } from './records.js';
 import { env, initEnemyEnv } from './enemy/env.js';
 import {
-  DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, hitPoint, setEn,
-  type Enemy,
+  DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, type Enemy,
 } from './enemy/state.js';
 import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
@@ -57,7 +55,7 @@ import {
   AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, playerEye, playerLook, poseEnemyTumble,
   updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble,
 } from './enemy/motion.js';
-import { DEG, UP, catmullRom, wrapAngle } from './math.js';
+import { DEG, UP, wrapAngle } from './math.js';
 import {
   AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED,
   DASH_TIME, EYE_HEIGHT, FOV_SPEED_MAX, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED,
@@ -76,8 +74,7 @@ import {
 import { keys, padMove, pressed } from './input.js';
 import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js';
 import {
-  ATTACKS, COMBO_RESET, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLASH_1, SLIDE_UP, THROW_SWISH, type AttackDef,
-  type HitDef, type Pose,
+  ATTACKS, DASH_SLASH, GROUND_COMBO, SLASH_1, SLIDE_UP, type AttackDef, type HitDef,
 } from './weapons/kunaiAttacks.js';
 import {
   SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST,
@@ -87,33 +84,29 @@ import {
   AXE_ATTACKS, AXE_COMBO, AXE_DRIVE, AXE_KESA, AXE_LAUNCH, AXE_RUSH, type AxeAttackDef,
 } from './weapons/axeAttacks.js';
 import { camera, controls, renderer, scene } from './core.js';
-import { DASH_ATTACK_WINDOW, DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
+import { DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
 import {
-  AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, attackPivot,
-  axeRest, axeViewModel, chakramRest, chakramViewModel, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiRest,
-  leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, sickleViewModel, spinPivot, sword, swordRest,
-  swordRestQuat, swordViewModel, viewModel, weaponMats,
+  AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeRest,
+  axeViewModel, chakramRest, chakramViewModel, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiRest, leftViewModel,
+  sickleViewModel, sword, swordRest, swordRestQuat, swordViewModel, viewModel, weaponMats,
 } from './weapons/viewModels.js';
-import {
-  KUNAI_RIBBON, Ribbon, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase,
-} from './fx/ribbons.js';
 import {
   AXE_SHOCK_HIT, applyAxePose, axePoseAt, axeState, axeTrailPose, spawnAxeShock, startAxeAttack, updateAxeAttack,
   updateAxeShocks,
 } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
-import { castHit, castThrow, castWorld } from './world/raycast.js';
+import { castWorld } from './world/raycast.js';
 import {
   CHARGE_ZOOM, FOCUS_DIM, FOCUS_ZOOM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, startSwordTwirl,
   swordPoseAt, swordReady, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack,
 } from './weapons/swordCombat.js';
-import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, enemyChest, findAssistTarget } from './player/aimAssist.js';
+import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget } from './player/aimAssist.js';
 import {
   BULLET_HIT, DASH_TWIRL_TIME, DEADEYE_HIT, DEADEYE_ZOOM, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE,
-  PARRY_RETURN_HIT, RELOAD_EVENTS, SLIDE_SPIN_SWISH, TAU, TRACER_AXIS, applyGunSpin, bulletBack, bullets,
-  deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady,
-  gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, startTwirl,
-  tracerGeo, updateBullets, updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, type Bullet,
+  PARRY_RETURN_HIT, RELOAD_EVENTS, TRACER_AXIS, applyGunSpin, bulletBack, bullets, deadEyeMarks, endDeadEye,
+  endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash,
+  placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, startTwirl, tracerGeo, updateBullets,
+  updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, type Bullet,
 } from './weapons/handgunCombat.js';
 import {
   GRAPPLE_STICK_HIT, HOOK_CHARGES, HOOK_RECHARGE, SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DAMAGE_SCALE, SICKLE_DASH,
@@ -121,6 +114,10 @@ import {
   sickleBodyRot, sickleState, startSickleMove, tossOnDash, twirlSickles, updateGrapple, updateGrapplePull,
   updateSickleMelee,
 } from './weapons/sickleCombat.js';
+import {
+  WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiReady, kunaiState, pendingThrows,
+  startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor,
+} from './weapons/kunaiCombat.js';
 
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
@@ -712,12 +709,11 @@ window.addEventListener('blur', () => {
 });
 const isSprintKey = (code: string) => code === 'ShiftLeft' || code === 'ShiftRight';
 
-let attackPressed = false;
 document.addEventListener('mousedown', (e) => {
   // パッドで遊んでいる途中でマウスに持ち替えたら、そのクリックでロックする
   if (padPlaying && !document.pointerLockElement) lockPointer();
   if (controls.isLocked && e.button === 0) {
-    attackPressed = true;
+    game.attackPressed = true;
     game.attackHeld = true;
   }
   if (controls.isLocked && e.button === 2) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
@@ -838,7 +834,7 @@ function updatePad(dt: number) {
     keys.add(code);
     pressed.add(code);
   }
-  if (pad.down[PAD.RT]) attackPressed = game.attackHeld = true;
+  if (pad.down[PAD.RT]) game.attackPressed = game.attackHeld = true;
   if (pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
   if (pad.down[PAD.X]) gunState.reloadQueued = sickleState.tossPressed = true;
   const cycle = (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
@@ -1071,7 +1067,7 @@ function downSlowFactor() {
 function dropPlayerInput() {
   keys.clear();
   pressed.clear();
-  attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = false;
+  game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = false;
   gunState.reloadQueued = sickleState.tossPressed = false;
   padMove.x = padMove.y = 0;
   padSprint = false;
@@ -1301,6 +1297,10 @@ function update(dt: number) {
   updateWeaponSwitch(dt);
   updateViewModel(dt);
   updateAttack(dt);
+  updateKick(dt);
+  updateKunaiPose(dt);
+  kunaiState.worldSlow = worldSlowFactor(dt);
+  updateEnemies(dt * kunaiState.worldSlow);
   updateSwordAttack(dt);
   updateAxeAttack(dt);
   updateThrow(dt);
@@ -1331,9 +1331,9 @@ function onDash() {
   game.sinceDash = 0;
   upgradeAttackOnDash();
   // 振っていなければ、右手のクナイを輪に掛けた指でくるりと一周回す
-  if (kunaiReady() && !attack) {
-    dashSpinTime = 0;
-    firedDashSpinGrip = false;
+  if (kunaiReady() && !kunaiState.attack) {
+    kunaiState.dashSpinTime = 0;
+    kunaiState.firedDashSpinGrip = false;
     playRing();
   }
   // ハンドガンは、トリガーに掛けた指を軸に縦にくるりと一周回す（装填後より速く）
@@ -1354,10 +1354,10 @@ const DASH_ATTACK_GRACE = 0.12;
 function upgradeAttackOnDash() {
   if (player.sliding) return;
   // クナイ
-  if (attack && attackTime < DASH_ATTACK_GRACE && !firedImpact) {
-    const i = GROUND_COMBO.indexOf(attack);
+  if (kunaiState.attack && kunaiState.attackTime < DASH_ATTACK_GRACE && !kunaiState.firedImpact) {
+    const i = GROUND_COMBO.indexOf(kunaiState.attack);
     if (i >= 0) {
-      comboStep = i;
+      kunaiState.comboStep = i;
       startAttack(DASH_SLASH);
     }
   }
@@ -1495,6 +1495,14 @@ function applyCameraOffset() {
 // applyCameraOffset で足した揺れと傾きを戻す
 function restoreCameraOffset() {
   camera.quaternion.copy(savedQuat);
+}
+
+// 攻撃の反動（kick）をばねで元へ戻す
+const kickTmp = new THREE.Vector3();
+function updateKick(dt: number) {
+  kickTmp.copy(kick).multiplyScalar(-220).addScaledVector(kickVel, -20);
+  kickVel.addScaledVector(kickTmp, dt);
+  kick.addScaledVector(kickVel, dt);
 }
 
 // ---- 手元につられる視線 ----
@@ -1669,15 +1677,11 @@ let dashPull = 0;
 let slidePose = 0;
 let mantlePose = 0;
 let chargePose = 0;
-let throwPunch = 0;
 let leftEmpty = 0;
-
-// クナイの技が使えるのは、クナイを構えきっていて、持ち替えを頼まれていないときだけ
-const kunaiReady = () => game.shownWeapon === 'kunai' && game.wantWeapon === 'kunai' && game.holster === 0;
 
 function updateWeaponSwitch(dt: number) {
   // 振りや溜め、投げの途中では持ち替えず、終わるのを待つ
-  const kunaiBusy = attack !== null || charging || pendingThrows.length > 0;
+  const kunaiBusy = kunaiState.attack !== null || kunaiState.charging || pendingThrows.length > 0;
   const swordBusy = swordState.swordAttack !== null || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
   const busy = (game.shownWeapon === 'kunai' && kunaiBusy) || (game.shownWeapon === 'sword' && swordBusy) || sickleState.grapple !== null
     || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null);
@@ -1727,8 +1731,8 @@ function updateViewModel(dt: number) {
   const speedBack = Math.min(Math.max(hSpeed - SPRINT_SPEED, 0) / 10, 1) * 0.03;
 
   // 攻撃中は移動による構えの変化を弱め、振りの形を崩さない
-  attackWeight += ((attack ? 1 : 0) - attackWeight) * Math.min(1, dt * (attack ? 20 : 6));
-  const calm = 1 - attackWeight * 0.8;
+  kunaiState.attackWeight += ((kunaiState.attack ? 1 : 0) - kunaiState.attackWeight) * Math.min(1, dt * (kunaiState.attack ? 20 : 6));
+  const calm = 1 - kunaiState.attackWeight * 0.8;
   const bob = bobAmount * calm;
   const pull = dashPull * calm;
   const slideP = slidePose * calm;
@@ -1749,20 +1753,20 @@ function updateViewModel(dt: number) {
   // 左手は振りに加わらないので、移動の揺れだけ右手と左右対称に付ける
   // 溜めている間は少し前へ出して持ち上げ（水平に回すクナイが顔へ近づきすぎないように）、
   // 投げた瞬間は前へ突き出し、補充中は画面の下へ隠す
-  chargePose += ((charging ? 1 : 0) - chargePose) * Math.min(1, dt * 30);
-  throwPunch += -throwPunch * Math.min(1, dt * 9);
-  const empty = reloading && pendingThrows.length === 0; // 最後の 1 本を放ってから下げる
+  chargePose += ((kunaiState.charging ? 1 : 0) - chargePose) * Math.min(1, dt * 30);
+  kunaiState.throwPunch += -kunaiState.throwPunch * Math.min(1, dt * 9);
+  const empty = kunaiState.reloading && pendingThrows.length === 0; // 最後の 1 本を放ってから下げる
   leftEmpty += ((empty ? 1 : 0) - leftEmpty) * Math.min(1, dt * (empty ? 6 : 14));
   leftViewModel.position.set(
     LEFT_VIEW_MODEL_POS.x - Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03
-      + chargePose * 0.03 + throwPunch * 0.05,
+      + chargePose * 0.03 + kunaiState.throwPunch * 0.05,
     LEFT_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
       + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12
-      + chargePose * 0.03 + throwPunch * 0.03 - leftEmpty * 0.15,
-    LEFT_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack - chargePose * 0.04 - throwPunch * 0.12,
+      + chargePose * 0.03 + kunaiState.throwPunch * 0.03 - leftEmpty * 0.15,
+    LEFT_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack - chargePose * 0.04 - kunaiState.throwPunch * 0.12,
   );
   leftViewModel.rotation.set(
-    -dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + chargePose * 0.25 - throwPunch * 0.4 - leftEmpty * 0.6,
+    -dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + chargePose * 0.25 - kunaiState.throwPunch * 0.4 - leftEmpty * 0.6,
     -lookSwayX * 2,
     slidePose * 0.35 + roll - chargePose * 0.2,
   );
@@ -1890,207 +1894,7 @@ function updateViewModel(dt: number) {
   }
 }
 
-// ---- 近接攻撃（クナイ） ----
-// 振りはキーフレームで作る。各 key は「構えの位置」「拳の向き」「輪を中心にした回転」を持ち、
-// 位置は Catmull-Rom で滑らかな弧に、向きは球面補間でつなぐ。
-
-const ATTACK_BUFFER = 0.25; // cancel のこの秒数前から次の入力を受け付けておく
-
-let attack: AttackDef | null = null;
-let attackTime = 0;
-let attackQueued = false;
-let attackWeight = 0;
-let comboStep = 0;
-let comboTimer = 0;
-let firedSwishes = 0;
-let firedImpact = false;
-let firedLunge = false;
-let firedRing = false;
-let firedGrip = false;
-
-const newPose = (): Pose => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), spin: 0 });
-const restPose = newPose();
-// ダッシュしたときに構えたまま輪を軸に一周回す
-const DASH_SPIN_TIME = 0.32;
-const DASH_SPIN_GRIP = 0.24; // 握り直して「チャキッ」と鳴らす時間
-let dashSpinTime = Infinity; // 回し始めてからの時間（回していないときは Infinity）
-let firedDashSpinGrip = true;
-const fromPose = newPose(); // 攻撃を始めた瞬間の構え（そこから滑らかにつなぐ）
-const curPose = newPose();
-const tmpPose = newPose();
-
-function copyPose(out: Pose, p: Pose) {
-  out.pos.copy(p.pos);
-  out.quat.copy(p.quat);
-  out.spin = p.spin;
-}
-
-function evalAttack(def: AttackDef, t: number, out: Pose) {
-  const keys = def.keys;
-  let i = 0;
-  while (i < keys.length - 2 && t >= keys[i + 1].t) i++;
-  const k0 = keys[i];
-  const k1 = keys[i + 1];
-  const e = k0.ease(THREE.MathUtils.clamp((t - k0.t) / (k1.t - k0.t), 0, 1));
-  const kPrev = keys[Math.max(0, i - 1)];
-  const kNext = keys[Math.min(keys.length - 1, i + 2)];
-  catmullRom(kPrev.pos, k0.pos, k1.pos, kNext.pos, e, out.pos);
-  // 切っ先の向きも曲線でつなぎ、key の所で軌跡が折れないようにする
-  catmullRom(kPrev.tip, k0.tip, k1.tip, kNext.tip, e, evalTip);
-  evalTip.normalize();
-  out.quat.setFromUnitVectors(REST_TIP, evalTip);
-  const roll = k0.roll + (k1.roll - k0.roll) * e;
-  if (roll !== 0) out.quat.premultiply(evalRoll.setFromAxisAngle(evalTip, roll * DEG));
-  out.spin = k0.spin + (k1.spin - k0.spin) * e;
-}
-const evalTip = new THREE.Vector3();
-const evalRoll = new THREE.Quaternion();
-
-// 溜めの key までの間に、攻撃開始時の構えから滑らかに移る
-function attackPoseAt(def: AttackDef, t: number, out: Pose) {
-  evalAttack(def, t, tmpPose);
-  const w = easeInOutCubic(THREE.MathUtils.clamp(t / def.keys[1].t, 0, 1));
-  out.pos.lerpVectors(fromPose.pos, tmpPose.pos, w);
-  out.quat.slerpQuaternions(fromPose.quat, tmpPose.quat, w);
-  out.spin = fromPose.spin + (tmpPose.spin - fromPose.spin) * w;
-}
-
-function applyPose(p: Pose) {
-  attackPivot.position.copy(p.pos);
-  attackPivot.quaternion.copy(p.quat);
-  spinPivot.rotation.z = p.spin * DEG;
-}
-
-function startAttack(def: AttackDef) {
-  copyPose(fromPose, curPose);
-  fromPose.spin = ((((fromPose.spin + 180) % 360) + 360) % 360) - 180; // 回した分を巻き戻さないように
-  attack = def;
-  attackTime = 0;
-  attackQueued = false;
-  firedSwishes = 0;
-  firedImpact = false;
-  firedLunge = false;
-  firedRing = false;
-  firedGrip = false;
-  lastTrailSample = -Infinity;
-  // ダッシュで回している途中に振ったら、回すのをやめて攻撃へつなぐ
-  dashSpinTime = Infinity;
-  firedDashSpinGrip = true;
-  endKunaiSlideSpin();
-}
-
-function chooseAttack(): AttackDef {
-  if (player.sliding) return SLIDE_UP;
-  if (player.dashTime > 0 || game.sinceDash < DASH_ATTACK_WINDOW) return DASH_SLASH;
-  const def = GROUND_COMBO[comboStep];
-  comboStep = (comboStep + 1) % GROUND_COMBO.length;
-  return def;
-}
-
-const kickTmp = new THREE.Vector3();
-const lungeDir = new THREE.Vector3();
-
-// 攻撃の踏み込み: 向いている水平の向きへ押し出す。地上は摩擦で止まるのでそのまま足すが、空中は減速しないので、
-// 足し続けると振るたびに際限なく速くなる。空中では、その向きの速さが踏み込みの分に届いていないときだけ、届くまで補う
-const AIR_LUNGE_SCALE = 0.4;
-function applyLunge(amount: number) {
-  camera.getWorldDirection(lungeDir);
-  lungeDir.y = 0;
-  if (lungeDir.lengthSq() < 1e-6) return;
-  lungeDir.normalize();
-  let add = amount;
-  if (!player.onGround) {
-    const along = velocity.x * lungeDir.x + velocity.z * lungeDir.z;
-    add = Math.max(0, amount * AIR_LUNGE_SCALE - along);
-  }
-  velocity.x += lungeDir.x * add;
-  velocity.z += lungeDir.z * add;
-}
-
-function updateAttack(dt: number) {
-  game.sinceDash += dt;
-  game.trailNow += dt;
-
-  if (attackPressed) {
-    attackPressed = false;
-    if (!kunaiReady()) {
-      if (game.shownWeapon === 'handgun') gunState.fireQueued = true;
-      else if (game.shownWeapon === 'sword') swordState.swordPressed = true;
-      else if (game.shownWeapon === 'sickle') sickleState.sicklePressed = true;
-      else if (game.shownWeapon === 'axe') axeState.axePressed = true;
-    } else if (!attack) startAttack(chooseAttack());
-    else if (attackTime >= attack.cancel - ATTACK_BUFFER) attackQueued = true;
-  }
-
-  if (attack) {
-    attackTime += dt;
-    const def = attack;
-
-    while (firedSwishes < def.swishes.length && attackTime >= def.swishes[firedSwishes].at) {
-      playSwish(def.swishes[firedSwishes++]);
-    }
-    if (def.ring !== undefined && !firedRing && attackTime >= def.ring) {
-      firedRing = true;
-      playRing();
-    }
-    if (def.grip !== undefined && !firedGrip && attackTime >= def.grip) {
-      firedGrip = true;
-      playGrip();
-      kickVel.x += -0.25 * DEG * 22; // 握り込んだ手応えをカメラにもほんの少し
-    }
-    if (!firedLunge && attackTime >= def.trails[0][0]) {
-      firedLunge = true;
-      applyLunge(def.lunge);
-    }
-    if (!firedImpact && attackTime >= def.impact) {
-      firedImpact = true;
-      kickVel.x += def.kick[0] * DEG * 22;
-      kickVel.y += def.kick[1] * DEG * 22;
-      kickVel.z += def.kick[2] * DEG * 22;
-      addTrauma(0.06);
-      game.fovKick += def.fovPunch ?? 0;
-      tryHitDummy(def);
-    }
-
-    if (attackQueued && attackTime >= def.cancel) {
-      startAttack(chooseAttack());
-    } else if (attackTime >= def.duration) {
-      attack = null;
-      comboTimer = COMBO_RESET;
-    }
-  } else if (comboTimer > 0) {
-    comboTimer -= dt;
-    if (comboTimer <= 0) comboStep = 0;
-  }
-
-  kickTmp.copy(kick).multiplyScalar(-220).addScaledVector(kickVel, -20);
-  kickVel.addScaledVector(kickTmp, dt);
-  kick.addScaledVector(kickVel, dt);
-
-  updateKunaiSlideSpin(dt);
-  if (attack) {
-    sampleTrail();
-    attackPoseAt(attack, attackTime, curPose);
-  } else {
-    copyPose(curPose, restPose);
-    dashSpinTime += dt;
-    if (dashSpinTime < DASH_SPIN_TIME) curPose.spin = -360 * easeOutCubic(dashSpinTime / DASH_SPIN_TIME);
-    if (!firedDashSpinGrip && dashSpinTime >= DASH_SPIN_GRIP) {
-      firedDashSpinGrip = true;
-      playGrip();
-    }
-    curPose.spin -= kunaiSlideSpin / DEG;
-  }
-  applyPose(curPose);
-  sampleKunaiSlideTrail(dt);
-  updateTrailMesh();
-  worldSlow = worldSlowFactor(dt);
-  updateEnemies(dt * worldSlow);
-}
-
 // ---- 被弾の演出 ----
-const HIT_REACH = 2.2; // 敵の中心までこの距離なら当たる
-const HIT_ANGLE = 60 * DEG; // 視線からこの角度以内なら当たる
 const FLASH_HOLD = 0.05; // 真っ白のまま保つ時間
 const FLASH_FADE = 0.12; // そこから元の色へ戻る時間
 
@@ -2109,12 +1913,6 @@ const FINALE_SLOW_RELEASE = 0.9;
 const FINALE_INVERT_TIME = 0.08; // 白黒を反転させておく実時間
 let finale = false; // 最後の 1 体を倒したあと
 let killSlowTime = Infinity; // 倒してからの実時間
-
-function tryHitDummy(def: AttackDef) {
-  if (!dummyInReach(HIT_REACH, HIT_ANGLE)) return;
-  findHitPoint(def, hitPoint);
-  applyDummyHit(def, hitPoint, 'kunai');
-}
 
 // 攻撃の届く範囲（距離と視線からの角度）にいる敵のうち、いちばん近いものを en にする。いれば hitDir に攻撃の向きを入れる
 function dummyInReach(reach: number, angle: number): boolean {
@@ -2679,23 +2477,13 @@ function countHit(killed: boolean) {
   hitsEl.classList.add('show');
 }
 
-// クナイは手元にあって敵まで届かないので、視点から切っ先を通る線が敵に当たる所を「当たった場所」にする。
-// 線が敵を外れているときは、敵の輪郭のうち切っ先にいちばん近い所にする
-const hitPose = newPose();
+// 刃先の位置から敵の表面の当たった所を求める（hitPointFromTip）ための作業用
 const hitRay = new THREE.Ray();
-const hitTip = new THREE.Vector3();
 const hitAxisA = new THREE.Vector3();
 const hitAxisB = new THREE.Vector3();
 const hitOnRay = new THREE.Vector3();
 const hitOnAxis = new THREE.Vector3();
 const hitOffset = new THREE.Vector3();
-function findHitPoint(def: AttackDef, out: THREE.Vector3) {
-  attackPoseAt(def, attackTime, hitPose);
-  applyPose(hitPose);
-  camera.updateMatrixWorld();
-  kunai.updateWorldMatrix(true, false);
-  hitPointFromTip(hitTip.copy(TRAIL_TIP).applyMatrix4(kunai.matrixWorld), out);
-}
 
 // 視点から tip（ワールド座標）を通る線が敵に当たる所。外れていれば敵の輪郭のうち線に最も近い所
 function hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3) {
@@ -2923,512 +2711,11 @@ function slamEnemyIntoWall(): boolean {
 function enemyHeld(): boolean {
   return (sickleState.grapple?.enemy === en && sickleState.grapple.phase !== 'back') || (swordState.rushTime >= 0 && swordState.rushEnemy === en);
 }
-// ---- 投擲（左手のクナイ） ----
-// 右クリックを押している間、左手のクナイを寝かせて輪を中心に水平にくるくる回して溜め、
-// 離すと溜めた段階の本数を投げる
-const THROW_STAGE_TIME = 0.4; // この時間ごとに投げる本数が 1 本増える（最大で左手の 3 本）
-const THROW_ORDER = [[1], [0, 2], [1, 0, 2]]; // 本数ごとに、左手のどのクナイをどの順で放つか
-const THROW_SPEED = 55;
-const THROW_STAGGER = 0.035; // 1 本ずつずらして放つ間隔
-const THROW_RELOAD = 0.45; // 投げ終えてから左手に新しいクナイが戻るまで
-const MISS_MARGIN = 0.05; // 狙った所を過ぎてもこの時間何にも当たらなければ引き返す
-const MISS_RETURN_MAX = 0.6; // 空を狙ったときなど、遠くても最長この時間で引き返す
-const STUCK_HOLD = 0.12; // 刺さったクナイが抜けて戻り始めるまで（刺さった手応えが見える最小限）
-const RETURN_SPEED = 110; // 戻ってくるときの最高速度
-const RETURN_ACCEL = 900; // 戻り始めてから最高速度へ達するまでの加速
-const RETURN_TURN = 25; // 戻る向きへ曲がる速さ（大きいほどまっすぐ手元へ向かう）
-const RETURN_ROLL = 25; // 戻ってくる間に長い軸まわりに回る速さ (rad/s)
-const CATCH_DIST = 0.5; // 左手からこの距離まで来たら受け止める
-const BLADE_TIP = 0.17; // クナイの原点（刃の付け根）から切っ先まで
-const STICK_DEPTH = 0.05; // 刺さったときに埋まる深さ
-// 少しだけホーミング: 放つ瞬間に照準の近くにいた敵の胸へ、飛びながらゆるく曲がる
-const HOMING_CONE = 7 * (Math.PI / 180); // 照準からこの角度以内の敵を狙う
-const HOMING_TURN = 3; // 曲がる速さの上限 (rad/s)。55 m/s なら半径 18 m ほどの弧
-const HOMING_GIVE_UP = 60 * (Math.PI / 180); // 狙いがこれ以上横や後ろへ外れたら追うのをやめる
-// 数本が続けて当たるたびに時間を止めるとカクつくので、投擲ではヒットストップを使わない
-const THROW_HIT: HitDef = { kick: [-1.5, 0, 0], knock: 140, hitStop: 0, fx: 0.7 };
-// 投げたクナイが敵に刺さったら、世界（敵・敵の弾・破片）の時間だけ一瞬遅くする。プレイヤーはそのまま動ける
-const WORLD_SLOW_SCALE = 0.25;
-const WORLD_SLOW_HOLD = 0.3; // この間は遅いまま
-const WORLD_SLOW_RELEASE = 0.2; // この時間をかけて元の速さへ戻す
-const WORLD_SLOW_COOLDOWN = 0.5; // 明けてからこの間は、刺さってもかけ直さない
-const WORLD_SLOW_RING_TIME = 0.3; // 入った瞬間の歪みの輪が画面の端まで広がる時間
-
-const SPIN_START = Math.PI / 2 + 0.3; // 回し始めの切っ先の向き（真上から見て、前のやや右）
-const SPIN_PHASES = [0.4, 0, -0.4]; // 回すときの各クナイの角度のずれ（重なってよいので少しだけ開く）
-const SPIN_JITTER = 0.0015; // 回している間の震えの大きさ（1 段目、ローカル座標）
-const SPIN_TRAIL_STEP = 0.08; // 回転の軌跡を取る角度の刻み (rad)
-const SPIN_TRAIL_LIFE = 0.12;
-const SPIN_TRAIL_TIP = new THREE.Vector3(0, 0.175, 0); // クナイのローカル座標（切っ先に揃える）
-const SPIN_TRAIL_BASE = new THREE.Vector3(0, 0.07, 0);
-const FLIGHT_TRAIL_LIFE = 0.15;
-const FLIGHT_TRAIL_WIDTH = 0.02; // 飛んでいるクナイの軌跡の半分の幅
-
-// （軌跡の帯は fx/ribbons.ts）
-let throwClock = 0;
-let charging = false;
-let chargeTime = 0;
-let chargeStage = 0;
-let fanSpin = 0; // 左手のクナイを輪を中心に回している角度
-let fanSpinSpeed = 0;
-let spinBlend = 0; // 0 = 扇の構え, 1 = 寝かせて水平に回す構え
-let reloading = false;
-let reloadTime = 0;
-const pendingThrows: { at: number; index: number }[] = [];
-const throwAim = new THREE.Vector3();
-
-// 回す構え: 切っ先を水平に寝かせ、刃の平たい面を上へ向けて、縦の軸まわりに回す
-// （leftViewModel の空間で組み、扇の構えと同じ leftKunaiRest の空間へ直して補間する）
-const restFanQuats = leftFanPivots.map((p) => p.quaternion.clone());
-const restFanPos = leftFanPivots.map((p) => p.position.clone());
-const SPIN_LAY = new THREE.Quaternion().setFromRotationMatrix(
-  new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)),
-);
-const leftRestInv = leftKunaiRest.quaternion.clone().invert();
-leftKunaiRest.updateMatrix();
-for (const k of leftKunais) k.updateMatrix();
-const spinYaw = new THREE.Quaternion();
-const spinQuat = new THREE.Quaternion();
-function fanPose(i: number, spin: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion) {
-  spinYaw.setFromAxisAngle(UP, SPIN_START + SPIN_PHASES[i] - spin);
-  spinQuat.copy(leftRestInv).multiply(spinYaw).multiply(SPIN_LAY);
-  outQuat.slerpQuaternions(restFanQuats[i], spinQuat, spinBlend);
-  // 回すときは輪を 1 か所に集める（重なってよい）
-  outPos.copy(restFanPos[i]).multiplyScalar(1 - spinBlend);
-}
-
-// 回転の軌跡は手と一緒に動くよう leftViewModel の空間に置く
-const spinRibbons = leftKunais.map(() => {
-  const r = new Ribbon(128, SPIN_TRAIL_LIFE, spinRibbonMat);
-  leftViewModel.add(r.mesh);
-  return r;
-});
-const spinPos = new THREE.Vector3();
-const spinRot = new THREE.Quaternion();
-const spinScale = new THREE.Vector3(1, 1, 1);
-const spinPivotMat = new THREE.Matrix4();
-const spinSampleMat = new THREE.Matrix4();
-const spinTip = new THREE.Vector3();
-const spinBase = new THREE.Vector3();
-function sampleSpinTrail(i: number, spin: number, time: number) {
-  fanPose(i, spin, spinPos, spinRot);
-  spinPivotMat.compose(spinPos, spinRot, spinScale);
-  spinSampleMat.multiplyMatrices(leftKunaiRest.matrix, spinPivotMat).multiply(leftKunais[i].matrix);
-  spinTip.copy(SPIN_TRAIL_TIP).applyMatrix4(spinSampleMat);
-  spinBase.copy(SPIN_TRAIL_BASE).applyMatrix4(spinSampleMat);
-  spinRibbons[i].push(spinTip, spinBase, time);
-}
-
-// ---- スライディング中のクナイ回し（右手） ----
-// 滑っている間は輪に掛けた指を軸に縦にくるくる回し続けて軌跡を残し、滑り終えたら勢いのまま
-// 次の一周の所まで回って、少し行き過ぎてから握りに収める
-const KUNAI_SLIDE_SPIN_SPEED = 22; // rad/s（約 3.5 回転/秒）
-let kunaiSlideSpin = 0; // 回した角度 (rad)
-let kunaiSlideSpinPrev = 0; // 前のフレームの角度（軌跡を刻むため）
-let kunaiSlideSpinVel = 0;
-let kunaiSlideSpinTarget = NaN; // 回し終えて止める角度（滑っている間は未定）
-// 軌跡は手と一緒に動くよう viewModel の空間に置く
-const slideSpinRibbon = new Ribbon(128, SPIN_TRAIL_LIFE, spinRibbonMat);
-viewModel.add(slideSpinRibbon.mesh);
-const slideTrailTip = new THREE.Vector3();
-const slideTrailBase = new THREE.Vector3();
-
-function updateKunaiSlideSpin(dt: number) {
-  kunaiSlideSpinPrev = kunaiSlideSpin;
-  const spinning = player.sliding && kunaiReady() && !attack;
-  if (spinning) {
-    kunaiSlideSpinVel += (KUNAI_SLIDE_SPIN_SPEED - kunaiSlideSpinVel) * Math.min(1, dt * 12);
-    kunaiSlideSpinTarget = NaN;
-  } else if (kunaiSlideSpin !== 0 || kunaiSlideSpinVel !== 0) {
-    // ハンドガンと同じく、勢いで届く先の一周の所へばねで引き寄せる
-    if (Number.isNaN(kunaiSlideSpinTarget)) {
-      kunaiSlideSpinTarget = Math.ceil((kunaiSlideSpin + kunaiSlideSpinVel * 0.12) / TAU) * TAU;
-    }
-    const target = kunaiSlideSpinTarget;
-    kunaiSlideSpinVel += ((target - kunaiSlideSpin) * 500 - kunaiSlideSpinVel * 28) * dt;
-    if (Math.abs(target - kunaiSlideSpin) < 0.005 && Math.abs(kunaiSlideSpinVel) < 0.2) {
-      endKunaiSlideSpin();
-      playGrip(); // 握り直した「チャキッ」
-      return;
-    }
-  } else {
-    return;
-  }
-  kunaiSlideSpin += kunaiSlideSpinVel * dt;
-  // 半周ごとに小さな風切り音
-  if (spinning && Math.floor(kunaiSlideSpin / Math.PI) > Math.floor(kunaiSlideSpinPrev / Math.PI)) {
-    playSwish(SLIDE_SPIN_SWISH);
-  }
-}
-
-function endKunaiSlideSpin() {
-  kunaiSlideSpin = 0;
-  kunaiSlideSpinPrev = 0;
-  kunaiSlideSpinVel = 0;
-  kunaiSlideSpinTarget = NaN;
-}
-
-// applyPose の後に呼ぶ。1 フレームで大きく回るので、角度を細かく刻んで弧を滑らかにする
-function sampleKunaiSlideTrail(dt: number) {
-  const from = kunaiSlideSpinPrev;
-  const to = kunaiSlideSpin;
-  if (attack || Math.abs(kunaiSlideSpinVel) < 3 || to === from) {
-    slideSpinRibbon.cut();
-  } else {
-    const finalZ = spinPivot.rotation.z;
-    const steps = Math.max(1, Math.ceil(Math.abs(to - from) / SPIN_TRAIL_STEP));
-    for (let s = 1; s <= steps; s++) {
-      const u = s / steps;
-      spinPivot.rotation.z = finalZ + (to - (from + (to - from) * u));
-      kunai.updateWorldMatrix(true, false);
-      viewModel.worldToLocal(slideTrailTip.copy(SPIN_TRAIL_TIP).applyMatrix4(kunai.matrixWorld));
-      viewModel.worldToLocal(slideTrailBase.copy(SPIN_TRAIL_BASE).applyMatrix4(kunai.matrixWorld));
-      slideSpinRibbon.push(slideTrailTip, slideTrailBase, game.trailNow - dt * (1 - u));
-    }
-    spinPivot.rotation.z = finalZ;
-  }
-  slideSpinRibbon.update(game.trailNow);
-}
-
-// fly: 投げて飛んでいる / stuck: 刺さっている / back: 抜けてプレイヤーの手元へ戻っている
-type ThrownPhase = 'fly' | 'stuck' | 'back';
-interface Thrown {
-  mesh: THREE.Group;
-  vel: THREE.Vector3;
-  age: number;
-  missAt: number; // 何にも当たらなければ引き返し始める age
-  phase: ThrownPhase;
-  spin: number;
-  trail: Ribbon | null;
-  target: Enemy | null; // ホーミングで追う敵
-}
-const thrown: Thrown[] = [];
-const thrownTemplate = createKunai(weaponMats);
-const throwDir = new THREE.Vector3();
-const throwFrom = new THREE.Vector3();
-const KUNAI_AXIS = new THREE.Vector3(0, 1, 0);
-
-function cancelCharge() {
-  charging = false;
-  fanSpinSpeed = 0;
-}
-
-// 照準の先で最初に当たる所（なければ射程の端）を狙う。手元から放っても照準へ集まるようにする
-function findThrowAim(out: THREE.Vector3) {
-  // パッドでは、照準のすぐ近くに敵がいれば胸へ向けて飛ばす
-  const target = findAssistTarget();
-  if (target && target.angle < target.size * ASSIST_SNAP) return void out.copy(target.point);
-  camera.getWorldDirection(throwDir);
-  if (castThrow(camera.position, throwDir, THROW_RANGE)) out.copy(castHit.point);
-  else out.copy(camera.position).addScaledVector(throwDir, THROW_RANGE);
-}
-
 // ---- エイムアシスト ----（player/aimAssist.ts）
-
-// 照準から HOMING_CONE 以内で、いちばん照準に近い敵（壁の向こうは除く）
-const homingDir = new THREE.Vector3();
-const homingAim = new THREE.Vector3();
-function findHomingTarget(): Enemy | null {
-  camera.getWorldDirection(homingAim);
-  let best: Enemy | null = null;
-  let bestAngle = HOMING_CONE;
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    homingDir.subVectors(enemyChest(e, homingDir), camera.position);
-    const dist = homingDir.length();
-    if (dist < 0.5 || dist > THROW_RANGE) continue;
-    homingDir.divideScalar(dist);
-    const angle = homingDir.angleTo(homingAim);
-    if (angle >= bestAngle) continue;
-    if (castWorld(camera.position, homingDir, dist) < dist - 0.3) continue;
-    bestAngle = angle;
-    best = e;
-  }
-  return best;
-}
-
-// 狙った敵の胸へ、このフレームで曲がれる分だけ向きを寄せる
-const homingWant = new THREE.Vector3();
-function steerThrown(t: Thrown, dt: number) {
-  const e = t.target;
-  if (!e) return;
-  if (!e.alive) return void (t.target = null);
-  homingWant.subVectors(enemyChest(e, homingWant), t.mesh.position).normalize();
-  const angle = t.vel.angleTo(homingWant);
-  if (angle > HOMING_GIVE_UP) return void (t.target = null);
-  if (angle < 1e-4) return;
-  const speed = t.vel.length();
-  const k = Math.min(1, (HOMING_TURN * dt) / angle);
-  // 今の向きから狙いの向きへ、角度で k の割合だけ回す
-  homingDir.copy(t.vel).divideScalar(speed);
-  homingDir.lerp(homingWant, k).normalize();
-  t.vel.copy(homingDir).multiplyScalar(speed);
-}
-
-function releaseThrow() {
-  const order = THROW_ORDER[chargeStage - 1];
-  charging = false;
-  order.forEach((index, n) => pendingThrows.push({ at: throwClock + n * THROW_STAGGER, index }));
-  reloading = true;
-  reloadTime = THROW_RELOAD + (order.length - 1) * THROW_STAGGER;
-}
-
-// 飛んでいる軌跡の帯は、進む向きと視線の両方に直交する向きへ幅を持たせる
-const flightSide = new THREE.Vector3();
-const flightA = new THREE.Vector3();
-const flightB = new THREE.Vector3();
-function sampleFlightTrail(t: Thrown, at: THREE.Vector3, dir: THREE.Vector3) {
-  if (!t.trail) return;
-  flightSide.subVectors(at, camera.position).cross(dir);
-  if (flightSide.lengthSq() < 1e-8) flightSide.set(0, 1, 0);
-  flightSide.setLength(FLIGHT_TRAIL_WIDTH);
-  flightA.copy(at).add(flightSide);
-  flightB.copy(at).sub(flightSide);
-  t.trail.push(flightA, flightB, throwClock);
-}
-
-function launchKunai(index: number) {
-  const hand = leftKunais[index];
-  hand.updateWorldMatrix(true, false);
-  throwFrom.setFromMatrixPosition(hand.matrixWorld);
-  hand.visible = false;
-  spinRibbons[index].cut();
-
-  // 1 本ずつ、放つ瞬間の照準の先へまっすぐ飛ばす（重力も回転もなし）
-  findThrowAim(throwAim);
-  throwDir.subVectors(throwAim, throwFrom).normalize();
-
-  const mesh = thrownTemplate.clone();
-  mesh.position.copy(throwFrom);
-  scene.add(mesh);
-  const trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightRibbonMat);
-  scene.add(trail.mesh);
-  const vel = throwDir.clone().multiplyScalar(THROW_SPEED);
-  const target = findHomingTarget();
-  let reach = throwFrom.distanceTo(throwAim);
-  if (target) reach = Math.max(reach, throwFrom.distanceTo(enemyChest(target, homingWant)) * 1.2);
-  const missAt = Math.min(MISS_RETURN_MAX, reach / THROW_SPEED + MISS_MARGIN);
-  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target };
-  orientThrown(t, throwDir);
-  sampleFlightTrail(t, throwFrom, throwDir);
-  thrown.push(t);
-
-  throwPunch = 1;
-  kickVel.x += 1.2 * DEG * 22;
-  kickVel.y += -0.6 * DEG * 22;
-  sfx.playThrow(THROW_SWISH);
-}
-
-function orientThrown(t: Thrown, dir: THREE.Vector3) {
-  t.mesh.quaternion.setFromUnitVectors(KUNAI_AXIS, dir);
-  t.mesh.rotateY(t.spin);
-}
-
-function removeThrown(i: number) {
-  thrown[i].mesh.removeFromParent();
-  thrown[i].trail?.dispose();
-  thrown.splice(i, 1);
-}
-
-function stickThrown(t: Thrown, at: THREE.Vector3, onDummy: Enemy | null, dir: THREE.Vector3) {
-  t.phase = 'stuck';
-  t.age = 0;
-  t.mesh.position.copy(at).addScaledVector(dir, STICK_DEPTH - BLADE_TIP);
-  orientThrown(t, dir);
-  sampleFlightTrail(t, at, dir);
-  if (onDummy) {
-    setEn(onDummy);
-    // 敵に刺さったものは、刺さった部位の骨に付けて、よろめきや震えに一緒についていく
-    (castHit.part?.parent ?? en.shake).attach(t.mesh);
-    hitDir.set(dir.x, 0, dir.z);
-    if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
-    hitDir.normalize();
-    applyDummyHit(THROW_HIT, at, 'throw');
-    startWorldSlow();
-  } else {
-    sfx.playStick(); // 壁や地面に刺さった「カッ」
-  }
-}
-
-let worldSlowAge = Infinity; // 世界のスローをかけてからの時間（プレイヤーの時間で進める）
-let worldSlow = 1; // 今フレームの世界の時間の速さ
-let worldSlowRingAge = Infinity; // スローに入ってからの時間（歪みの輪に使う）
-
-// 遅いままの間に刺さったら、残りを最大へ戻すだけ（時間は足さない）。戻りかけと明けた直後は何もしない
-function startWorldSlow() {
-  if (worldSlowAge < WORLD_SLOW_HOLD) {
-    worldSlowAge = 0;
-  } else if (worldSlowAge >= WORLD_SLOW_HOLD + WORLD_SLOW_RELEASE + WORLD_SLOW_COOLDOWN) {
-    worldSlowAge = 0;
-    worldSlowRingAge = 0; // 輪と音は、入ったときだけ（かけ直しでは出さない）
-    sfx.playWorldSlow(WORLD_SLOW_HOLD, WORLD_SLOW_RELEASE);
-  }
-}
-
-// 時間を進め、世界の時間に掛ける速さを返す
-function worldSlowFactor(dt: number) {
-  worldSlowAge += dt;
-  worldSlowRingAge += dt;
-  const u = THREE.MathUtils.clamp((worldSlowAge - WORLD_SLOW_HOLD) / WORLD_SLOW_RELEASE, 0, 1);
-  return THREE.MathUtils.lerp(WORLD_SLOW_SCALE, 1, u * u);
-}
-
-// 刺さった所から抜く（または飛んでいる途中で引き返す）。ここからは何にも当たらず手元へ向かう
-function startReturn(t: Thrown) {
-  if (t.phase === 'stuck') {
-    scene.attach(t.mesh); // 敵に刺さっていたものは敵から外す（見た目の位置は保つ）
-    playRing(0.9, 0.25, 0.05); // 抜けた「キン」
-    t.vel.set(0, 0, 0);
-  }
-  t.phase = 'back';
-  t.age = 0;
-  if (!t.trail) {
-    t.trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightRibbonMat);
-    scene.add(t.trail.mesh);
-  } else {
-    t.trail.cut();
-  }
-  playSwish(RETURN_SWISH);
-}
-
-const catchPoint = new THREE.Vector3();
-const returnWant = new THREE.Vector3();
-const backDir = new THREE.Vector3();
-function updateReturn(t: Thrown, dt: number): boolean {
-  leftKunaiRest.getWorldPosition(catchPoint);
-  returnWant.subVectors(catchPoint, t.mesh.position);
-  const dist = returnWant.length();
-  // 動き出しはゆっくり、だんだん速く。向きは手元へ少しずつ曲げていく
-  const speed = Math.min(RETURN_SPEED, t.vel.length() + RETURN_ACCEL * dt);
-  returnWant.setLength(speed);
-  t.vel.lerp(returnWant, Math.min(1, dt * RETURN_TURN));
-  const step = t.vel.length() * dt;
-  if (dist < CATCH_DIST || step >= dist) {
-    playRing(1.9, 0.3, 0.04); // 受け止めた「チャキッ」
-    return true;
-  }
-  throwDir.copy(t.vel).normalize();
-  t.mesh.position.addScaledVector(throwDir, step);
-  // 輪の側を先にして、引き戻されるように飛ぶ。長い軸まわりにくるくる回す
-  t.spin += RETURN_ROLL * dt;
-  orientThrown(t, backDir.copy(throwDir).negate());
-  sampleFlightTrail(t, t.mesh.position, throwDir);
-  return false;
-}
-
-const stickPoint = new THREE.Vector3();
-function updateThrown(dt: number) {
-  for (let i = thrown.length - 1; i >= 0; i--) {
-    const t = thrown[i];
-    t.age += dt;
-    if (t.trail) {
-      t.trail.update(throwClock);
-      // 刺さった後、軌跡が消えきったら片付ける
-      if (t.phase === 'stuck' && t.trail.empty) {
-        t.trail.dispose();
-        t.trail = null;
-      }
-    }
-    if (t.phase === 'stuck') {
-      if (t.age > STUCK_HOLD) startReturn(t);
-      continue;
-    }
-    if (t.phase === 'fly' && t.age > t.missAt) startReturn(t);
-    if (t.phase === 'back') {
-      if (updateReturn(t, dt)) removeThrown(i);
-      continue;
-    }
-    steerThrown(t, dt);
-    const step = t.vel.length() * dt;
-    throwDir.copy(t.vel).normalize();
-    // 切っ先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
-    throwFrom.copy(t.mesh.position).addScaledVector(throwDir, BLADE_TIP);
-    if (castThrow(throwFrom, throwDir, step)) {
-      stickPoint.copy(castHit.point);
-      stickThrown(t, stickPoint, castHit.enemy, throwDir);
-      continue;
-    }
-    t.mesh.position.addScaledVector(throwDir, step);
-    orientThrown(t, throwDir);
-    sampleFlightTrail(t, t.mesh.position, throwDir);
-  }
-}
 
 // ---- 鎖鎌 ----（weapons/sickleCombat.ts）
 
-// ---- 投擲の毎フレームの処理（左手のクナイ） ----
-function updateThrow(dt: number) {
-  throwClock += dt;
-
-  if (charging && !controls.isLocked) cancelCharge();
-  if (game.throwHeld && controls.isLocked && !charging && !reloading && kunaiReady()) {
-    charging = true;
-    chargeTime = 0;
-    chargeStage = 1;
-    fanSpin = 0;
-    sfx.playCharge(0);
-  }
-  if (charging) {
-    chargeTime += dt;
-    const stage = Math.min(THROW_ORDER.length, 1 + Math.floor(chargeTime / THROW_STAGE_TIME));
-    if (stage > chargeStage) {
-      // 1 段溜まるごとに高い金属音と小さな揺れで知らせる
-      chargeStage = stage;
-      sfx.playCharge(stage);
-      addTrauma(stage === THROW_ORDER.length ? 0.06 : 0.03);
-    }
-    if (!game.throwHeld) releaseThrow();
-  }
-
-  // 溜めるほど速く回す。輪が半周するたびに小さく鳴らす
-  spinBlend += ((charging ? 1 : 0) - spinBlend) * Math.min(1, dt * 35);
-  const spinTarget = charging ? 14 + 10 * (chargeStage - 1) : 0;
-  fanSpinSpeed += (spinTarget - fanSpinSpeed) * Math.min(1, dt * 20);
-  const prevSpin = fanSpin;
-  fanSpin += fanSpinSpeed * dt;
-  if (charging && Math.floor(fanSpin / Math.PI) > Math.floor(prevSpin / Math.PI)) playRing(1.3, 0.25, 0.08);
-  // 回している間は小刻みに震わせる（溜めるほど強く）。軌跡は fanPose から直接取るので震えない
-  const jitter = charging ? spinBlend * SPIN_JITTER * (1 + 0.6 * (chargeStage - 1)) : 0;
-  for (const [i, pivot] of leftFanPivots.entries()) {
-    fanPose(i, fanSpin, pivot.position, pivot.quaternion);
-    if (jitter > 0) {
-      pivot.position.x += (Math.random() * 2 - 1) * jitter;
-      pivot.position.y += (Math.random() * 2 - 1) * jitter;
-      pivot.position.z += (Math.random() * 2 - 1) * jitter;
-    }
-  }
-
-  // 回転の軌跡: 1 フレームで大きく回るので、角度を細かく刻んで弧を滑らかにする
-  const spinning = spinBlend > 0.3 && fanSpinSpeed > 3;
-  const steps = spinning ? Math.max(1, Math.ceil((fanSpin - prevSpin) / SPIN_TRAIL_STEP)) : 0;
-  for (const [i, ribbon] of spinRibbons.entries()) {
-    if (!spinning || !leftKunais[i].visible) {
-      ribbon.cut();
-    } else {
-      for (let s = 1; s <= steps; s++) {
-        const u = s / steps;
-        sampleSpinTrail(i, prevSpin + (fanSpin - prevSpin) * u, throwClock - dt * (1 - u));
-      }
-    }
-    ribbon.update(throwClock);
-  }
-
-  while (pendingThrows.length > 0 && throwClock >= pendingThrows[0].at) {
-    launchKunai(pendingThrows.shift()!.index);
-  }
-
-  if (reloading) {
-    reloadTime -= dt;
-    if (reloadTime <= 0) {
-      // 手を下げている間に新しい 3 本へ持ち替えたことにする
-      reloading = false;
-      fanSpinSpeed = 0;
-      for (const k of leftKunais) k.visible = true;
-    }
-  }
-
-  updateThrown(dt);
-}
+// ---- クナイ ----（weapons/kunaiCombat.ts）
 
 // ---- 当たりの光の演出 ----（光線・閃光・火花・破片は fx/hitFx.ts）
 // 画面全体の暗転・白黒・スローの後処理は、ここでゲームの状態から決める
@@ -3460,9 +2747,9 @@ function updateHitFx(dt: number) {
   u.uInvert.value = parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
   // 世界のスロー: 遅さに合わせて色を抜き、入った瞬間だけ輪を広げる
   // 一瞬で切り替えず、少しなめらかに寄せる
-  const slowWant = (1 - worldSlow) / (1 - WORLD_SLOW_SCALE);
+  const slowWant = (1 - kunaiState.worldSlow) / (1 - WORLD_SLOW_SCALE);
   u.uSlow.value += (slowWant - u.uSlow.value) * Math.min(1, dt * 18);
-  const ring = worldSlowRingAge / WORLD_SLOW_RING_TIME;
+  const ring = kunaiState.worldSlowRingAge / WORLD_SLOW_RING_TIME;
   u.uRing.value = easeOutCubic(Math.min(ring, 1)) * 1.1;
   u.uRingAmt.value = ring < 1 ? (1 - ring) ** 2 : 0;
   // 効果が無いときは全画面の処理ごと飛ばす
@@ -3470,93 +2757,6 @@ function updateHitFx(dt: number) {
   // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
   // 光が 1 つも出ていないときは、光を重ねる描画ごと飛ばす
   hitFxRenderPass.enabled = hitFxVisible();
-}
-
-// ---- 斬撃の軌跡 ----
-const TRAIL_LIFE = 0.1; // 軌跡が消えるまでの時間
-const TRAIL_MAX = 128;
-// クナイのローカル座標。切っ先（0.17）からはみ出すと、縁の線が刃から離れて浮いて見えるので、ほぼ切っ先に揃える
-const TRAIL_TIP = new THREE.Vector3(0, 0.175, 0);
-const TRAIL_BASE = new THREE.Vector3(0, 0.06, 0);
-const TRAIL_BASE_THIN = new THREE.Vector3(0, 0.13, 0);
-interface TrailSample {
-  tip: THREE.Vector3;
-  base: THREE.Vector3;
-  time: number;
-}
-const trailSamples: TrailSample[] = [];
-let lastTrailSample = -Infinity;
-
-const trailPositions = new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 2 * 3), 3);
-trailPositions.setUsage(THREE.DynamicDrawUsage);
-const trailFade = new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 2), 1);
-trailFade.setUsage(THREE.DynamicDrawUsage);
-const trailSide = new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 2), 1);
-for (let i = 0; i < TRAIL_MAX; i++) trailSide.setX(i * 2 + 1, 1);
-const trailIndex = new THREE.BufferAttribute(new Uint16Array((TRAIL_MAX - 1) * 6), 1);
-trailIndex.setUsage(THREE.DynamicDrawUsage);
-const trailGeo = new THREE.BufferGeometry();
-trailGeo.setAttribute('position', trailPositions);
-trailGeo.setAttribute('aFade', trailFade);
-trailGeo.setAttribute('aSide', trailSide);
-trailGeo.setIndex(trailIndex);
-// 他の武器の軌跡と同じ帯の見た目にする
-const trailMesh = new THREE.Mesh(trailGeo, makeRibbonMaterial(KUNAI_RIBBON));
-trailMesh.frustumCulled = false;
-trailMesh.renderOrder = 10;
-camera.add(trailMesh);
-
-function kunaiPointsInCamera(tip: THREE.Vector3, base: THREE.Vector3, thin: boolean) {
-  kunai.updateWorldMatrix(true, false);
-  camera.worldToLocal(tip.copy(TRAIL_TIP).applyMatrix4(kunai.matrixWorld));
-  camera.worldToLocal(base.copy(thin ? TRAIL_BASE_THIN : TRAIL_BASE).applyMatrix4(kunai.matrixWorld));
-}
-
-function sampleTrail() {
-  if (!attack) return;
-  for (const [from, to, thin = false] of attack.trails) {
-    const end = Math.min(to, attackTime);
-    for (let s = Math.max(from, lastTrailSample + TRAIL_STEP); s <= end; s += TRAIL_STEP) {
-      attackPoseAt(attack, s, tmpSamplePose);
-      applyPose(tmpSamplePose);
-      const sample = trailSamples.length >= TRAIL_MAX ? trailSamples.shift()! : { tip: new THREE.Vector3(), base: new THREE.Vector3(), time: 0 };
-      kunaiPointsInCamera(sample.tip, sample.base, thin);
-      sample.time = game.trailNow - (attackTime - s);
-      trailSamples.push(sample);
-      lastTrailSample = s;
-    }
-  }
-}
-const tmpSamplePose = newPose();
-
-function updateTrailMesh() {
-  while (trailSamples.length && game.trailNow - trailSamples[0].time > TRAIL_LIFE) trailSamples.shift();
-  const n = trailSamples.length;
-  for (let i = 0; i < n; i++) {
-    const s = trailSamples[i];
-    const fade = 1 - (game.trailNow - s.time) / TRAIL_LIFE;
-    const base = taperBase(s.base, s.tip, fade, KUNAI_RIBBON.taper);
-    trailPositions.setXYZ(i * 2, base.x, base.y, base.z);
-    trailPositions.setXYZ(i * 2 + 1, s.tip.x, s.tip.y, s.tip.z);
-    trailFade.setX(i * 2, fade);
-    trailFade.setX(i * 2 + 1, fade);
-  }
-  // 時間が飛んでいる所（別の振り）はつながない
-  let idx = 0;
-  for (let i = 0; i < n - 1; i++) {
-    if (trailSamples[i + 1].time - trailSamples[i].time > TRAIL_STEP * 1.5) continue;
-    const a = i * 2;
-    trailIndex.setX(idx++, a);
-    trailIndex.setX(idx++, a + 1);
-    trailIndex.setX(idx++, a + 2);
-    trailIndex.setX(idx++, a + 1);
-    trailIndex.setX(idx++, a + 3);
-    trailIndex.setX(idx++, a + 2);
-  }
-  trailGeo.setDrawRange(0, idx);
-  trailPositions.needsUpdate = true;
-  trailFade.needsUpdate = true;
-  trailIndex.needsUpdate = true;
 }
 
 // ---- 剣の攻撃 ----（weapons/swordCombat.ts）
@@ -3799,7 +2999,7 @@ const inParryWindow = (t: number, [a, b]: readonly [number, number, boolean?]) =
 
 function parryActive(): boolean {
   // クナイは指先で回す細い軌跡を除いた、本当に振っている間だけ
-  if (attack && game.shownWeapon === 'kunai') return attack.trails.some((w) => !w[2] && inParryWindow(attackTime, w));
+  if (kunaiState.attack && game.shownWeapon === 'kunai') return kunaiState.attack.trails.some((w) => !w[2] && inParryWindow(kunaiState.attackTime, w));
   if (swordState.swordAttack && game.shownWeapon === 'sword') return swordState.swordAttack.trails.some((w) => inParryWindow(swordState.swordTime, w));
   return false;
 }
@@ -4046,7 +3246,7 @@ function runAttackDebug(def: AttackDef, params: URLSearchParams) {
   startAttack(def);
   const tEnd = Number(params.get('t') ?? def.duration);
   if (!params.has('onion')) {
-    while (attack && attackTime + step <= tEnd) {
+    while (kunaiState.attack && kunaiState.attackTime + step <= tEnd) {
       update(step);
       updateHitFx(step);
     }
@@ -4733,7 +3933,7 @@ function finishStageIntro() {
   game.holster = 1;
   // 演出の間に押されたキーは捨てる（押しっぱなしの移動はそのまま効かせる）
   pressed.clear();
-  attackPressed = false;
+  game.attackPressed = false;
   document.body.classList.remove('on-title');
   if (stageRun) stageRun.running = true; // 操作を返したところから時間を測る
 }
@@ -4787,7 +3987,7 @@ if (debugAttack) {
     // タイトルと一時停止の間はゲームの時間を止める。画が止まっている間は描き直さず、キャンバスに残った画を見せておく
     if (!controls.isLocked) {
       pressed.clear();
-      attackPressed = false;
+      game.attackPressed = false;
       if (updateStagePreview(realFrame) || menuRedraw) {
         menuRedraw = false;
         applyCameraOffset();
@@ -4830,7 +4030,7 @@ if (debugAttack) {
       airborne: !player.onGround && !player.wallRunning,
       sliding: player.sliding && controls.isLocked,
       focusing: swordState.focusing,
-      timeScale: game.timeScale * slow * worldSlow, // 世界だけのスローでも音はこもらせる
+      timeScale: game.timeScale * slow * kunaiState.worldSlow, // 世界だけのスローでも音はこもらせる
     });
     applyCameraOffset();
     updateFinishMark();
