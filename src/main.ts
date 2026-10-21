@@ -53,7 +53,7 @@ import {
 } from './player/state.js';
 import {
   RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, initMovement, moveToward,
-  rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantle, tryMantleBox, tryStartWallRun,
+  rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantleBox, tryStartWallRun,
   updateMantle,
 } from './player/movement.js';
 import { keys, padMove, pressed } from './input.js';
@@ -889,7 +889,8 @@ function update(dt: number) {
     if (locked && !player.onGround && swordState.rushTime < 0) {
       // 鎖鎌で引き寄せた勢いは、よじ登った後へ持ち越さない（引き寄せる前の速さまでに抑える）
       const mantleSpeed = sickleState.grapple && sickleState.grapple.pullTime > 0 ? Math.min(hSpeed, sickleState.grapple.speedBefore) : hSpeed;
-      let mantled = enemies.some((e) => e.alive && tryMantle(e.root.position.x, e.root.position.z, DUMMY_RADIUS, e.root.position.y + DUMMY_HEIGHT, mantleSpeed));
+      // 敵にはよじ登らない（箱だけ）
+      let mantled = false;
       for (const b of blocks) {
         if (mantled) break;
         mantled = tryMantleBox(b, mantleSpeed);

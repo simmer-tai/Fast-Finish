@@ -214,27 +214,6 @@ export function tryMantleBox(b, speedBefore) {
     startMantle(nx, nz, climb, speedBefore);
     return true;
 }
-// 空中で円柱の側面に触れ、そちらを向いて W を押していて、上面に手が届くならよじ登り始める
-export function tryMantle(cx, cz, r, h, speedBefore) {
-    const dx = cx - position.x;
-    const dz = cz - position.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist > r + PLAYER_RADIUS + 0.05 || dist < 1e-6)
-        return false;
-    const climb = h - position.y;
-    if (climb <= 0 || climb > MANTLE_REACH)
-        return false;
-    const nx = dx / dist;
-    const nz = dz / dist;
-    if (!facingLedge(nx, nz))
-        return false;
-    // 縁から少し内側（細い柱なら中心）へ乗る
-    const inset = Math.max(0, r - PLAYER_RADIUS);
-    mantleFrom.copy(position);
-    mantleTo.set(cx - nx * inset, h, cz - nz * inset);
-    startMantle(nx, nz, climb, speedBefore);
-    return true;
-}
 export function startMantle(nx, nz, climb, speedBefore) {
     mantleDir.set(nx, 0, nz);
     player.mantleExitSpeed = speedBefore * MANTLE_KEEP;
