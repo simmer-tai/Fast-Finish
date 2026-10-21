@@ -1,17 +1,14 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
-import { loftRings } from './geometry.js';
 import {
   SICKLE_VIEW_MODEL_POS, createChainSickle, createHeldSickle, createLongChain, layChain, layLongChain,
-} from './chainSickle.js';
-import { AXE_REST_QUAT, AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
-import { CHAKRAM_VIEW_MODEL_POS, createHeldChakram } from './chakram.js';
+} from './weapons/chainSickle.js';
+import { AXE_REST_QUAT, AXE_VIEW_MODEL_POS, createHeldAxe } from './weapons/battleAxe.js';
+import { CHAKRAM_VIEW_MODEL_POS, createHeldChakram } from './weapons/chakram.js';
 import * as sfx from './audio.js';
 import { ensureAudio, playGrip, playHit, playRing, playSwish, type HitKind } from './audio.js';
 import { showKillScore, totalScore, updateScoreHud, type KillBonus } from './score.js';
@@ -24,6 +21,12 @@ import { buildParking } from './parking.js';
 import { createStageTitle, STAGE_TITLE_END } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
 import { WEAPON_KEYS, type WeaponId } from './weapons/ids.js';
+import { mulberry32 } from './random.js';
+import { createWeaponMats } from './weapons/materials.js';
+import { createKunai } from './weapons/kunai.js';
+import { createRevolver, createRound } from './weapons/revolver.js';
+import { createPistol } from './weapons/pistol.js';
+import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './weapons/sword.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
@@ -344,16 +347,6 @@ grid10Mat.opacity = 0.18;
 grid10Mat.transparent = true;
 withGroundReveal(grid10Mat);
 scene.add(grid10);
-
-// 毎回同じ配置になるよう固定シードの乱数を使う
-function mulberry32(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 // ---- ステージのせり上がり ----
 // 訓練場に入ると、始めの位置から床のグリッドが円く広がり、グリッドが届いたところから箱が組み上がる。箱はそれぞれ
@@ -775,62 +768,9 @@ scene.add(arenaRoot);
   }
 }
 
-// ---- 武器: クナイ ----
-// 黒光りさせるための映り込み用環境マップ（クナイのマテリアルだけに使う）
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
-// 単色の黒 + 面ごとの陰影だけで見せるシンプルな質感
-const kunaiMat = new THREE.MeshStandardMaterial({
-  color: 0x111111,
-  metalness: 0.6,
-  roughness: 0.3,
-  envMap,
-  envMapIntensity: 1.2,
-  flatShading: true,
-});
-
-// +Y 方向が切っ先になるよう組み立てる（原点は刃の付け根）
-function createKunai(): THREE.Group {
-  const kunai = new THREE.Group();
-
-  // 刃: 付け根近くで最も太く、そこから切っ先へ長く絞る菱形断面
-  const bladeProfile = [
-    new THREE.Vector2(0, 0),
-    new THREE.Vector2(0.009, 0),
-    new THREE.Vector2(0.022, 0.028),
-    new THREE.Vector2(0, 0.17),
-  ];
-  const bladeGeo = new THREE.LatheGeometry(bladeProfile, 4);
-  bladeGeo.scale(1, 1, 0.45);
-  kunai.add(new THREE.Mesh(bladeGeo, kunaiMat));
-
-  // 首: 刃と柄のつなぎ目
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0095, 0.008, 8), kunaiMat);
-  collar.position.y = -0.004;
-  kunai.add(collar);
-
-  // 柄: 輪に向かって細くなる八角柱
-  const HANDLE_LEN = 0.075;
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.006, HANDLE_LEN, 8), kunaiMat);
-  handle.position.y = -0.008 - HANDLE_LEN / 2;
-  kunai.add(handle);
-
-  // 柄と輪をつなぐ細い首
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.006, 8), kunaiMat);
-  neck.position.y = -0.008 - HANDLE_LEN - 0.003;
-  kunai.add(neck);
-
-  // 輪: 太めで角の立った輪
-  const RING_R = 0.013;
-  const RING_TUBE = 0.0042;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, RING_TUBE, 6, 24), kunaiMat);
-  ring.position.y = neck.position.y - 0.003 - RING_R - RING_TUBE * 0.6;
-  kunai.add(ring);
-  kunai.userData.ringY = ring.position.y;
-
-  return kunai;
-}
+// ---- 武器: クナイ ----（モデルとマテリアルは weapons/ 以下）
+const weaponMats = createWeaponMats(renderer);
+const kunaiMat = weaponMats.kunai;
 
 // 一人称視点で右手に構えて見せる（カメラの子にする）
 scene.add(camera);
@@ -856,7 +796,7 @@ const REST_TIP = new THREE.Vector3(-0.44, 0.8, -0.42).normalize();
   kunaiRest.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sideDir, REST_TIP, faceDir));
 }
 
-const kunai = createKunai();
+const kunai = createKunai(weaponMats);
 // 輪に指を掛けてくるくる回せるよう、回転の中心を輪に置く
 const spinPivot = new THREE.Group();
 spinPivot.position.y = kunai.userData.ringY;
@@ -887,7 +827,7 @@ for (const [i, angle] of LEFT_FAN_ANGLES.entries()) {
   const fanPivot = new THREE.Group();
   fanPivot.position.set((i - 1) * 0.011, 0, (i - 1) * -0.004);
   fanPivot.rotation.z = angle;
-  const k = createKunai();
+  const k = createKunai(weaponMats);
   k.position.y = -k.userData.ringY;
   fanPivot.add(k);
   leftKunaiRest.add(fanPivot);
@@ -896,222 +836,6 @@ for (const [i, angle] of LEFT_FAN_ANGLES.entries()) {
 }
 
 // ---- 武器: ハンドガン（リボルバー） ----
-// 角の立ったローポリの見た目にする。金属部分は暗いグレー、グリップはざらついたゴム
-const gunMat = new THREE.MeshStandardMaterial({
-  color: 0x3a3a3a,
-  metalness: 0.5,
-  roughness: 0.45,
-  envMap,
-  envMapIntensity: 0.8,
-  flatShading: true,
-});
-const gripMat = new THREE.MeshStandardMaterial({ color: 0x2e2e2e, metalness: 0, roughness: 0.85, flatShading: true });
-const boreMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
-const fluteMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.5, roughness: 0.5, flatShading: true });
-
-const brassMat = new THREE.MeshStandardMaterial({
-  color: 0xb08a3c,
-  metalness: 0.8,
-  roughness: 0.35,
-  envMap,
-  flatShading: true,
-});
-const leadMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.3, roughness: 0.6, flatShading: true });
-const loaderMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, metalness: 0.2, roughness: 0.6, flatShading: true });
-
-// シリンダーの中心から見た i 番目の薬室の位置
-const chamberXY = (i: number): [number, number] => {
-  const a = (i / 6) * Math.PI * 2 + Math.PI / 2;
-  return [Math.cos(a) * 0.0105, Math.sin(a) * 0.0105];
-};
-
-// 弾 1 発。原点は後端の縁で、弾頭は -Z。live = false なら撃ち終わった空の薬莢
-const ROUND_LEN = 0.03;
-const roundGeos = {
-  rim: new THREE.CylinderGeometry(0.005, 0.005, 0.0015, 10).rotateX(Math.PI / 2).translate(0, 0, -0.00075),
-  body: new THREE.CylinderGeometry(0.0042, 0.0042, ROUND_LEN, 10).rotateX(Math.PI / 2).translate(0, 0, -ROUND_LEN / 2),
-  tip: new THREE.CylinderGeometry(0.0013, 0.0038, 0.008, 10).rotateX(Math.PI / 2).translate(0, 0, -ROUND_LEN - 0.004),
-};
-function createRound(live: boolean): THREE.Group {
-  const r = new THREE.Group();
-  r.add(new THREE.Mesh(roundGeos.rim, brassMat));
-  r.add(new THREE.Mesh(roundGeos.body, brassMat));
-  const tip = new THREE.Mesh(roundGeos.tip, leadMat);
-  tip.visible = live;
-  r.add(tip);
-  r.userData.tip = tip;
-  return r;
-}
-
-// 銃口が -Z、上が +Y。原点はグリップの上端（握る手の位置）、銃身の軸は y = 0
-function createRevolver(): THREE.Group {
-  const gun = new THREE.Group();
-  const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material = gunMat) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z);
-    gun.add(m);
-    return m;
-  };
-  // Z 軸に沿った角柱（segments 角形）
-  const prism = (rTop: number, rBottom: number, len: number, segments: number, z: number, y = 0, mat: THREE.Material = gunMat) => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, len, segments), mat);
-    m.rotation.x = Math.PI / 2;
-    m.position.set(0, y, z);
-    gun.add(m);
-    return m;
-  };
-
-  // 銃身: 縦に厚い角張った板で銃身を包み、前から上下 2 本の筒を突き出す
-  const SHROUD_FRONT = -0.145;
-  const SHROUD_BACK = -0.03; // シリンダーを振り出しても当たらない位置
-  const shroudLen = SHROUD_BACK - SHROUD_FRONT;
-  const shroudZ = (SHROUD_FRONT + SHROUD_BACK) / 2;
-  box(0.018, 0.018, shroudLen, 0, 0.003, shroudZ); // 上半分
-  box(0.006, 0.003, shroudLen, 0, 0.0135, shroudZ); // 上面の細いリブ
-  box(0.018, 0.027, shroudLen, 0, -0.0165, shroudZ); // 下半分
-  // 側面の肉抜きスリット（左右を貫く 1 枚の板で両側に見せる）
-  for (let i = 0; i < 4; i++) box(0.0184, 0.003, 0.013, 0, 0.005, -0.048 - i * 0.022, boreMat);
-  box(0.0184, 0.0025, 0.04, 0, -0.02, -0.112, boreMat);
-  // 銃口の筒: 先端と根元に一回り太いリングを付けて段差を出す
-  const BARREL_FRONT = SHROUD_FRONT - 0.016;
-  for (const y of [0, -0.02]) {
-    prism(0.006, 0.006, 0.016, 10, SHROUD_FRONT - 0.008, y);
-    prism(0.0068, 0.0068, 0.004, 10, SHROUD_FRONT - 0.002, y);
-    prism(0.0068, 0.0068, 0.004, 10, BARREL_FRONT + 0.002, y);
-    // 銃口の穴
-    const bore = new THREE.Mesh(new THREE.CircleGeometry(0.0042, 10), boreMat);
-    bore.position.set(0, y, BARREL_FRONT - 0.0002);
-    bore.rotation.y = Math.PI;
-    gun.add(bore);
-  }
-  // 弾とマズルフラッシュが出る位置
-  const muzzle = new THREE.Object3D();
-  muzzle.position.z = BARREL_FRONT;
-  gun.add(muzzle);
-  gun.userData.muzzle = muzzle;
-  // フロントサイト: 前へ傾いたランプ
-  const front = box(0.003, 0.009, 0.014, 0, 0.017, SHROUD_FRONT + 0.01);
-  front.rotation.x = 0.35;
-
-  // シリンダー: 銃身の軸より下に中心がある多角柱。前面に 6 つの薬室の穴
-  const CYL_Y = -0.011;
-  const CYL_LEN = 0.042;
-  // 装填のときにシリンダーを左へ振り出せるよう、シリンダーとエジェクターロッドは
-  // フレームの左下を軸に回るクレーン（crane）に載せる
-  const crane = new THREE.Group();
-  crane.position.set(-0.008, -0.03, 0);
-  gun.add(crane);
-  // 撃つたびに回せるよう、シリンダーの部品は軸に原点を置いた cylinder の子にする
-  const cylinder = new THREE.Group();
-  cylinder.position.set(0.008, CYL_Y + 0.03, 0);
-  crane.add(cylinder);
-  for (const m of [prism(0.0195, 0.0195, CYL_LEN, 12, 0), prism(0.016, 0.0195, 0.006, 12, -CYL_LEN / 2 - 0.002)]) {
-    cylinder.add(m); // 2 つ目は前端の面取り
-  }
-  // 側面の溝（フルート）: 薬室と薬室の間に 1 本ずつ。撃つたびに回るのが横から見て分かる
-  const fluteGeo = new THREE.BoxGeometry(0.0055, 0.0014, CYL_LEN * 0.6);
-  for (let i = 0; i < 6; i++) {
-    const a = ((i + 0.5) / 6) * Math.PI * 2 + Math.PI / 2;
-    const flute = new THREE.Mesh(fluteGeo, fluteMat);
-    flute.position.set(Math.cos(a) * 0.019, Math.sin(a) * 0.019, -0.002);
-    flute.rotation.z = a + Math.PI / 2;
-    cylinder.add(flute);
-  }
-  for (let i = 0; i < 6; i++) {
-    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.0038, 8), boreMat);
-    hole.position.set(...chamberXY(i), -CYL_LEN / 2 - 0.0051);
-    hole.rotation.y = Math.PI;
-    cylinder.add(hole);
-  }
-  // 薬室に入っている弾（後ろから見える縁が後端に揃う）
-  const chamberRounds: THREE.Group[] = [];
-  for (let i = 0; i < 6; i++) {
-    const r = createRound(true);
-    r.position.set(...chamberXY(i), CYL_LEN / 2);
-    cylinder.add(r);
-    chamberRounds.push(r);
-  }
-  // 中心のピン（エジェクターロッド）。押すと薬莢をまとめて後ろへ押し出す
-  // 先端は銃身の板の手前で止め、シリンダーを振り出しても板にめり込まないようにする
-  const ejectorRod = prism(0.0025, 0.0025, 0.035, 6, -0.0115);
-  ejectorRod.position.x = cylinder.position.x;
-  ejectorRod.position.y = cylinder.position.y;
-  crane.add(ejectorRod);
-
-  // スピードローダー: 6 発をまとめて保持し、後ろから一度に差し込む
-  const loader = new THREE.Group();
-  loader.position.copy(cylinder.position);
-  const loaderBody = new THREE.Group();
-  loaderBody.add(prism(0.017, 0.017, 0.006, 12, 0.0045, 0, loaderMat)); // 弾を留める円盤
-  loaderBody.add(prism(0.008, 0.01, 0.014, 8, 0.0145, 0, loaderMat)); // つまみ
-  loader.add(loaderBody);
-  const loaderRounds: THREE.Group[] = [];
-  for (let i = 0; i < 6; i++) {
-    const r = createRound(true);
-    r.position.set(...chamberXY(i), 0);
-    loader.add(r);
-    loaderRounds.push(r);
-  }
-  loader.visible = false;
-  crane.add(loader);
-
-  Object.assign(gun.userData, { cylinder, crane, ejectorRod, chamberRounds, loader, loaderRounds, cylLen: CYL_LEN });
-
-  // フレーム: シリンダーを上下と前後から囲む
-  box(0.016, 0.009, 0.06, 0, 0.0125, 0.002); // トップストラップ
-  box(0.018, 0.014, 0.068, 0, -0.037, 0.004); // 下側
-  box(0.02, 0.04, 0.012, 0, -0.012, -0.028); // 前側（銃身の付け根）
-  box(0.022, 0.058, 0.016, 0, -0.016, 0.031); // 後ろ側（リコイルシールド）
-  // リアサイト
-  box(0.008, 0.006, 0.008, 0, 0.019, 0.032);
-  // ハンマー: 後ろ上へ反ったスパー
-  const hammer = box(0.006, 0.022, 0.008, 0, 0.012, 0.044);
-  hammer.rotation.x = -0.5;
-  const spur = box(0.008, 0.004, 0.012, 0, 0.022, 0.052);
-  spur.rotation.x = 0.25;
-
-  // トリガーガード: フレームの下の半円
-  const guard = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.0032, 5, 10, Math.PI), gunMat);
-  guard.rotation.set(0, Math.PI / 2, Math.PI);
-  guard.position.set(0, -0.044, 0.006);
-  gun.add(guard);
-  // トリガー: 前へ反った細い板
-  const trigger = box(0.005, 0.02, 0.005, 0, -0.054, 0.002);
-  trigger.rotation.x = 0.35;
-
-  // グリップ: 横から見た輪郭（前側に指の溝）を厚みに押し出し、頂点を少しずらしてゴツゴツさせる
-  const shape = new THREE.Shape();
-  const outline: [number, number][] = [
-    [0.022, -0.042], [0.028, -0.06], [0.025, -0.072], [0.034, -0.082], [0.03, -0.094],
-    [0.041, -0.104], [0.038, -0.117], [0.05, -0.132], [0.09, -0.134], [0.092, -0.115],
-    [0.082, -0.085], [0.068, -0.055], [0.058, -0.03], [0.04, -0.02],
-  ];
-  shape.moveTo(outline[0][0], outline[0][1]);
-  for (const [u, v] of outline.slice(1)) shape.lineTo(u, v);
-  const GRIP_DEPTH = 0.022;
-  let gripGeo: THREE.BufferGeometry = new THREE.ExtrudeGeometry(shape, {
-    depth: GRIP_DEPTH,
-    bevelEnabled: true,
-    bevelThickness: 0.005,
-    bevelSize: 0.004,
-    bevelSegments: 2,
-  });
-  gripGeo.translate(0, 0, -GRIP_DEPTH / 2);
-  gripGeo.rotateY(-Math.PI / 2); // 輪郭の x を銃の z に、押し出し方向を銃の x に
-  gripGeo.deleteAttribute('normal');
-  gripGeo.deleteAttribute('uv');
-  gripGeo = mergeVertices(gripGeo);
-  const rand = mulberry32(7);
-  const p = gripGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < p.count; i++) {
-    p.setXYZ(i, p.getX(i) + (rand() - 0.5) * 0.003, p.getY(i) + (rand() - 0.5) * 0.003, p.getZ(i) + (rand() - 0.5) * 0.003);
-  }
-  gripGeo.computeVertexNormals();
-  gun.add(new THREE.Mesh(gripGeo, gripMat));
-
-  return gun;
-}
-
 // 右手で構えて見せる。銃口を照準の少し内側へ向ける
 const GUN_VIEW_MODEL_POS = new THREE.Vector3(0.15, -0.13, -0.3);
 const gunViewModel = new THREE.Group();
@@ -1127,117 +851,17 @@ gunTwirl.position.copy(TRIGGER_FINGER).applyEuler(GUN_REST_ROT);
 gunViewModel.add(gunTwirl);
 const gunSpin = new THREE.Group();
 gunTwirl.add(gunSpin);
-const revolver = createRevolver();
+const revolver = createRevolver(weaponMats);
 revolver.position.copy(TRIGGER_FINGER).negate();
 gunSpin.add(revolver);
 gunViewModel.visible = false;
 
 // ---- 敵の武器: 自動拳銃 ----
-// 樹脂フレームのローポリ拳銃。角をすべて面取りした平たい面の組み合わせで、全体を艶のないグレー 1 色にまとめる
-const pistolMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, metalness: 0.15, roughness: 0.7, flatShading: true });
-const pistolDarkMat = new THREE.MeshStandardMaterial({ color: 0x262626, metalness: 0.1, roughness: 0.8, flatShading: true });
-
-// 銃口が -Z、上が +Y、右が +X。原点はスライドの下面とグリップの付け根が交わる所
-function createPistol(): THREE.Group {
-  const gun = new THREE.Group();
-  // 横から見た輪郭（[z, y] の並び）を、中心を x = 0 にして左右へ押し出す。縁は 1 段の面取りにする
-  const side = (outline: [number, number][], width: number, bevel: number, mat: THREE.Material, holes: [number, number][][] = []) => {
-    const toShape = <T extends THREE.Shape | THREE.Path>(s: T, pts: [number, number][]) => {
-      s.moveTo(pts[0][0], pts[0][1]);
-      for (const [u, v] of pts.slice(1)) s.lineTo(u, v);
-      return s;
-    };
-    const shape = toShape(new THREE.Shape(), outline);
-    for (const h of holes) shape.holes.push(toShape(new THREE.Path(), h));
-    const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: width - bevel * 2,
-      bevelEnabled: true,
-      bevelThickness: bevel,
-      bevelSize: bevel,
-      bevelSegments: 1,
-    });
-    geo.translate(0, 0, -(width - bevel * 2) / 2);
-    geo.rotateY(-Math.PI / 2); // 輪郭の x を銃の z に、押し出し方向を銃の x に
-    const m = new THREE.Mesh(geo, mat);
-    gun.add(m);
-    return m;
-  };
-  const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material = pistolMat) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z);
-    gun.add(m);
-    return m;
-  };
-
-  // スライド: 前端の下側を斜めに落とした細長い箱
-  const SLIDE_TOP = 0.03;
-  const SLIDE_FRONT = -0.15;
-  const SLIDE_BACK = 0.045;
-  side(
-    [
-      [SLIDE_FRONT + 0.008, 0], [SLIDE_BACK, 0], [SLIDE_BACK, SLIDE_TOP - 0.004], [SLIDE_BACK - 0.004, SLIDE_TOP],
-      [SLIDE_FRONT + 0.004, SLIDE_TOP], [SLIDE_FRONT, SLIDE_TOP - 0.006], [SLIDE_FRONT, 0.009],
-    ],
-    0.026, 0.004, pistolMat,
-  );
-  // 銃身の先端: スライドの前から少しだけ顔を出す六角柱と、銃口の穴
-  const BORE_Y = 0.017;
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.0068, 0.0068, 0.008, 6), pistolMat);
-  barrel.rotation.set(Math.PI / 2, 0, 0);
-  barrel.position.set(0, BORE_Y, SLIDE_FRONT - 0.003);
-  gun.add(barrel);
-  const bore = new THREE.Mesh(new THREE.CircleGeometry(0.0042, 8), boreMat);
-  bore.position.set(0, BORE_Y, SLIDE_FRONT - 0.0072);
-  bore.rotation.y = Math.PI;
-  gun.add(bore);
-  const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, BORE_Y, SLIDE_FRONT - 0.007);
-  gun.add(muzzle);
-  gun.userData.muzzle = muzzle;
-  // 排莢口: スライドの上面、後ろ寄りの四角い凹み
-  box(0.016, 0.002, 0.04, 0.002, SLIDE_TOP + 0.0032, -0.012, pistolDarkMat);
-  // スライド後部の滑り止めの溝
-  for (let i = 0; i < 5; i++) box(0.0275, 0.02, 0.0018, 0, 0.015, 0.016 + i * 0.0055, pistolDarkMat);
-  // 照門と照星
-  box(0.016, 0.005, 0.006, 0, SLIDE_TOP + 0.006, SLIDE_BACK - 0.006);
-  box(0.004, 0.004, 0.006, 0, SLIDE_TOP + 0.0055, SLIDE_FRONT + 0.008);
-
-  // フレーム: スライドの下の台、角ばった用心鉄、後ろへ傾いたグリップを 1 枚の輪郭でつなぐ
-  side(
-    [
-      [SLIDE_FRONT + 0.012, -0.001], [0.052, -0.001], // スライドの下面に沿う
-      [0.062, -0.006], [0.064, -0.013], [0.05, -0.02], // 後ろへ張り出したビーバーテイル
-      [0.072, -0.105], [0.068, -0.112], // 背面
-      [0.018, -0.112], [0.006, -0.06], [0.0, -0.05], [-0.004, -0.044], // 底と前面（指の当たる所）
-      [-0.06, -0.044], [-0.066, -0.039], [-0.07, -0.028], [-0.068, -0.019], // 用心鉄の底と角ばった前端
-      [SLIDE_FRONT + 0.016, -0.017], [SLIDE_FRONT + 0.012, -0.01],
-    ],
-    0.022, 0.003, pistolMat,
-    // 用心鉄の内側の穴
-    [[[-0.058, -0.022], [-0.009, -0.022], [-0.004, -0.03], [-0.008, -0.038], [-0.058, -0.038], [-0.062, -0.03]]],
-  );
-  // グリップの左右のふくらみ（フレームより一回り厚い）
-  side(
-    [[0.045, -0.026], [0.066, -0.1], [0.022, -0.1], [0.008, -0.056], [0.01, -0.03]],
-    0.03, 0.004, pistolMat,
-  );
-  // 弾倉の底板: グリップの下に少しはみ出す
-  side([[0.072, -0.112], [0.074, -0.122], [0.016, -0.122], [0.016, -0.112]], 0.028, 0.002, pistolMat);
-  // 引き金: 前へ反った 2 枚の板
-  box(0.006, 0.011, 0.005, 0, -0.026, -0.03).rotation.x = -0.25;
-  box(0.006, 0.01, 0.005, 0, -0.035, -0.028).rotation.x = 0.35;
-  // 左側面のスライドストップのレバーと、用心鉄の付け根の弾倉ボタン
-  box(0.004, 0.005, 0.034, -0.013, -0.006, -0.012);
-  box(0.004, 0.008, 0.008, -0.0125, -0.02, -0.003);
-
-  return gun;
-}
-
 // 敵に拳銃を両手で構えさせる（アイソセレス・スタンス）。
 // 銃は体の正面、右目の少し下の高さに置き、腕は 2 関節の IK で手をグリップへ届かせる。
 // 右手がグリップを握り、左手はその左下から包むように添える。肘は軽く曲げて下外側へ逃がす
 function attachEnemyGun(body: EnemyBody) {
-  const gun = createPistol();
+  const gun = createPistol(weaponMats);
   gun.rotation.y = Math.PI; // 銃口（-Z）を敵の正面（+Z）へ
   gun.position.set(-0.04, 1.6, 0.6).sub(body.gunRig.userData.origin);
   gun.rotation.x = -0.03; // 銃口をわずかに上げて照準線を水平に
@@ -1278,108 +902,17 @@ function attachEnemyGun(body: EnemyBody) {
 }
 
 // ---- 武器: 剣 ----
-// 黒い直刀。鎬（しのぎ）のある六角断面の刃に、斜めに落とした切っ先
-// 刃はクナイと同じ黒光りする質感にする
-const swordMat = kunaiMat;
-const swordHiltMat = new THREE.MeshStandardMaterial({ color: 0x3b444c, metalness: 0.3, roughness: 0.7, flatShading: true });
-
-// +Y 方向が切っ先になるよう組み立てる（原点は握る位置 = 柄の中ほど）。刃（切る側）は +X
-function createSword(): THREE.Group {
-  const sword = new THREE.Group();
-
-  const BLADE_LEN = 0.72;
-  const TIP_LEN = 0.09;
-  const GRIP_LEN = 0.2;
-  const bladeBase = GRIP_LEN / 2 + 0.035; // 鍔とはばきの上から刃が始まる
-
-  // 刃の断面: 棟（-X）は平らな面、鎬（少し棟寄り）で最も厚く、刃先（+X）で 0 になる
-  const section = (y: number, w: number, t: number) => [
-    new THREE.Vector3(-w / 2, y, t * 0.35),
-    new THREE.Vector3(-w * 0.1, y, t / 2),
-    new THREE.Vector3(w / 2, y, 0),
-    new THREE.Vector3(-w * 0.1, y, -t / 2),
-    new THREE.Vector3(-w / 2, y, -t * 0.35),
-  ];
-  const W = 0.034;
-  const T = 0.009;
-  const tipStart = bladeBase + BLADE_LEN - TIP_LEN;
-  const bladeGeo = loftRings([
-    section(bladeBase, W * 1.05, T),
-    section(bladeBase + BLADE_LEN * 0.45, W, T * 0.95),
-    section(tipStart, W * 0.9, T * 0.85),
-    // 切っ先: 刃先側を斜めに落とし、棟側に尖らせる
-    [new THREE.Vector3(-W * 0.38, bladeBase + BLADE_LEN, 0)],
-  ]);
-  sword.add(new THREE.Mesh(bladeGeo, swordMat));
-
-  // はばき: 刃の根元を包む、上へすぼまる角ばった金具
-  const habaki = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.024, 0.028, 4), swordMat);
-  habaki.rotation.y = Math.PI / 4;
-  habaki.scale.set(1.25, 1, 0.55);
-  habaki.position.y = GRIP_LEN / 2 + 0.021;
-  sword.add(habaki);
-
-  // 鍔: 小ぶりな八角の板
-  const guard = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.01, 8), swordHiltMat);
-  guard.scale.set(1, 1, 0.75);
-  guard.position.y = GRIP_LEN / 2 + 0.003;
-  sword.add(guard);
-
-  // 柄: 柄頭へ向かってわずかに細くなる八角柱
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0115, GRIP_LEN, 8), swordHiltMat);
-  grip.scale.set(1, 1, 0.8);
-  sword.add(grip);
-
-  // 柄頭: 柄より一回り太い八角の帽子
-  const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.016, 0.016, 8), swordHiltMat);
-  pommel.scale.set(1, 1, 0.8);
-  pommel.position.y = -GRIP_LEN / 2 - 0.008;
-  sword.add(pommel);
-
-  sword.userData.tipY = bladeBase + BLADE_LEN;
-  sword.userData.bladeBaseY = bladeBase;
-  return sword;
-}
-
 // 右手で柄を握り、刃を前上方へ立てて構える
-const SWORD_VIEW_MODEL_POS = new THREE.Vector3(0.2, -0.26, -0.3);
 const swordViewModel = new THREE.Group();
 swordViewModel.position.copy(SWORD_VIEW_MODEL_POS);
 camera.add(swordViewModel);
 const swordRest = new THREE.Group();
 swordViewModel.add(swordRest);
-// 構えは 2 通り。止まっている・歩いているときは縦に立て、走っているときは前へ倒す
-const SWORD_STAND_QUAT = new THREE.Quaternion();
-const SWORD_RUN_QUAT = new THREE.Quaternion();
-const SWORD_SLIDE_QUAT = new THREE.Quaternion();
-{
-  // 縦に立てて持ち（切っ先はわずかに前へ傾ける）、刃先（ローカル +X）を正面へ向ける
-  const tip = new THREE.Vector3(0, 1, -0.15).normalize();
-  const edgeDir = new THREE.Vector3(0, 0, -1).addScaledVector(tip, tip.z).normalize();
-  const faceDir = new THREE.Vector3().crossVectors(edgeDir, tip);
-  SWORD_STAND_QUAT.setFromRotationMatrix(new THREE.Matrix4().makeBasis(edgeDir, tip, faceDir));
-}
-{
-  // 走っている間: 切っ先を前方へ倒し、少し内側へ向ける。刃の平たい面をカメラへ向けたあと、刃先が前を向くようひねる
-  const tip = new THREE.Vector3(-0.08, 0.55, -0.83).normalize();
-  const toCamera = SWORD_VIEW_MODEL_POS.clone().negate();
-  const faceDir = toCamera.addScaledVector(tip, -toCamera.dot(tip)).normalize();
-  const sideDir = new THREE.Vector3().crossVectors(tip, faceDir);
-  SWORD_RUN_QUAT.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sideDir, tip, faceDir))
-    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(55)));
-}
-{
-  // スライディング中: 刀を横に寝かせ、切っ先を左（やや奥）へ向ける。刃先は正面へ向けたまま
-  const tip = new THREE.Vector3(-0.9, 0.08, -0.45).normalize();
-  const edgeDir = new THREE.Vector3(0, 0, -1).addScaledVector(tip, tip.z).normalize();
-  const faceDir = new THREE.Vector3().crossVectors(edgeDir, tip);
-  SWORD_SLIDE_QUAT.setFromRotationMatrix(new THREE.Matrix4().makeBasis(edgeDir, tip, faceDir));
-}
 swordRest.quaternion.copy(SWORD_STAND_QUAT);
 const swordRestQuat = SWORD_STAND_QUAT.clone(); // 今の移動状態での構えの向き（攻撃していないときはこの向きで持つ）
 let swordRunPose = 0; // 0 = 縦に立てた構え, 1 = 走るときの前へ倒した構え
 let swordSlidePose = 0; // 1 = スライディング中の横に寝かせた構え
-const sword = createSword();
+const sword = createSword(weaponMats);
 // 握った手を軸に、刃の面の中で剣を回す（くるくる回す動きに使う）
 const swordSpin = new THREE.Group();
 swordRest.add(swordSpin);
@@ -1388,12 +921,11 @@ swordViewModel.visible = false;
 
 // ---- 武器: 鎖鎌 ----
 // 刃と金具はクナイと同じ黒光り、柄は剣の柄と同じ色。握りの巻きは一段暗くする
-const sickleWrapMat = new THREE.MeshStandardMaterial({ color: 0x23282d, metalness: 0.1, roughness: 0.9, flatShading: true });
 // 左右の手に 1 本ずつ持つ。揺れは 2 本まとめて付ける
 const sickleViewModel = new THREE.Group();
 sickleViewModel.position.copy(SICKLE_VIEW_MODEL_POS);
 camera.add(sickleViewModel);
-const sickleMats = { metal: kunaiMat, shaft: swordHiltMat, wrap: sickleWrapMat };
+const sickleMats = { metal: kunaiMat, shaft: weaponMats.swordHilt, wrap: weaponMats.sickleWrap };
 const rightSickle = createHeldSickle(sickleMats, 1);
 const leftSickle = createHeldSickle(sickleMats, -1);
 sickleViewModel.add(rightSickle, leftSickle);
@@ -1412,7 +944,7 @@ let axeSwayVelX = 0;
 let axeSwayVelY = 0;
 axeViewModel.position.copy(AXE_VIEW_MODEL_POS);
 camera.add(axeViewModel);
-const heldAxe = createHeldAxe({ metal: kunaiMat, grip: sickleWrapMat });
+const heldAxe = createHeldAxe({ metal: kunaiMat, grip: weaponMats.sickleWrap });
 const axeRest = heldAxe.userData.rest as THREE.Group;
 const heldAxeModel = heldAxe.userData.axe as THREE.Group;
 axeViewModel.add(heldAxe);
@@ -6085,7 +5617,7 @@ interface Thrown {
   target: Enemy | null; // ホーミングで追う敵
 }
 const thrown: Thrown[] = [];
-const thrownTemplate = createKunai();
+const thrownTemplate = createKunai(weaponMats);
 const throwRaycaster = new THREE.Raycaster();
 const throwDir = new THREE.Vector3();
 const throwFrom = new THREE.Vector3();
@@ -12055,7 +11587,7 @@ const CASING_RADIUS = 0.005;
 interface Casing { mesh: THREE.Group; vel: THREE.Vector3; spin: THREE.Vector3; age: number; bounces: number }
 const casings: Casing[] = [];
 function spawnCasing(live: boolean, at: THREE.Vector3, quat: THREE.Quaternion, vel: THREE.Vector3) {
-  const mesh = createRound(live);
+  const mesh = createRound(weaponMats, live);
   mesh.position.copy(at);
   mesh.quaternion.copy(quat);
   scene.add(mesh);

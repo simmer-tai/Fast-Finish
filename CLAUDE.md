@@ -2,7 +2,7 @@
 
 ## 武器のプレビュー動画
 
-武器選択画面は `previews/<武器ID>.mp4` を音なしでループ再生する（`src/main.ts` の `showPickerVideo`）。武器ID は `index.html` の `data-weapon`（kunai / handgun / sword / sickle / axe）。
+武器選択画面は `previews/<武器ID>.mp4` を音なしでループ再生する（`src/ui/weaponPicker.ts` の `showPickerVideo`）。武器ID は `index.html` の `data-weapon`（kunai / handgun / sword / sickle / axe）。
 
 ユーザーが編集済みの録画（ダウンロードフォルダに置かれることが多い）をプレビューにしたいと言ったら、以下の手順で作る。
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loftRings } from './geometry.js';
+import { loftRings } from '../geometry.js';
 // ---- 武器: 鎖鎌 ----
 // 左右の手に 1 本ずつ持つ。片手で握る柄の先に小ぶりな鎌の刃。
 // 柄は握りのすぐ上に継ぎ目があり、そこから上（刃・口金・柄の上半分 = 頭）が外れて飛ぶ。握りは手に残り、
