@@ -16,6 +16,7 @@ export interface GameHooks {
   grappling(): boolean; // 鎖鎌で移動している最中か
   applyCameraOffset(): void; // 描画の向きに揺れと傾きを足す（クロスヘアの指す向きになる）
   restoreCameraOffset(): void; // applyCameraOffset で足した分を戻す
+  damagePlayer(amount: number): void; // プレイヤーの体力を削る（ステージでは 0 で倒れ、訓練場では 1 で耐える）
 }
 export let hooks: GameHooks;
 export function initGameHooks(h: GameHooks) {

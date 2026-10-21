@@ -22,6 +22,8 @@ export const game = {
     playerHp: PLAYER_MAX_HP,
     parryReturnAge: Infinity, // 返した弾が当たってからの実時間
     attackPressed: false,
+    hitStopTotal: 0,
+    hitStopShakesDummy: true, // パリィで止めたときは敵を震わせない
 };
 // カメラの反動（ばね）
 export const kick = new THREE.Vector3();

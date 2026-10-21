@@ -19,10 +19,7 @@ import { STAGE_TITLE_END, createStageTitle } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
 import { WEAPON_KEYS, type WeaponId } from './weapons/ids.js';
 import { rand } from './random.js';
-import {
-  DUMMY_ANKLE_Y, DUMMY_FOREARM, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, DUMMY_UPPER_ARM, buildEnemyBody,
-  type EnemyBody,
-} from './enemy/body.js';
+import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody } from './enemy/body.js';
 import { updateControlsHud } from './ui/controlsHud.js';
 import { GROUND_REVEAL_ALL, groundReveal, riseOrigin, withGroundReveal } from './world/reveal.js';
 import {
@@ -40,14 +37,13 @@ import {
   updateHitParticles,
 } from './fx/hitFx.js';
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
-import { createPistol } from './weapons/pistol.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './weapons/sword.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
 import { env, initEnemyEnv } from './enemy/env.js';
 import {
-  DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, type Enemy,
+  DEFAULT_KNOCK, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, type Enemy,
 } from './enemy/state.js';
 import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
@@ -88,14 +84,13 @@ import { DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
 import {
   AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeRest,
   axeViewModel, chakramRest, chakramViewModel, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiRest, leftViewModel,
-  sickleViewModel, sword, swordRest, swordRestQuat, swordViewModel, viewModel, weaponMats,
+  sickleViewModel, sword, swordRest, swordRestQuat, swordViewModel, viewModel,
 } from './weapons/viewModels.js';
 import {
   AXE_SHOCK_HIT, applyAxePose, axePoseAt, axeState, axeTrailPose, spawnAxeShock, startAxeAttack, updateAxeAttack,
   updateAxeShocks,
 } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
-import { castWorld } from './world/raycast.js';
 import {
   CHARGE_ZOOM, FOCUS_DIM, FOCUS_ZOOM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, startSwordTwirl,
   swordPoseAt, swordReady, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack,
@@ -103,10 +98,10 @@ import {
 import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget } from './player/aimAssist.js';
 import {
   BULLET_HIT, DASH_TWIRL_TIME, DEADEYE_HIT, DEADEYE_ZOOM, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE,
-  PARRY_RETURN_HIT, RELOAD_EVENTS, TRACER_AXIS, applyGunSpin, bulletBack, bullets, deadEyeMarks, endDeadEye,
-  endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash,
-  placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, startTwirl, tracerGeo, updateBullets,
-  updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, type Bullet,
+  PARRY_RETURN_HIT, RELOAD_EVENTS, applyGunSpin, deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl,
+  evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts,
+  reloadPosOff, reloadRotOff, startReload, startTwirl, updateBullets, updateCasings, updateDeadEye, updateSlideSpin,
+  updateTwirl,
 } from './weapons/handgunCombat.js';
 import {
   GRAPPLE_STICK_HIT, HOOK_CHARGES, HOOK_RECHARGE, SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DAMAGE_SCALE, SICKLE_DASH,
@@ -118,6 +113,9 @@ import {
   WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiReady, kunaiState, pendingThrows,
   startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor,
 } from './weapons/kunaiCombat.js';
+import { ammoHud, ammoPips, updateWeaponHud, weaponHud } from './ui/weaponHud.js';
+import { ENEMY_FIRST_SHOT, attachEnemyGun, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js';
+import { PARRY_INVERT_TIME, parryMono, parrySlowFactor, parryState } from './combat/parry.js';
 
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
@@ -200,51 +198,6 @@ let axeSwayX = 0;
 let axeSwayY = 0;
 let axeSwayVelX = 0;
 let axeSwayVelY = 0;
-
-// ---- 敵の武器: 自動拳銃 ----
-// 敵に拳銃を両手で構えさせる（アイソセレス・スタンス）。
-// 銃は体の正面、右目の少し下の高さに置き、腕は 2 関節の IK で手をグリップへ届かせる。
-// 右手がグリップを握り、左手はその左下から包むように添える。肘は軽く曲げて下外側へ逃がす
-function attachEnemyGun(body: EnemyBody) {
-  const gun = createPistol(weaponMats);
-  gun.rotation.y = Math.PI; // 銃口（-Z）を敵の正面（+Z）へ
-  gun.position.set(-0.04, 1.6, 0.6).sub(body.gunRig.userData.origin);
-  gun.rotation.x = -0.03; // 銃口をわずかに上げて照準線を水平に
-  body.gunRig.add(gun);
-  {
-    // グリップの握る所（銃の座標で後ろへ 0.04、下へ 0.06）を敵の座標へ
-    const grip = new THREE.Vector3(0, -0.06, 0.04).applyEuler(gun.rotation).add(gun.position);
-    const hands = [grip, grip.clone().add(new THREE.Vector3(0.04, -0.015, 0.012))];
-    const shoulder = new THREE.Vector3();
-    const toHand = new THREE.Vector3();
-    const bend = new THREE.Vector3();
-    const elbow = new THREE.Vector3();
-    const dir = new THREE.Vector3();
-    const DOWN = new THREE.Vector3(0, -1, 0);
-    const upperQ = new THREE.Quaternion();
-    const foreQ = new THREE.Quaternion();
-    for (let i = 0; i < 2; i++) {
-      const side = i === 0 ? -1 : 1;
-      const arm = body.arms[i];
-      shoulder.copy(arm.position);
-      toHand.subVectors(hands[i], shoulder);
-      const d = Math.min(toHand.length(), DUMMY_UPPER_ARM + DUMMY_FOREARM - 1e-3);
-      toHand.normalize();
-      // 余弦定理で肩の開き角を出し、肘を「下外側」の向きへ出す
-      const cosA = (DUMMY_UPPER_ARM ** 2 + d * d - DUMMY_FOREARM ** 2) / (2 * DUMMY_UPPER_ARM * d);
-      const a = Math.acos(THREE.MathUtils.clamp(cosA, -1, 1));
-      bend.set(0.6 * side, -1, -0.2);
-      bend.addScaledVector(toHand, -bend.dot(toHand)).normalize();
-      elbow.copy(shoulder).addScaledVector(toHand, Math.cos(a) * DUMMY_UPPER_ARM).addScaledVector(bend, Math.sin(a) * DUMMY_UPPER_ARM);
-      upperQ.setFromUnitVectors(DOWN, dir.subVectors(elbow, shoulder).normalize());
-      arm.quaternion.copy(upperQ);
-      // 前腕は肘から手へ。上腕の回転を打ち消してローカルの向きにする
-      foreQ.setFromUnitVectors(DOWN, dir.subVectors(hands[i], elbow).normalize());
-      body.forearms[i].quaternion.copy(upperQ.invert()).multiply(foreQ);
-    }
-  }
-  return gun;
-}
 
 // ---- 武器の切り替え ----
 // 持ち替えは「今の武器を下げる → 入れ替える → 新しい武器を上げる」
@@ -1046,7 +999,7 @@ function downPlayer() {
   downT = 0;
   stageRun.running = false;
   game.hitStop = Math.max(game.hitStop, 0.14);
-  hitStopTotal = game.hitStop;
+  game.hitStopTotal = game.hitStop;
   addTrauma(1);
   game.fovKick += 10;
   if (game.deadEye !== 'off') endDeadEye();
@@ -1962,8 +1915,8 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   staggerDummy(def.knock ?? DEFAULT_KNOCK, at, swing);
   en.flashT = 0;
   game.hitStop = Math.max(game.hitStop, def.hitStop ?? DEFAULT_HIT_STOP);
-  hitStopTotal = game.hitStop;
-  hitStopShakesDummy = true;
+  game.hitStopTotal = game.hitStop;
+  game.hitStopShakesDummy = true;
   shakeEnemy = en;
 
   // 空振りとの差をはっきりさせるため、当たったときだけ画面を大きく揺らして反動も足す
@@ -1998,7 +1951,7 @@ function killDummy(kind?: HitKind, swing?: THREE.Vector3) {
   sinceKill = 0;
   finale = !!stageRun?.running && stageRun.kills + 1 >= stageRun.quota;
   game.hitStop = Math.max(game.hitStop, finale ? FINALE_HIT_STOP : KILL_HIT_STOP);
-  hitStopTotal = game.hitStop;
+  game.hitStopTotal = game.hitStop;
   killSlowTime = 0;
   addTrauma(finale ? 1 : 0.45);
   game.fovKick += finale ? 18 : 9;
@@ -2432,16 +2385,14 @@ function finaleMono() {
 // ヒットストップ中は敵の見た目だけを小刻みに震わせ、止まった画に衝撃を残す
 const HIT_TRAUMA = 0.18; // fx = 1 のときに当たりで足す画面の揺れ
 const DUMMY_SHAKE = 0.05; // 震えの幅 (m)
-let hitStopTotal = 0;
-let hitStopShakesDummy = true; // パリィで止めたときは敵を震わせない
 let shakeSide = 1;
 let shakeEnemy: Enemy | null = null; // 震わせる敵（最後に当てた敵）
 function updateDummyShake() {
   for (const e of enemies) poseEnemyTumble(e);
-  if (game.hitStop <= 0 || !hitStopShakesDummy || !shakeEnemy) return;
+  if (game.hitStop <= 0 || !game.hitStopShakesDummy || !shakeEnemy) return;
   setEn(shakeEnemy);
   // 左右へ交互に振り、止まりきる前に弱めていく
-  const k = DUMMY_SHAKE * Math.min(1, game.hitStop / Math.max(hitStopTotal, 1e-3));
+  const k = DUMMY_SHAKE * Math.min(1, game.hitStop / Math.max(game.hitStopTotal, 1e-3));
   shakeSide = -shakeSide;
   const side = shakeSide * k * (0.6 + Math.random() * 0.4);
   // dummy は傾いているので、ローカルの横向きで揺らす
@@ -2744,7 +2695,7 @@ function updateHitFx(dt: number) {
   // 最後の 1 体を倒したときも同じ白黒を使う
   u.uMono.value = Math.max(parryMono(), finaleMono(), downFall()); // 倒れたときも白黒にしていく
   u.uDim.value = Math.max(u.uDim.value, downFall() * 0.35);
-  u.uInvert.value = parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
+  u.uInvert.value = parryState.parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
   // 世界のスロー: 遅さに合わせて色を抜き、入った瞬間だけ輪を広げる
   // 一瞬で切り替えず、少しなめらかに寄せる
   const slowWant = (1 - kunaiState.worldSlow) / (1 - WORLD_SLOW_SCALE);
@@ -2771,347 +2722,15 @@ initGameHooks({
   dummyInReach,
   hitPointFromTip,
   applyLunge,
-  grappling: () => sickleState.grapple !== null, applyCameraOffset, restoreCameraOffset,
+  grappling: () => sickleState.grapple !== null, applyCameraOffset, restoreCameraOffset, damagePlayer,
 });
 
 // ---- ハンドガン ----（weapons/handgunCombat.ts）
 
-// ---- 敵の射撃 ----
-// 敵は体ごとプレイヤーの方へゆっくり向き直り、追いきれない分を銃と両腕で振って狙う。
-// 狙いは少し遅れてついてくるので、動き続けていれば外れる。銃口が狙いに収まったら一定の間隔で撃つ。
-// 弾は自分の銃より遅く、光の尾がはっきり見えるので、見てからかわせる
-const ENEMY_TURN_RATE = 3; // 体が向き直る速さ（残りの角度に掛ける割合 /s）
-const ENEMY_TURN_MAX = 2.5; // 体が向き直る最高の角速度 (rad/s)
-const ENEMY_AIM_RATE = 6; // 銃が狙いへ追いつく速さ（大きいほど遅れが小さい）
-const ENEMY_AIM_YAW_MAX = 40 * DEG;
-const ENEMY_AIM_PITCH_MAX = 40 * DEG;
-const ENEMY_GUN_Y = 1.6; // 銃を構えている高さ（狙いの上下の角度の基準）
-const ENEMY_FIRST_SHOT = 1.2; // 現れてから最初に撃つまで
-const ENEMY_FIRE_MIN = 1.1; // 撃つ間隔
-const ENEMY_FIRE_MAX = 1.8;
-const ENEMY_FIRE_CONE = 5 * DEG; // 銃口の向きと狙いのずれがこれ以内なら撃つ
-const ENEMY_SPREAD = 0.8 * DEG;
-const ENEMY_STAGGER_LIMIT = 0.12; // 銃がこれ以上跳ね上がっている間（よろめいている間）は撃たない (rad)
-const ENEMY_LEAN_LIMIT = 6 * DEG; // 上体がこれ以上反っている間も撃たない
-const ENEMY_RECOIL = 3.5; // 撃ったときに銃口を跳ね上げる角速度
-const ENEMY_BULLET_SPEED = 40; // m/s
-const ENEMY_BULLET_RANGE = 120;
-const ENEMY_BULLET_DAMAGE = 12;
-const ENEMY_TRACER_LEN = 2.2;
-const ENEMY_TRACER_WIDTH = 0.022;
-const ENEMY_HIT_RADIUS = PLAYER_RADIUS * 0.8;
-const ENEMY_FLASH_SCALE = 2; // 遠くからでも見えるよう、マズルフラッシュを大きくする
-const ENEMY_BRACE_TIME = 0.4; // 撃つこの時間前から構え始める
-const ENEMY_BRACE_RATE = 9; // 構えへ近づく速さ（解くときはこの半分）
-const ENEMY_BRACE_READY = 0.8; // 構えがここまで進むまでは撃たない
+// ---- 敵の銃 ----（自動拳銃の持たせ方と敵の射撃は enemy/fire.ts）
 
-const enemyTracerMat = new THREE.MeshBasicMaterial({
-  color: 0xffb080,
-  transparent: true,
-  opacity: 0.95,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-const enemyBullets: Bullet[] = [];
-const enemyTarget = new THREE.Vector3();
-const enemyFrom = new THREE.Vector3();
-const enemyFwd = new THREE.Vector3();
-const enemyTo = new THREE.Vector3();
-const enemyNext = new THREE.Vector3();
-const enemyOnPath = new THREE.Vector3();
-const enemyOnBody = new THREE.Vector3();
-const enemyPath = new THREE.Line3();
-const enemyBody = new THREE.Line3();
-const enemyPan = new THREE.Vector3();
+// ---- パリィ ----（combat/parry.ts）
 
-// 狙う所: プレイヤーの胸
-function aimTarget(out: THREE.Vector3) {
-  return out.set(position.x, position.y + player.eyeHeight - 0.35, position.z);
-}
-
-function updateDummyAim(dt: number) {
-  aimTarget(enemyTarget);
-  const dx = enemyTarget.x - en.root.position.x;
-  const dz = enemyTarget.z - en.root.position.z;
-  const want = Math.atan2(dx, dz);
-  const turn = wrapAngle(want - en.yaw) * Math.min(1, dt * ENEMY_TURN_RATE);
-  en.yaw = wrapAngle(en.yaw + THREE.MathUtils.clamp(turn, -ENEMY_TURN_MAX * dt, ENEMY_TURN_MAX * dt));
-  en.root.quaternion.setFromAxisAngle(UP, en.yaw);
-
-  const yaw = THREE.MathUtils.clamp(wrapAngle(want - en.yaw), -ENEMY_AIM_YAW_MAX, ENEMY_AIM_YAW_MAX);
-  const pitch = THREE.MathUtils.clamp(
-    Math.atan2(enemyTarget.y - (en.root.position.y + ENEMY_GUN_Y), Math.hypot(dx, dz)),
-    -ENEMY_AIM_PITCH_MAX,
-    ENEMY_AIM_PITCH_MAX,
-  );
-  const k = 1 - Math.exp(-ENEMY_AIM_RATE * dt);
-  en.aimYaw += (yaw - en.aimYaw) * k;
-  en.aimPitch += (pitch - en.aimPitch) * k;
-}
-
-function updateEnemyFire(dt: number) {
-  en.flashAge += dt;
-  en.muzzleFx.visible = en.flashAge < MUZZLE_FLASH_LIFE;
-  en.cooldown -= dt;
-  // 撃つ少し前から腰を落として構える。構えきるまでは撃たない（見てからかわせる合図）
-  const canAim = en.alive && game.playerHp > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
-    && en.dodgeT <= 0;
-  const braceWant = canAim && en.cooldown < ENEMY_BRACE_TIME ? 1 : 0;
-  en.brace += (braceWant - en.brace) * Math.min(1, dt * (braceWant > en.brace ? ENEMY_BRACE_RATE : ENEMY_BRACE_RATE * 0.5));
-  if (!canAim || en.cooldown > 0 || en.brace < ENEMY_BRACE_READY) return;
-  // 攻撃を受けてよろけている間は撃たない。当たってからしばらくと、上体の反りや銃の跳ね上がりが残っている間
-  if (Math.abs(en.gunSpring.x.x) > ENEMY_STAGGER_LIMIT || en.leanSpring.x.length() > ENEMY_LEAN_LIMIT) return;
-  if (en.footState.some((f) => f.t < 1)) return; // 踏ん張って足を踏み出している最中
-
-  en.muzzle.updateWorldMatrix(true, false);
-  enemyFrom.setFromMatrixPosition(en.muzzle.matrixWorld);
-  enemyFwd.set(0, 0, -1).transformDirection(en.muzzle.matrixWorld); // 銃口は -Z
-  enemyTo.subVectors(aimTarget(enemyTarget), enemyFrom);
-  const dist = enemyTo.length();
-  enemyTo.divideScalar(dist);
-  if (enemyFwd.angleTo(enemyTo) > ENEMY_FIRE_CONE) return;
-  if (castWorld(enemyFrom, enemyTo, dist) < dist) return; // 柱の陰にいる間は撃たない
-
-  // 狙いの遅れを残すため、プレイヤーへではなく銃口の向きへ撃つ
-  const dir = enemyFwd.clone();
-  dir.x += (Math.random() * 2 - 1) * ENEMY_SPREAD;
-  dir.y += (Math.random() * 2 - 1) * ENEMY_SPREAD;
-  dir.z += (Math.random() * 2 - 1) * ENEMY_SPREAD;
-  dir.normalize();
-  const mesh = new THREE.Mesh(tracerGeo, enemyTracerMat);
-  mesh.frustumCulled = false;
-  mesh.visible = false; // 尾が伸びるまで出さない
-  scene.add(mesh);
-  enemyBullets.push({ pos: enemyFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, from: en });
-
-  en.cooldown = THREE.MathUtils.lerp(ENEMY_FIRE_MIN, ENEMY_FIRE_MAX, Math.random());
-  en.flashAge = 0;
-  en.muzzleFx.rotation.z = Math.random() * Math.PI;
-  en.muzzleFx.scale.setScalar(ENEMY_FLASH_SCALE * (1 + Math.random() * 0.3));
-  en.gunSpring.v.x -= ENEMY_RECOIL;
-  // 敵のいる向きの左右から鳴らす（前後は分からないので、真横でも振りきらない）
-  camera.updateMatrixWorld();
-  enemyPan.copy(en.root.position).applyMatrix4(camera.matrixWorldInverse);
-  const pan = THREE.MathUtils.clamp(enemyPan.x / Math.max(Math.hypot(enemyPan.x, enemyPan.z), 1e-3), -1, 1) * 0.8;
-  sfx.playGunshot(THREE.MathUtils.clamp(4 / Math.max(dist, 1), 0.25, 0.8), pan);
-}
-
-function updateEnemyBullets(dt: number) {
-  for (let i = enemyBullets.length - 1; i >= 0; i--) {
-    const b = enemyBullets[i];
-    const step = ENEMY_BULLET_SPEED * dt;
-    if (b.hit || b.traveled >= ENEMY_BULLET_RANGE) {
-      b.tail -= step;
-      if (!b.hit) b.pos.addScaledVector(b.dir, step);
-    } else {
-      // この 1 歩の間に、まず壁、その手前でプレイヤーの体（縦の線分の周り）に当たるかを調べる
-      const wall = castWorld(b.pos, b.dir, step);
-      enemyNext.copy(b.pos).addScaledVector(b.dir, wall);
-      enemyPath.set(b.pos, enemyNext);
-      enemyBody.start.set(position.x, position.y + 0.15, position.z);
-      enemyBody.end.set(position.x, position.y + player.eyeHeight + 0.05, position.z);
-      if (game.playerHp > 0 && tryParry(b)) {
-        b.mesh.removeFromParent();
-        enemyBullets.splice(i, 1);
-        continue;
-      }
-      closestSegmentPoints(enemyPath, enemyBody, enemyOnPath, enemyOnBody);
-      if (game.playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS) {
-        b.hit = true;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
-        b.pos.copy(enemyOnPath);
-        if (b.from) b.from.hitPlayer = true;
-        onPlayerShot(b.dir);
-      } else if (wall < step) {
-        b.hit = true;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + wall);
-        b.pos.copy(enemyNext);
-        spawnSparks(enemyNext, b.dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
-        sfx.playRicochet();
-      } else {
-        b.pos.copy(enemyNext);
-        b.traveled += step;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + step);
-      }
-    }
-    if (b.tail <= 0) {
-      b.mesh.removeFromParent();
-      enemyBullets.splice(i, 1);
-      continue;
-    }
-    b.mesh.visible = true;
-    b.mesh.position.copy(b.pos);
-    b.mesh.quaternion.setFromUnitVectors(TRACER_AXIS, bulletBack.copy(b.dir).negate());
-    b.mesh.scale.set(ENEMY_TRACER_WIDTH, ENEMY_TRACER_WIDTH, b.tail);
-  }
-}
-
-// ---- パリィ ----
-// クナイや刀を振っている間（斬撃の軌跡が出ている前後）に、正面から体へ向かってくる弾が間合いへ入ったら弾き返す。
-// 弾き返した弾は敵の胸へまっすぐ飛び、自分の銃弾と同じように当たる
-const PARRY_RANGE = 1.6; // 胸からこの距離まで来た弾を弾く (m)
-const PARRY_THREAT = 0.7; // 弾の進む線が体の芯からこれ以上離れていれば外れる弾なので弾かない (m)
-const PARRY_ANGLE = 80 * DEG; // 視線からこの角度以内の向きから来た弾だけを弾く
-const PARRY_EARLY = 0.05; // 軌跡が出る少し前から
-const PARRY_LATE = 0.08; // 軌跡が消えた少し後まで
-const PARRY_HIT_STOP = 0.18; // 世界を止める長さ（実時間）。この間は画面を白黒にする
-const PARRY_INVERT_TIME = 0.035; // 弾いた瞬間だけ白黒を反転させる
-// 止まったあと、いきなり戻さずスローを挟み、跳ね返った弾が敵へ飛んでいくのを見せる（どれも実時間）
-const PARRY_SLOW_SCALE = 0.3;
-const PARRY_SLOW_HOLD = 0.25;
-const PARRY_SLOW_RELEASE = 0.35;
-const PARRY_FX_FADE = PARRY_SLOW_HOLD + PARRY_SLOW_RELEASE; // 色はスローが明けるのに合わせて戻す
-const PARRY_RETURN_MONO = 0.07; // 返した弾が当たった瞬間も、ごく短く白黒にする
-const PARRY_RETURN_MONO_FADE = 0.15;
-const parryTracerMat = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  transparent: true,
-  opacity: 1,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-let parryFxAge = Infinity; // 弾いてからの実時間
-
-// 実時間を進め、ゲームの時間に掛ける速さを返す（止まっている間はヒットストップが止めるので 1）
-function parrySlowFactor(realDt: number) {
-  parryFxAge += game.realDt;
-  game.parryReturnAge += game.realDt;
-  const t = parryFxAge - PARRY_HIT_STOP;
-  if (t < 0) return 1;
-  const u = THREE.MathUtils.clamp((t - PARRY_SLOW_HOLD) / PARRY_SLOW_RELEASE, 0, 1);
-  return THREE.MathUtils.lerp(PARRY_SLOW_SCALE, 1, u * u);
-}
-
-function parryMono() {
-  const after = Math.max(0, parryFxAge - PARRY_HIT_STOP);
-  const main = parryFxAge < PARRY_HIT_STOP ? 1 : Math.max(0, 1 - after / PARRY_FX_FADE) ** 2;
-  const rAfter = Math.max(0, game.parryReturnAge - PARRY_RETURN_MONO);
-  const ret = game.parryReturnAge < PARRY_RETURN_MONO ? 1 : Math.max(0, 1 - rAfter / PARRY_RETURN_MONO_FADE);
-  return Math.max(main, ret);
-}
-const PARRY_SPREAD = 1.5 * DEG;
-const parryChest = new THREE.Vector3();
-const parryLook = new THREE.Vector3();
-const parryAt = new THREE.Vector3();
-const parryAim = new THREE.Vector3();
-const parryRay = new THREE.Line3();
-const inParryWindow = (t: number, [a, b]: readonly [number, number, boolean?]) => t >= a - PARRY_EARLY && t <= b + PARRY_LATE;
-
-function parryActive(): boolean {
-  // クナイは指先で回す細い軌跡を除いた、本当に振っている間だけ
-  if (kunaiState.attack && game.shownWeapon === 'kunai') return kunaiState.attack.trails.some((w) => !w[2] && inParryWindow(kunaiState.attackTime, w));
-  if (swordState.swordAttack && game.shownWeapon === 'sword') return swordState.swordAttack.trails.some((w) => inParryWindow(swordState.swordTime, w));
-  return false;
-}
-
-// enemyPath（この 1 歩で弾が進む線分）が入っている前提で呼ぶ
-function tryParry(b: Bullet): boolean {
-  if (!parryActive()) return false;
-  aimTarget(parryChest);
-  enemyPath.closestPointToPoint(parryChest, true, parryAt);
-  if (parryAt.distanceTo(parryChest) > PARRY_RANGE) return false;
-  camera.getWorldDirection(parryLook);
-  if (parryLook.angleTo(b.dir) < Math.PI - PARRY_ANGLE) return false;
-  // このまま進んでも体に当たらない弾は放っておく
-  parryRay.start.copy(b.pos);
-  parryRay.end.copy(b.pos).addScaledVector(b.dir, ENEMY_BULLET_RANGE);
-  closestSegmentPoints(parryRay, enemyBody, enemyOnPath, enemyOnBody);
-  if (enemyOnPath.distanceTo(enemyOnBody) > PARRY_THREAT) return false;
-
-  // 弾いた所: 間合いの縁まで来ていればそこ、まだ手前ならこの 1 歩の中で胸に最も近い所
-  if (b.pos.distanceTo(parryChest) <= PARRY_RANGE) parryAt.copy(b.pos);
-  const dir = new THREE.Vector3();
-  const shooter = b.from;
-  if (shooter?.alive) dir.set(shooter.root.position.x, shooter.root.position.y + 1.3, shooter.root.position.z).sub(parryAt).normalize();
-  else dir.copy(b.dir).negate();
-  dir.x += (Math.random() * 2 - 1) * PARRY_SPREAD;
-  dir.y += (Math.random() * 2 - 1) * PARRY_SPREAD;
-  dir.z += (Math.random() * 2 - 1) * PARRY_SPREAD;
-  dir.normalize();
-  const mesh = new THREE.Mesh(tracerGeo, parryTracerMat);
-  mesh.frustumCulled = false;
-  scene.add(mesh);
-  bullets.push({ pos: parryAt.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, parried: true });
-
-  // 演出: 一瞬止めて火花を散らし、金属の「キン」
-  game.hitStop = Math.max(game.hitStop, PARRY_HIT_STOP);
-  hitStopTotal = game.hitStop;
-  hitStopShakesDummy = false;
-  parryFxAge = 0;
-  spawnSparks(parryAt, parryAim.copy(dir), 12 + Math.floor(Math.random() * 5), 0.8, 0.7);
-  sfx.playParry(PARRY_HIT_STOP);
-  addTrauma(0.15);
-  kickVel.x += 0.8 * DEG * 22;
-  return true;
-}
-
-// 2 本の線分の、互いにいちばん近い点
-const segD1 = new THREE.Vector3();
-const segD2 = new THREE.Vector3();
-const segR = new THREE.Vector3();
-function closestSegmentPoints(a: THREE.Line3, b: THREE.Line3, outA: THREE.Vector3, outB: THREE.Vector3) {
-  segD1.subVectors(a.end, a.start);
-  segD2.subVectors(b.end, b.start);
-  segR.subVectors(a.start, b.start);
-  const aa = segD1.dot(segD1);
-  const ee = segD2.dot(segD2);
-  const f = segD2.dot(segR);
-  let s = 0;
-  let t = 0;
-  if (aa < 1e-9) {
-    t = THREE.MathUtils.clamp(f / ee, 0, 1);
-  } else {
-    const c = segD1.dot(segR);
-    const bb = segD1.dot(segD2);
-    const denom = aa * ee - bb * bb;
-    s = denom > 1e-9 ? THREE.MathUtils.clamp((bb * f - c * ee) / denom, 0, 1) : 0;
-    t = (bb * s + f) / ee;
-    if (t < 0) {
-      t = 0;
-      s = THREE.MathUtils.clamp(-c / aa, 0, 1);
-    } else if (t > 1) {
-      t = 1;
-      s = THREE.MathUtils.clamp((bb - c) / aa, 0, 1);
-    }
-  }
-  outA.copy(a.start).addScaledVector(segD1, s);
-  outB.copy(b.start).addScaledVector(segD2, t);
-}
-
-// 撃たれた: 体力を削り、撃たれた向きへ視点を弾く
-function onPlayerShot(dir: THREE.Vector3) {
-  damagePlayer(ENEMY_BULLET_DAMAGE);
-  sfx.playHurt();
-  addTrauma(0.35);
-  camera.getWorldDirection(enemyTo);
-  // 正面から撃たれたら視点が上へ、横からなら撃たれた向きへねじれる
-  const side = enemyTo.x * dir.z - enemyTo.z * dir.x;
-  kickVel.x += 2.5 * DEG * 22;
-  kickVel.z += side * 3 * DEG * 22;
-}
-
-const ammoPips = [...document.querySelectorAll<HTMLElement>('#ammo i')];
-const ammoHud = document.getElementById('ammo')!;
-const weaponHud = document.getElementById('weapon')!;
-const weaponName = weaponHud.querySelector<HTMLElement>('.name span')!;
-const weaponIcons = [...weaponHud.querySelectorAll<SVGElement>('.icon svg')];
-const WEAPON_LABELS: Record<WeaponId, string> = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE', chakram: 'CHAKRAM' };
-let weaponHudShown: WeaponId | null = null;
-// 右下の武器表示: 構えている武器のアイコンと名前。持ち替えたら差し込み直す
-function updateWeaponHud() {
-  if (weaponHudShown === game.shownWeapon) return;
-  const first = weaponHudShown === null;
-  weaponHudShown = game.shownWeapon;
-  weaponName.textContent = WEAPON_LABELS[game.shownWeapon];
-  for (const svg of weaponIcons) svg.classList.toggle('on', svg.dataset.w === game.shownWeapon);
-  if (first) return;
-  const icon = weaponIcons.find((svg) => svg.dataset.w === game.shownWeapon)!;
-  for (const el of [weaponName, icon]) {
-    el.classList.remove('in');
-    void el.getBoundingClientRect(); // 続けて持ち替えても頭から流し直す
-    el.classList.add('in');
-  }
-}
 // ---- 右の操作一覧 ----（ui/controlsHud.ts）
 
 function updateGun(dt: number) {
