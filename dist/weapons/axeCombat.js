@@ -65,7 +65,7 @@ export const AXE_POWER_LOW = 0.85; // 勢い 0 のときの威力の倍率
 export const AXE_POWER_HIGH = 1.5; // 勢い 1 のときの威力の倍率
 export const AXE_POWER_HASTE = 0.2; // 勢い 1 のとき、振りをこれだけ速める
 // ---- 右クリックの打ち上げ ----
-// 地上で右クリックを押すと打ち上げ。当たった敵は真上へ飛び、自分も同じくらい跳び上がる。空中で当たった敵は叩きつけで地面へ叩き落とす
+// 右クリックで打ち上げ。当たった敵は真上へ飛び、地上なら自分も同じくらい跳び上がる（空中では跳び上がらない）。空中で当たった敵は叩きつけで地面へ叩き落とす
 export const AXE_LAUNCH_SELF_SPEED = 11.5;
 export const AXE_LAUNCH_KEEP = 0.3; // 打ち上げたとき、自分の水平の速さをこれだけ残す（敵から離れていかないように）
 // 右クリックを押し続けていれば、振りかぶった所（AXE_LAUNCH_COCK）で止めて構え、離したら振り上げる
@@ -75,7 +75,7 @@ let axeStance = false; // 打ち上げの構えで止めている
 let axeCocked = false; // 構えきった（握り直しの音を鳴らした）
 let axeLaunchedAir = false; // 打ち上げで自分も跳び上がり、まだ着地していない（この間だけ叩きつけが出る）
 export const axeDashing = () => player.dashTime > 0 || game.sinceDash < DASH_ATTACK_WINDOW;
-export const axeLaunchable = () => player.onGround && !player.sliding && !player.wallRunning && !axeDashing();
+export const axeLaunchable = () => !player.sliding && !player.wallRunning && !axeDashing();
 let axePower = 0; // 今の攻撃の勢い (0..1)
 let axeSmashFromY = NaN; // 空中の叩きつけで落ち始めた高さ（足元）。着地するまで NaN 以外
 // 空中の叩きつけで着地したあと、斧を床に打ち込んだ重さで少しだけ動けなくなる（歩く・跳ぶ・ダッシュ・次の攻撃）
@@ -696,7 +696,7 @@ export function tryAxeHit(def) {
     }
     if (!any)
         return false;
-    if (def === AXE_LAUNCH && player.onGround) { // 構えたまま跳んで空中で振ったときは、自分は跳び上がらない
+    if (def === AXE_LAUNCH && player.onGround) { // 空中で振ったときは、自分は跳び上がらない
         velocity.y = AXE_LAUNCH_SELF_SPEED;
         velocity.x *= AXE_LAUNCH_KEEP;
         velocity.z *= AXE_LAUNCH_KEEP;
@@ -783,7 +783,7 @@ export function updateAxeAttack(dt) {
             }
         }
     }
-    // 右クリック: 打ち上げ（地上だけ）
+    // 右クリック: 打ち上げ（地上でも空中でも）
     if (axeState.axeLaunchPressed) {
         axeState.axeLaunchPressed = false;
         if (axeReady() && axeLaunchable() && axeState.axeAttack !== AXE_LAUNCH) {
