@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import { loftRings } from '../geometry.js';
 // ---- 武器: 剣 ----
 // 黒い直刀。鎬（しのぎ）のある六角断面の刃に、斜めに落とした切っ先。刃はクナイと同じ黒光りする質感にする
+const BLADE_LEN = 0.72;
+const TIP_LEN = 0.09;
+const GRIP_LEN = 0.2;
+const bladeBase = GRIP_LEN / 2 + 0.035; // 鍔とはばきの上から刃が始まる
+// 原点（握る位置）から切っ先までと、刃の付け根までの長さ
+export const SWORD_TIP_Y = bladeBase + BLADE_LEN;
+export const SWORD_BLADE_BASE_Y = bladeBase;
 // +Y 方向が切っ先になるよう組み立てる（原点は握る位置 = 柄の中ほど）。刃（切る側）は +X
 export function createSword(mats) {
     const sword = new THREE.Group();
-    const BLADE_LEN = 0.72;
-    const TIP_LEN = 0.09;
-    const GRIP_LEN = 0.2;
-    const bladeBase = GRIP_LEN / 2 + 0.035; // 鍔とはばきの上から刃が始まる
     // 刃の断面: 棟（-X）は平らな面、鎬（少し棟寄り）で最も厚く、刃先（+X）で 0 になる
     const section = (y, w, t) => [
         new THREE.Vector3(-w / 2, y, t * 0.35),
@@ -48,8 +51,6 @@ export function createSword(mats) {
     pommel.scale.set(1, 1, 0.8);
     pommel.position.y = -GRIP_LEN / 2 - 0.008;
     sword.add(pommel);
-    sword.userData.tipY = bladeBase + BLADE_LEN;
-    sword.userData.bladeBaseY = bladeBase;
     return sword;
 }
 // 右手で柄を握り、刃を前上方へ立てて構える
