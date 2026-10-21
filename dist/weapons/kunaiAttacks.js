@@ -150,3 +150,5 @@ export const ATTACKS = {
 };
 export const GROUND_COMBO = [SLASH_1, SLASH_2, FINISHER];
 export const COMBO_RESET = 0.35; // 攻撃が終わってからこの時間内に振れば次の段へつながる
+export const RETURN_SWISH = { at: 0, dur: 0.2, f0: 1400, f1: 600, gain: 0.06 };
+export const THROW_SWISH = { at: 0, dur: 0.16, f0: 900, f1: 2800, gain: 0.1 };

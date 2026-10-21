@@ -218,3 +218,7 @@ export const COMBO_RESET = 0.35; // 攻撃が終わってからこの時間内�
 
 // 当たりの定義: 攻撃の定義のうち、当たったときの反応と演出に使うもの（どの武器も共通）
 export type HitDef = Pick<AttackDef, 'kick' | 'knock' | 'hitStop' | 'fx' | 'dmg' | 'slash'>;
+
+export const RETURN_SWISH: SwishDef = { at: 0, dur: 0.2, f0: 1400, f1: 600, gain: 0.06 };
+
+export const THROW_SWISH: SwishDef = { at: 0, dur: 0.16, f0: 900, f1: 2800, gain: 0.1 };
