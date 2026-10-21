@@ -2,7 +2,7 @@
 export const EYE_HEIGHT = 1.6;
 export const WALK_SPEED = 8;
 export const SPRINT_SPEED = 15;
-export const JUMP_SPEED = 6;
+export const JUMP_SPEED = 7;
 export const GRAVITY = 20;
 export const GROUND_ACCEL = 90; // 地上での加減速
 export const GROUND_FRICTION = 60; // 入力がないときの地上での減速
