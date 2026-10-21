@@ -513,6 +513,11 @@ window.addEventListener('keydown', (e) => {
     else if (e.code === 'KeyO') {
         togglePanel('options');
     }
+    else if (e.code === 'KeyG' && !e.repeat) {
+        // 聴き比べ用: G で UI の音の案を切り替え、決定の音を鳴らす
+        showToast(`UI の音: ${sfx.cycleUiVariant()}`);
+        sfx.playUiSelect();
+    }
 });
 // 訓練場へ入るときは、タイトルをすぐには消さずに払い出す。切り替えの帯で覆いきったら（switchToStage）、
 // 一時停止の画面に作り替える

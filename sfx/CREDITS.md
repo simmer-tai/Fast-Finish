@@ -13,6 +13,7 @@
 | swish | Swishes Sound Pack / RPG Sound Pack (swing) | https://opengameart.org/content/swishes-sound-pack, https://opengameart.org/content/rpg-sound-pack |
 | blade / clash | 20 Sword Sound Effects (Attacks and Clashes) | StarNinjas — https://opengameart.org/content/20-sword-sound-effects-attacks-and-clashes |
 | unsheathe / metal_small | RPG Sound Pack | artisticdude — https://opengameart.org/content/rpg-sound-pack |
+| key_down / key_up（メカニカルキーボードの打鍵） | Single Key Presses on Mechanical Keyboard / Keyboard - Press down, Key release（Cherry MX Brown） | Xemptful — https://freesound.org/people/Xemptful/sounds/660387/ , Foxfire- — https://freesound.org/people/Foxfire-/sounds/570754/ , https://freesound.org/people/Foxfire-/sounds/570755/ |
 | chain / blade_hi | 80 CC0 RPG SFX（chain_01〜03, blade_01〜03） | rubberduck — https://opengameart.org/content/80-cc0-rpg-sfx |
 
 加工内容: モノラル化、44.1kHz 化、頭の無音のカット、-50dB で尾を切ってフェードアウト、-1dBFS に正規化。

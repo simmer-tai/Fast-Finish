@@ -473,9 +473,14 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
     sample('blade', { gain: Math.min(0.9, s.gain * 1.3), rate: 0.85 * speed, delay: at * 0.6, lp: 9000, reverb: 0.12 });
     sample('swish', { gain: Math.min(0.8, s.gain * 1.2), rate: 0.7 * speed, delay: at, reverb: 0.08 });
   } else if (axe) {
-    // 斧は厚い頭が空気を押しのける、低く太い「ブォン」。録音を遅く回して低い帯域だけ残す
-    sample('swish', { gain: Math.min(0.8, s.gain * 1.4), rate: 0.5 * speed, delay: at, lp: 2200, reverb: 0.1 });
-    sample('blade', { gain: Math.min(0.4, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.8, lp: 3000 });
+    // 斧は厚い頭が空気を押しのける、低く太い「ブォン」。録音を遅く回して低い帯域だけ残す。
+    // 遅く回すと録音が 2〜3 倍に伸びるので、振りの録音の山（元の 0.03 秒あたり）を合成の山（s.dur * 0.4）に合わせ、
+    // どちらも振りの長さで切る（切らないと刃の録音が 1 秒近く尾を引き、次の振りにかぶる）
+    const end = s.dur * 1.05;
+    const swishRate = 0.5 * speed;
+    const swishAt = Math.max(0, s.dur * 0.4 - 0.03 / swishRate);
+    sample('swish', { gain: Math.min(0.8, s.gain * 1.4), rate: swishRate, delay: swishAt, lp: 2200, reverb: 0.1, cut: end - swishAt });
+    sample('blade', { gain: Math.min(0.4, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.8, lp: 3000, cut: end - at * 0.8 });
     noise('lowpass', 500, 260, Math.min(0.3, s.gain * 0.5), s.dur * 1.1, { attack: s.dur * 0.35 });
   } else if (sickle) {
     sample('blade_hi', { gain: Math.min(0.85, s.gain * 1.5), rate: 1.15 * speed, delay: at * 0.5, hp: 1500, reverb: 0.1 });
@@ -1105,6 +1110,7 @@ export function ensureUiAudio() {
     uiBus = ui.createGain();
     uiBus.gain.value = 7;
     uiBus.connect(comp).connect(ui.destination);
+    loadUiBank(ui);
   }
   if (ui.state === 'suspended') ui.resume();
 }
@@ -1132,6 +1138,43 @@ function uiTone(f0: number, f1: number, peak: number, dur: number, o: { type?: O
   osc.stop(t0 + dur + 0.02);
 }
 
+// タイトルではまだゲームの素材を読んでいないので、UI で使う打鍵の素材だけ先に読む
+const uiBank: Record<string, AudioBuffer[]> = {};
+async function loadUiBank(c: AudioContext) {
+  try {
+    const manifest: Record<string, string[]> = await (await fetch('./sfx/manifest.json')).json();
+    for (const group of ['key_down', 'key_up']) {
+      uiBank[group] = await Promise.all(manifest[group].map(async (file) => c.decodeAudioData(await (await fetch(`./sfx/${file}`)).arrayBuffer())));
+    }
+  } catch (e) {
+    console.warn('UI の効果音の素材を読み込めませんでした', e);
+  }
+}
+
+// 打鍵の素材を 1 つ鳴らす。読めていなければ何もしない
+// pick を渡すと、その番号の素材だけから選ぶ
+function uiKey(group: 'key_down' | 'key_up', o: { gain?: number; rate?: number; delay?: number; hp?: number; lp?: number; pick?: number[] } = {}) {
+  const all = uiBank[group];
+  const list = o.pick ? o.pick.map((i) => all?.[i]).filter((b) => b) : all;
+  if (!ui || ui.state !== 'running' || !list?.length) return;
+  const t0 = ui.currentTime + (o.delay ?? 0);
+  const src = ui.createBufferSource();
+  src.buffer = list[Math.floor(Math.random() * list.length)];
+  src.playbackRate.value = (o.rate ?? 1) * rand(0.97, 1.03);
+  let node: AudioNode = src;
+  for (const [type, freq] of [['highpass', o.hp], ['lowpass', o.lp]] as const) {
+    if (!freq) continue;
+    const f = ui.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    node = node.connect(f);
+  }
+  const g = ui.createGain();
+  g.gain.value = (o.gain ?? 1) * 0.12; // バスで 7 倍するので、ここで素材の大きさをならす
+  node.connect(g).connect(uiBus);
+  src.start(t0);
+}
+
 function uiClick(type: BiquadFilterType, f0: number, f1: number, peak: number, dur: number, delay = 0) {
   if (!ui || ui.state !== 'running') return;
   const t0 = ui.currentTime + delay;
@@ -1151,34 +1194,74 @@ function uiClick(type: BiquadFilterType, f0: number, f1: number, peak: number, d
   src.stop(t0 + dur + 0.02);
 }
 
-// 項目に乗ったときの、ごく小さい「チッ」
+// 聴き比べ用: タイトルなどで G を押すと UI の音の案を切り替える
+const UI_VARIANTS = ['重い打鍵（コトッ）', 'さらに重く（ゴトッ）', '前の銀軸（カタッ）'];
+let uiVariant = 0;
+export function cycleUiVariant() {
+  uiVariant = (uiVariant + 1) % UI_VARIANTS.length;
+  return UI_VARIANTS[uiVariant];
+}
+
+// UI の音はメカニカルキーボードの打鍵にする。押し込んで底を打つ音（key_down）と、戻る音（key_up）を重ねる。
+// 重い案は、低い成分のある茶軸の押し込み（key_down の 4 番）だけを、遅く再生して高い音を落とし、下に鈍い芯を足す
+const HEAVY_DOWN = [4];
+const UI_HEAVY = [
+  { rate: 0.8, lp: 4200, core: 1 },
+  { rate: 0.66, lp: 2800, core: 1.6 },
+];
+const heavy = () => UI_HEAVY[uiVariant];
+
+// 重い打鍵: 押し込み・鈍い芯・少し遅れて戻る音
+function heavyKey(gain: number, rateMul: number, delay = 0, up = true) {
+  const h = heavy()!;
+  uiKey('key_down', { pick: HEAVY_DOWN, gain, rate: h.rate * rateMul, lp: h.lp, delay });
+  uiClick('lowpass', 900 * rateMul, 70, 0.18 * h.core * gain, 0.09, delay);
+  uiTone(115 * rateMul, 48, 0.32 * h.core * gain, 0.13, { delay });
+  if (up) uiKey('key_up', { pick: [1], gain: 0.45 * gain, rate: h.rate * rateMul, lp: h.lp, delay: delay + 0.08 });
+}
+
+// 項目に乗ったとき: キーに指が触れて少し沈む程度の、ごく小さい「コッ」
 export function playUiHover() {
   if (!ui) return;
   const now = ui.currentTime;
   if (now - lastHover < 0.04) return; // なぞったときに鳴りすぎないように
   lastHover = now;
-  uiClick('bandpass', 3800, 2600, 0.06, 0.025);
-  uiTone(1500, 1300, 0.012, 0.03);
+  if (!heavy()) return uiKey('key_up', { gain: 0.35, rate: 1.1, hp: 1500 });
+  const h = heavy()!;
+  uiKey('key_down', { pick: HEAVY_DOWN, gain: 0.25, rate: h.rate * 1.05, lp: h.lp * 0.8 });
+  uiTone(140, 90, 0.05 * h.core, 0.04);
 }
 
-// 決定: 低く締まった「トッ」
+// 決定: 底まで打って戻る
 export function playUiSelect() {
-  uiClick('bandpass', 2600, 1200, 0.12, 0.035);
-  uiTone(190, 85, 0.28, 0.14);
+  if (!heavy()) {
+    uiKey('key_down', { rate: 0.95 });
+    uiKey('key_up', { gain: 0.5, delay: 0.07 });
+    return;
+  }
+  heavyKey(1, 1);
 }
 
-// 開く（モード選択・操作説明）: 上がっていく 2 つの刻み
+// 開く（モード選択・操作説明）: 2 つのキーを続けて打つ。後ろを少し高く
 export function playUiOpen() {
-  uiClick('bandpass', 2400, 2000, 0.07, 0.025);
-  uiTone(620, 600, 0.03, 0.05);
-  uiClick('bandpass', 3200, 2800, 0.06, 0.025, 0.055);
-  uiTone(930, 900, 0.025, 0.06, { delay: 0.055 });
+  if (!heavy()) {
+    uiKey('key_down', { gain: 0.8, rate: 0.95 });
+    uiKey('key_down', { rate: 1.08, delay: 0.06 });
+    uiKey('key_up', { gain: 0.45, delay: 0.13 });
+    return;
+  }
+  heavyKey(0.75, 0.95, 0, false);
+  heavyKey(1, 1.08, 0.065);
 }
 
-// 戻る・閉じる: 下がっていく刻み
+// 戻る・閉じる: 浅く軽く押して離す。低めにして下がった感じにする
 export function playUiBack() {
-  uiClick('bandpass', 2600, 1400, 0.07, 0.04);
-  uiTone(720, 430, 0.04, 0.09);
+  if (!heavy()) {
+    uiKey('key_down', { gain: 0.6, rate: 0.82, lp: 5000 });
+    uiKey('key_up', { gain: 0.4, rate: 0.85, delay: 0.05 });
+    return;
+  }
+  heavyKey(0.7, 0.85);
 }
 
 // 選べない項目: 鈍く 2 回つかえる

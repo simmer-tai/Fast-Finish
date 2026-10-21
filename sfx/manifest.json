@@ -203,5 +203,16 @@
   "blade_hi_0.ogg",
   "blade_hi_1.ogg",
   "blade_hi_2.ogg"
+ ],
+ "key_down": [
+  "key_down_0.ogg",
+  "key_down_1.ogg",
+  "key_down_2.ogg",
+  "key_down_3.ogg",
+  "key_down_4.ogg"
+ ],
+ "key_up": [
+  "key_up_0.ogg",
+  "key_up_1.ogg"
  ]
 }
