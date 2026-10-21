@@ -603,6 +603,43 @@ export function playFinale(freeze: number) {
   sample('bell', { ...dry, gain: 0.22, rate: 0.5, lp: 3000, delay: freeze + 0.06 });
 }
 
+// 倒れた: 世界の音を引いて、体に沈む鈍い一打と、長くこもった地鳴りと耳鳴りだけを残す。世界の音は戻さない
+// （戻すのはステージに入り直したとき = 読み込み直したとき）
+export function playDeath() {
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  worldGain.gain.cancelScheduledValues(t0);
+  worldGain.gain.setValueAtTime(worldGain.gain.value, t0);
+  worldGain.gain.linearRampToValueAtTime(0, t0 + 0.6);
+  const out = parryBus;
+  const dry = { out, pan: 0, jitter: 0.02 };
+  sample('thud_heavy', { ...dry, gain: 1.0, rate: 0.45, lp: 600 });
+  sample('punch_heavy', { ...dry, gain: 0.7, rate: 0.45, lp: 700 });
+  sample('gun_sub', { ...dry, gain: 0.8, rate: 0.5 });
+  tone(90, 24, 1.0, 1.8, { attack: 0.004, out });
+  noise('lowpass', 500, 40, 0.3, 3, { attack: 0.03, out });
+  // 倒れきったときの、床に落ちる鈍い音
+  sample('thud', { ...dry, gain: 0.5, rate: 0.55, lp: 500, delay: 0.75 });
+  for (const [freq, gain] of [[3200, 0.016], [3211, 0.011]]) {
+    const osc = ctx.createOscillator();
+    osc.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.2);
+    osc.connect(g).connect(out);
+    osc.start(t0);
+    osc.stop(t0 + 3.3);
+  }
+}
+
+// ゲームオーバーの見出しを落とす、低くこもった「ドゥン」
+export function playGameOver() {
+  uiClick('bandpass', 2200, 500, 0.12, 0.06);
+  uiClick('lowpass', 1600, 60, 0.4, 0.9);
+  uiTone(70, 24, 0.9, 1.4);
+}
+
 // スコアの音は画面の表示なので、スローのこもりも引き伸ばしも通さず、いつも同じ高さで鳴らす
 const uiRate = (r: number) => r / (1 - 0.35 * slowAmt);
 
@@ -681,7 +718,7 @@ export function playGrip() {
 }
 
 // 武器を持ち替えた: 武器ごとに抜く音を変える
-export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe') {
+export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'chakram') {
   sample('gear', { gain: 0.35 });
   sample('cloth', { gain: 0.2, rate: 1.2 });
   if (weapon === 'kunai') {
@@ -691,9 +728,10 @@ export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'ax
     sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
     sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
   } else {
-    // 斧は重いので低く遅く
-    sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : 1, delay: 0.02, reverb: 0.15 });
-    playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : 1.2, 0.4, 0.4);
+    // 斧は重いので低く遅く、チャクラムは薄い輪なので高く
+    const rate = weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : weapon === 'chakram' ? 1.3 : 1;
+    sample('unsheathe', { gain: 0.55, rate, delay: 0.02, reverb: 0.15 });
+    playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : weapon === 'chakram' ? 1.9 : 1.2, 0.4, 0.4);
     if (weapon === 'sickle') playChain('ready');
   }
 }
@@ -952,11 +990,51 @@ export function playTransition() {
   noise('bandpass', 1600, 380, 0.14, 0.6, { attack: 0.06, q: 0.5, reverb: 0.3, delay: 0.65 });
 }
 
-// 地面から箱が伸び上がる間の、低く重い地鳴り
+// 地面から箱が伸び上がる間の、低く重い地鳴り。stopStageRise() を呼ぶまで鳴り続ける
+let riseRumble: { gain: GainNode; srcs: AudioScheduledSourceNode[] } | null = null;
 export function playStageRise(delay = 0) {
-  noise('lowpass', 160, 60, 0.3, 1.9, { attack: 0.35, reverb: 0.3, delay });
-  tone(48, 34, 0.22, 1.8, { attack: 0.3, delay });
+  if (!ctx) return;
+  stopStageRise();
+  const t0 = ctx.currentTime + delay;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(1, t0 + 0.35);
+  g.connect(bus);
+  const send = ctx.createGain();
+  send.gain.value = 0.3;
+  g.connect(send).connect(reverbIn);
+  // ゆっくり揺れる「ゴゴゴ」: ノイズの帯域を揺らして、ずっと同じ音に聞こえないようにする
+  const src = loopNoise(ctx);
+  const f = filter('lowpass', 110, 0.8);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 2.3;
+  const lfoDepth = ctx.createGain();
+  lfoDepth.gain.value = 35;
+  lfo.connect(lfoDepth).connect(f.frequency);
+  lfo.start(t0);
+  const ng = ctx.createGain();
+  ng.gain.value = 0.3;
+  src.connect(f).connect(ng).connect(g);
+  const osc = ctx.createOscillator();
+  osc.frequency.value = 40;
+  const og = ctx.createGain();
+  og.gain.value = 0.2;
+  osc.connect(og).connect(g);
+  osc.start(t0);
+  riseRumble = { gain: g, srcs: [src, lfo, osc] };
   sample('gear', { gain: 0.12, rate: 0.45, delay: delay + 0.2, lp: 900, reverb: 0.3 });
+}
+
+// せり上がりが終わった: 地鳴りを引いて止める
+export function stopStageRise() {
+  if (!ctx || !riseRumble) return;
+  const t0 = ctx.currentTime;
+  const { gain, srcs } = riseRumble;
+  riseRumble = null;
+  gain.gain.cancelScheduledValues(t0);
+  gain.gain.setValueAtTime(Math.max(gain.gain.value, 0.0001), t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+  for (const s of srcs) s.stop(t0 + 0.55);
 }
 
 // アリーナが伸びきって止まった「ズン」

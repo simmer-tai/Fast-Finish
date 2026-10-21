@@ -14,6 +14,20 @@ export interface StageBox {
   gridOrigin?: { x: number; y: number; z: number }; // 格子の起点。省けば世界の原点（格子からずれた所に置く物の縁に線を乗せる）
 }
 
+// 坂: 上面を傾けた、くさび形の台（当たり判定あり）。底面 y0 から立ち、up の向きへ上っていく。
+// 低い端の上面は y0（そこから歩いて乗れる）、高い端の上面は h
+export interface StageRamp {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  y0: number;
+  h: number;
+  up: '+x' | '-x' | '+z' | '-z';
+  light: number;
+  look: 'terrain' | 'struct';
+}
+
 export interface StageLine {
   x: number;
   y: number;
@@ -24,6 +38,7 @@ export interface StageLine {
 
 export interface StageLayout {
   boxes: StageBox[]; // 当たり判定のある箱
+  ramps?: StageRamp[]; // 坂
   decor: StageBox[]; // 見た目だけの箱（当たり判定なし。浮かせてよい）
   colliders: { minX: number; maxX: number; minZ: number; maxZ: number; h: number; y0?: number }[]; // 当たり判定だけの見えない箱
   scenery: StageBox[]; // 遠景（当たり判定なし。操作を返すのを待たない）

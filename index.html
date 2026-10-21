@@ -328,6 +328,59 @@
       #overlay .rv-rank.show .rv-wave { animation: rv-wave 0.8s 0.14s cubic-bezier(0.1, 0.8, 0.3, 1) both; }
       @keyframes rv-wave { from { opacity: 0.7; transform: skewX(-24deg) scale(0.6); } to { opacity: 0; transform: skewX(-24deg) scale(1.9); border-width: 0.5px; } }
       @media (max-width: 900px) { #overlay .rv-rank { --size: 30vw; right: 24px; } }
+      /* ---- ゲームオーバー ----
+         結果の画面と同じ組み方で、靄を濃く暗めにする。出した瞬間から CSS の遅らせで順に出す（見出しの叩きつけは gameOver.ts の T_SLAM と揃える） */
+      #overlay .over-view { display: none; position: absolute; inset: 0; cursor: default; }
+      #overlay.over .over-view { display: block; }
+      #overlay.over .frame { display: none; }
+      #overlay.over {
+        background: linear-gradient(90deg, rgba(222, 222, 222, 0.97) 0%, rgba(206, 206, 206, 0.92) 46%, rgba(180, 180, 180, 0.72) 100%);
+      }
+      body.player-down #crosshair { opacity: 0; }
+      #overlay .go-shake { position: absolute; inset: 0; }
+      #overlay .go-ghost {
+        position: absolute; left: 0; bottom: -0.2em; white-space: nowrap; pointer-events: none;
+        font-weight: 800; font-size: 34vw; line-height: 0.8; letter-spacing: 0.02em; color: transparent;
+        -webkit-text-stroke: 1px rgba(51, 51, 51, 0.1);
+        animation: rv-fade 1.2s ease-out both, rv-drift 60s linear infinite;
+      }
+      #overlay .go-main { position: absolute; left: calc(80 * var(--u)); top: calc(80 * var(--u)); width: min(calc(640 * var(--u)), 48vw); }
+      #overlay .go-title { margin: calc(16 * var(--u)) 0 0; font-weight: 600; font-size: calc(128 * var(--u)); line-height: 0.8; letter-spacing: 0; }
+      #overlay .go-title span { display: block; width: max-content; }
+      #overlay .go-title .s1 { animation: ov-slide 0.45s 0.05s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      /* OVER: 黒い帯ごと手前から叩きつける */
+      #overlay .go-title .s2 {
+        position: relative; isolation: isolate; color: #fff; margin-top: 0.08em; padding: 0.04em 0.14em 0.02em 0.02em;
+        animation: go-slam 0.34s 0.12s cubic-bezier(0.3, 0, 0.2, 1) both;
+      }
+      #overlay .go-title .s2::before { content: ""; position: absolute; z-index: -1; inset: 0 -0.08em 0 -0.06em; background: var(--ink); transform: skewX(-24deg); }
+      @keyframes go-slam {
+        0% { opacity: 0; transform: scale(2.4); filter: blur(calc(5 * var(--u))); }
+        55% { opacity: 1; filter: none; }
+        75% { transform: scale(0.96); }
+        100% { opacity: 1; transform: none; }
+      }
+      #overlay .go-rule { margin: calc(30 * var(--u)) 0 calc(14 * var(--u)); animation-delay: 0.5s; }
+      #overlay .go-rows .rv-row { animation: ov-slide 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      #overlay .go-rows .rv-row:nth-child(1) { animation-delay: 0.65s; }
+      #overlay .go-rows .rv-row:nth-child(2) { animation-delay: 0.75s; }
+      #overlay .go-rows .rv-row:nth-child(3) { animation-delay: 0.85s; }
+      #overlay .go-menu { margin-top: calc(40 * var(--u)); }
+      #overlay .go-menu button:nth-child(1) { animation-delay: 1.05s; }
+      #overlay .go-menu button:nth-child(2) { animation-delay: 1.13s; }
+      #overlay .go-kicker { animation-delay: 0.3s; }
+      /* 右: 倒しきれなかった数。線だけの巨大な数字の上に、薄い塗りを重ねる */
+      #overlay .go-left {
+        position: absolute; right: calc(160 * var(--u)); top: 50%; transform: translateY(-50%); text-align: center;
+        animation: ov-fade 0.8s 0.9s ease-out both;
+      }
+      #overlay .go-left small { display: flex; align-items: center; justify-content: center; gap: calc(12 * var(--u)); font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.5em; color: var(--ink-soft); }
+      #overlay .go-left small::before { content: ""; width: calc(4 * var(--u)); height: calc(12 * var(--u)); background: var(--ink); transform: skewX(-24deg); }
+      #overlay .go-left b {
+        display: block; margin-top: 0.06em; font-weight: 800; font-size: calc(420 * var(--u)); line-height: 0.8; font-variant-numeric: tabular-nums;
+        color: rgba(51, 51, 51, 0.12); -webkit-text-stroke: 1.5px rgba(51, 51, 51, 0.6);
+      }
+      @media (max-width: 900px) { #overlay .go-left { right: 24px; } #overlay .go-left b { font-size: 26vw; } }
       @keyframes ov-fade { from { opacity: 0; } to { opacity: 1; } }
       @keyframes ov-slide {
         from { opacity: 0; transform: translateX(calc(-28 * var(--u))); clip-path: inset(calc(-40 * var(--u)) 100% calc(-40 * var(--u)) calc(-40 * var(--u))); }
@@ -596,8 +649,15 @@
          ステージ選択の上に濃い靄を掛け（ぼかしは裏の 3D ごと毎フレーム掛け直して重いので使わない）、中央に詳細と同じ枠の窓を出す。左に武器の行を縦に並べ、カーソルの武器を右に大きく見せる */
       #overlay .sw-picker { display: none; position: absolute; inset: 0; z-index: 2; }
       #overlay.pick-weapon .sw-picker { display: block; }
+      /* 背景の動画。読めるまでは消しておき、裏のステージ選択がそのまま靄越しに見える。
+         ぼかしは main.ts が小さな canvas の中で掛ける。ぼかしで縁が透けないよう一回り大きく置く */
+      #overlay .sw-bg {
+        position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scale(1.05);
+        opacity: 0; transition: opacity 0.3s;
+      }
+      #overlay .sw-bg.has-video { opacity: 1; }
       #overlay .sw-dim {
-        position: absolute; inset: 0; background: rgba(226, 226, 226, 0.86);
+        position: absolute; inset: 0; background: rgba(226, 226, 226, 0.78);
         animation: ov-fade 0.2s both;
       }
       #overlay .sw-win {
@@ -889,20 +949,27 @@
       #ammo i { display: block; width: 5px; height: 12px; background: #333; transform: skewX(-24deg); }
       #ammo i.spent { background: rgba(51, 51, 51, 0.2); }
       #ammo i.marked { background: #c4161c; }
-      /* デッドアイの印: 敵の体に重ねる赤い × */
+      /* デッドアイの印: 敵の体に重ねる赤い ×。四隅のカギが外から締まって白から赤に変わり、少し遅れて × が出る */
       .deadeye-mark {
         position: fixed; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; pointer-events: none;
       }
-      .deadeye-mark svg {
-        display: block; width: 100%; height: 100%; overflow: visible;
-        filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9)); animation: deadeye-in 0.16s ease-out;
-      }
+      .deadeye-mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
       body.on-title .deadeye-mark { visibility: hidden; }
-      .deadeye-mark path { fill: none; stroke: #c4161c; stroke-width: 3.2; stroke-linecap: round; }
-      @keyframes deadeye-in {
-        from { opacity: 0; transform: scale(2.2) rotate(-45deg); }
-        to { opacity: 1; transform: none; }
+      .deadeye-mark path { fill: none; stroke-linecap: round; transform-box: view-box; transform-origin: 50% 50%; }
+      .deadeye-mark .x {
+        stroke: #c4161c; stroke-width: 3.2; filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
+        animation: deadeye-pop 0.12s 0.14s both;
       }
+      .deadeye-mark .br {
+        stroke: #c4161c; stroke-width: 1.6; stroke-linecap: square;
+        animation: deadeye-close 0.2s cubic-bezier(0.2, 0.9, 0.25, 1) both, deadeye-flash 0.35s 0.2s both;
+      }
+      @keyframes deadeye-close {
+        from { opacity: 0; transform: scale(2.6); stroke-width: 0.8; stroke: #fff; }
+        to { opacity: 1; transform: none; stroke: #fff; }
+      }
+      @keyframes deadeye-flash { from { stroke: #fff; } to { stroke: #c4161c; } }
+      @keyframes deadeye-pop { from { transform: scale(0); } to { transform: none; } }
       /* 武器の操作一覧: 画面右の中ほどに、構えている武器の操作名と入力のアイコンを並べる。長押しはアイコンの下に HOLD */
       #controls {
         position: absolute; right: 40px; top: 50%; display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
@@ -1220,6 +1287,11 @@
               <path d="M23.5 16.5 L111.1 16.8 L113.5 17.6 L113.7 20.8 L112.3 26.2 L110.1 25.4 L108.7 22.2 L75.1 22.0 L72.9 25.6 L70.3 25.6 L69.1 21.8 L23.5 21.5 Z" />
               <path d="M13.5 1.1 L17.6 14.8 L24.4 16.4 L24.4 21.4 L19.1 22.2 L19.7 29.4 L25.8 37.4 L23.2 39.0 L12.5 38.6 L4.2 35.5 L8.2 22.2 L10.4 14.8 Z" />
             </svg>
+            <!-- チャクラム: 刃の外輪と内輪を細い切れ目で分け、内輪の中を S 字の帯で二つの勾玉形にくり抜く -->
+            <svg data-w="chakram" viewBox="0 0 120 40">
+              <path fill-rule="evenodd" d="M41 20 A19 19 0 1 0 79 20 A19 19 0 1 0 41 20 Z M50.1 11.6 L48.9 13.3 L47.9 15.2 L47.3 17.3 L47.0 19.4 L47.1 21.5 L47.5 23.6 L48.3 25.6 L49.4 27.4 L50.7 29.1 L52.3 30.5 L54.2 31.6 L54.2 31.6 L53.3 30.4 L52.7 29.1 L52.3 27.6 L52.2 26.1 L52.5 24.7 L52.9 23.3 L53.7 22.0 L54.6 20.9 L55.8 20.0 L57.1 19.3 L58.5 18.9 L60.0 18.7 L61.4 18.6 L62.6 18.0 L63.7 17.2 L64.5 16.1 L65.0 14.9 L65.2 13.5 L65.0 12.2 L64.5 10.9 L63.7 9.8 L62.6 9.0 L61.4 8.5 L60.0 8.3 L59.1 8.1 L58.1 7.9 L57.1 7.9 L56.1 8.0 L55.2 8.2 L54.2 8.5 L53.3 8.9 L52.4 9.5 L51.6 10.1 Z M69.9 28.4 L71.1 26.7 L72.1 24.8 L72.7 22.7 L73.0 20.6 L72.9 18.5 L72.5 16.4 L71.7 14.4 L70.6 12.6 L69.3 10.9 L67.7 9.5 L65.8 8.4 L65.8 8.4 L66.7 9.6 L67.3 10.9 L67.7 12.4 L67.8 13.9 L67.5 15.3 L67.1 16.7 L66.3 18.0 L65.4 19.1 L64.2 20.0 L62.9 20.7 L61.5 21.1 L60.0 21.3 L58.6 21.4 L57.4 22.0 L56.3 22.8 L55.5 23.9 L55.0 25.1 L54.8 26.5 L55.0 27.8 L55.5 29.1 L56.3 30.2 L57.4 31.0 L58.6 31.5 L60.0 31.7 L60.9 31.9 L61.9 32.1 L62.9 32.1 L63.9 32.0 L64.8 31.8 L65.8 31.5 L66.7 31.1 L67.6 30.5 L68.4 29.9 Z" />
+              <circle cx="60" cy="20" r="15.8" class="cut" />
+            </svg>
           </div>
           <div class="name"><span>KUNAI</span></div>
         </div>
@@ -1256,7 +1328,7 @@
           <div class="menu stage-list">
             <button type="button" data-stage="station"><span class="no">01</span><span>STATION</span><small>駅のホーム</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
             <button type="button" data-stage="warehouse"><span class="no">02</span><span>WAREHOUSE</span><small>物流倉庫</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
-            <button type="button" data-stage="" aria-disabled="true"><span class="no">03</span><span>? ? ?</span><small>LOCKED</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+            <button type="button" data-stage="parking"><span class="no">03</span><span>PARKING</span><small>立体駐車場</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
             <button type="button" data-stage="" aria-disabled="true"><span class="no">04</span><span>? ? ?</span><small>LOCKED</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           </div>
           <div class="menu stage-back">
@@ -1330,6 +1402,9 @@
               <feMerge><feMergeNode in="white" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
           </svg>
+          <!-- 背景にも同じプレビュー動画を画面いっぱいに流し、靄を透かして見せる。
+               手前の動画のフレームを小さく写して引き伸ばす（ぼかすので粗くてよい。同じ動画なのでずれない） -->
+          <canvas class="sw-bg" aria-hidden="true"></canvas>
           <div class="sw-dim"></div>
           <div class="sw-win">
             <div class="sw-win-head">
@@ -1342,6 +1417,7 @@
               <button type="button" data-weapon="sword" data-name="SWORD" data-ja="刀"><span class="no">03</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">SWORD</b><span class="ja">刀</span></span></button>
               <button type="button" data-weapon="sickle" data-name="CHAIN SICKLE" data-ja="鎖鎌"><span class="no">04</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">CHAIN SICKLE</b><span class="ja">鎖鎌</span></span></button>
               <button type="button" data-weapon="axe" data-name="BATTLE AXE" data-ja="バトルアックス"><span class="no">05</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">BATTLE AXE</b><span class="ja">バトルアックス</span></span></button>
+              <button type="button" data-weapon="chakram" data-name="CHAKRAM" data-ja="チャクラム"><span class="no">06</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">CHAKRAM</b><span class="ja">チャクラム</span></span></button>
             </div>
             <div class="sw-preview">
               <!-- 16:9 のプレビュー動画。previews/<武器>.mp4 を流し、無ければ NO SIGNAL の画面を出す -->
@@ -1404,6 +1480,30 @@
           </div>
         </div>
         <div class="rv-flash"></div>
+      </div>
+      <!-- ゲームオーバー。中身は gameOver.ts が入れる -->
+      <div class="over-view">
+        <div class="go-shake">
+          <div class="go-ghost" aria-hidden="true">GAME OVER GAME OVER </div>
+          <div class="go-main">
+            <div class="kicker go-kicker"></div>
+            <h1 class="go-title"><span class="s1">GAME</span><span class="s2">OVER</span></h1>
+            <div class="rule go-rule"></div>
+            <div class="go-rows">
+              <div class="rv-row"><small>TIME</small><i></i><b data-go="time">0:00.00</b></div>
+              <div class="rv-row"><small>KILLS</small><i></i><b data-go="kills">0 / 0</b></div>
+              <div class="rv-row"><small>SCORE</small><i></i><b data-go="score">0</b></div>
+            </div>
+            <div class="menu go-menu">
+              <button type="button" data-action="retry" class="active"><span>RETRY</span><small>R</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+              <button type="button" data-action="title"><span>TITLE</span><small>Q</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+            </div>
+          </div>
+          <div class="go-left">
+            <small>ENEMIES LEFT</small>
+            <b>0</b>
+          </div>
+        </div>
       </div>
       <div class="options">
         <section class="sec">

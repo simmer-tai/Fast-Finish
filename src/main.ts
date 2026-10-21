@@ -11,13 +11,16 @@ import {
   SICKLE_VIEW_MODEL_POS, createChainSickle, createHeldSickle, createLongChain, layChain, layLongChain,
 } from './chainSickle.js';
 import { AXE_REST_QUAT, AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
+import { CHAKRAM_VIEW_MODEL_POS, createHeldChakram } from './chakram.js';
 import * as sfx from './audio.js';
 import { ensureAudio, playGrip, playHit, playRing, playSwish, type HitKind } from './audio.js';
 import { showKillScore, totalScore, updateScoreHud, type KillBonus } from './score.js';
 import { finalScore, fmtTime, showResult, skipResult } from './result.js';
-import type { StageBox, StageLayout } from './stage.js';
+import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
+import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
 import { buildWarehouse } from './warehouse.js';
+import { buildParking } from './parking.js';
 import { createStageTitle, STAGE_TITLE_END } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
 
@@ -361,17 +364,17 @@ const RISE_FILL_START = 0.45; // 骨組みがこの割合まで伸びたら、�
 const RISE_SLAM_HEIGHT = 8; // これより高い箱が組み上がると、画面を揺らして重い音を鳴らす
 const RISE_FILL_DONE = 1e4; // 埋めきった箱の「埋まった高さ」（どの面も下になる）
 const riseRand = mulberry32(777);
-interface Riser { mesh: THREE.InstancedMesh; index: number; b: Block; delay: number; dur: number; fillDur: number; slammed: boolean }
+interface Riser { mesh: THREE.InstancedMesh; index: number; b: Block; ramp?: Ramp; delay: number; dur: number; fillDur: number; slammed: boolean }
 const risers: Riser[] = [];
 const riseMeshes = new Set<THREE.InstancedMesh>();
 let arenaRiseEnd = 0; // アリーナの中の箱がすべて組み上がる時刻（ここまでは操作を返さない）
 const riseDelayAt = (x: number, z: number) => RISE_WAVE * Math.sqrt(Math.hypot(x - riseOrigin.value.x, z - riseOrigin.value.y)) + riseRand() * 0.06;
-function addRiser(mesh: THREE.InstancedMesh, index: number, b: Block, inArena: boolean) {
+function addRiser(mesh: THREE.InstancedMesh, index: number, b: Block, inArena: boolean, ramp?: Ramp) {
   const delay = riseDelayAt((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2);
   const dur = 0.28 + 0.035 * b.h; // 高いものほど長く伸びる
   const fillDur = 0.25 + 0.03 * b.h;
   // 遠景（アリーナの外）は組み上がっても揺らさない
-  risers.push({ mesh, index, b, delay, dur, fillDur, slammed: !inArena });
+  risers.push({ mesh, index, b, ramp, delay, dur, fillDur, slammed: !inArena });
   riseMeshes.add(mesh);
   // 伸びる途中で縮んだ大きさのまま視錐台の判定をされないよう、カリングは切る
   mesh.frustumCulled = false;
@@ -385,6 +388,10 @@ function addRiser(mesh: THREE.InstancedMesh, index: number, b: Block, inArena: b
 // 1m のグリッドと箱の縁の線だけを濃く残して、ほかは描かない。埋まる境目には濃い帯を引く。
 // 霧の手前で色を混ぜるので、遠くの骨組みは霧に溶ける
 let riseBuildId = 0;
+// 置いた箱の面の向き（ワールド）。箱ごとに軸の伸び方が違っても（坂の斜面のように）向きがずれないよう、
+// 伸ばした軸の長さの 2 乗で割ってから回す（three.js が光の計算でしているのと同じ）
+const INSTANCE_NORMAL = `mat3(modelMatrix) * (mat3(instanceMatrix) * (objectNormal / max(vec3(
+  dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz), dot(instanceMatrix[1].xyz, instanceMatrix[1].xyz), dot(instanceMatrix[2].xyz, instanceMatrix[2].xyz)), vec3(1e-8))))`;
 function withRiseBuild<T extends THREE.Material>(mat: T): T {
   const prev = mat.onBeforeCompile;
   // three.js はシェーダーの使い回しを onBeforeCompile の中身で見分けるので、包んだもの同士が
@@ -405,7 +412,7 @@ function withRiseBuild<T extends THREE.Material>(mat: T): T {
         `#include <project_vertex>
         vFill = aFill;
         vBuildPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
-        vBuildNormal = mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal;
+        vBuildNormal = ${INSTANCE_NORMAL};
         vBuildUv = uv;`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -458,6 +465,77 @@ const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 boxGeo.translate(0.5, 0.5, 0.5);
 const boxMatrix = new THREE.Matrix4();
 const boxColor = new THREE.Color();
+
+// ---- 坂 ----
+// 上面を傾けた、くさび形の台（StageRamp）。y0 が底面と低い端の上面、h が高い端の上面。
+// 当たり判定は箱とは別に持ち、敵の歩ける所を調べるときは、坂を囲む箱を障害物として扱う（敵は坂に乗らない）
+type Ramp = Block & { y0: number; up: StageRamp['up'] };
+const ramps: Ramp[] = [];
+// 坂の上面の高さ。(x, z) は坂の範囲に収めてから渡す
+function rampTop(r: Ramp, x: number, z: number) {
+  const t =
+    r.up === '+x' ? (x - r.minX) / (r.maxX - r.minX)
+    : r.up === '-x' ? (r.maxX - x) / (r.maxX - r.minX)
+    : r.up === '+z' ? (z - r.minZ) / (r.maxZ - r.minZ)
+    : (r.maxZ - z) / (r.maxZ - r.minZ);
+  return r.y0 + (r.h - r.y0) * THREE.MathUtils.clamp(t, 0, 1);
+}
+// 坂を上る向き（水平の単位ベクトル）と勾配
+function rampUpDir(r: Ramp) {
+  const x = r.up === '+x' ? 1 : r.up === '-x' ? -1 : 0;
+  const z = r.up === '+z' ? 1 : r.up === '-z' ? -1 : 0;
+  const len = x !== 0 ? r.maxX - r.minX : r.maxZ - r.minZ;
+  return { x, z, slope: (r.h - r.y0) / len };
+}
+// くさびの形: 底面は x・z とも -0.5..0.5、y は 0..1。-Z の端で高さ 0、+Z の端で高さ 1。
+// 面ごとに頂点を分け、uv は面ごとに 0..1（縁の線を引くのに使う）
+const wedgeGeo = (() => {
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const tri = (p: number[][], t: number[][], n: number[]) => {
+    // 外から見て反時計回りになるよう並べ直す（両面描きのマテリアルは、裏向きの面の法線を裏返すため）
+    a.fromArray(p[0]);
+    b.fromArray(p[1]).sub(a);
+    c.fromArray(p[2]).sub(a);
+    const order = b.cross(c).dot(new THREE.Vector3(...n)) >= 0 ? [0, 1, 2] : [0, 2, 1];
+    for (const i of order) {
+      pos.push(...p[i]);
+      nor.push(...n);
+      uv.push(...t[i]);
+    }
+  };
+  const quad = (p: number[][], n: number[]) => {
+    const t = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    tri([p[0], p[1], p[2]], [t[0], t[1], t[2]], n);
+    tri([p[0], p[2], p[3]], [t[0], t[2], t[3]], n);
+  };
+  const s = Math.SQRT1_2;
+  quad([[-0.5, 0, -0.5], [0.5, 0, -0.5], [0.5, 0, 0.5], [-0.5, 0, 0.5]], [0, -1, 0]); // 底面
+  quad([[-0.5, 0, -0.5], [0.5, 0, -0.5], [0.5, 1, 0.5], [-0.5, 1, 0.5]], [0, s, -s]); // 斜面
+  quad([[-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0.5], [-0.5, 1, 0.5]], [0, 0, 1]); // 高い端
+  for (const x of [-0.5, 0.5]) tri([[x, 0, -0.5], [x, 0, 0.5], [x, 1, 0.5]], [[0, 0], [1, 0], [1, 1]], [Math.sign(x), 0, 0]); // 横
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geo;
+})();
+const RAMP_TURN: Record<Ramp['up'], number> = { '+z': 0, '-z': Math.PI, '+x': Math.PI / 2, '-x': -Math.PI / 2 };
+const rampScale = new THREE.Matrix4();
+// 坂を置く行列。height は底面からの高さ（せり上がりの途中では縮める）
+function rampMatrix(r: Ramp, height: number, out: THREE.Matrix4) {
+  const alongX = r.up === '+x' || r.up === '-x';
+  const across = alongX ? r.maxZ - r.minZ : r.maxX - r.minX;
+  const along = alongX ? r.maxX - r.minX : r.maxZ - r.minZ;
+  return out
+    .makeRotationY(RAMP_TURN[r.up])
+    .multiply(rampScale.makeScale(across, height, along))
+    .setPosition((r.minX + r.maxX) / 2, r.y0, (r.minZ + r.maxZ) / 2);
+}
 // 面にワールド座標で線を引くマテリアル。body の中では、面に沿った 2 軸の座標 uv（側面なら uv.y が高さ）と
 // 面の向き an（法線の絶対値）が使える
 // 箱の縁に引く線: 太さ（ピクセル）、濃さ、薄め始める距離と消える距離 (m)
@@ -476,7 +554,7 @@ const gridMaterial = (body: string, origin?: { x: number; y: number; z: number }
         '#include <project_vertex>',
         `#include <project_vertex>
         vGridPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz - ${o};
-        vGridNormal = mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal;
+        vGridNormal = ${INSTANCE_NORMAL};
         vEdgeUv = uv;`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -540,6 +618,18 @@ function addBoxes<T extends Block>(list: T[], mat: THREE.Material, lightness: (b
     mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));
     mesh.setColorAt(i, boxColor.setHSL(0, 0, lightness(b)));
     addRiser(mesh, i, b, inArena);
+  });
+  mesh.castShadow = mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+// 坂をまとめて 1 つのメッシュにして parent に置き、せり上がりに加える
+function addRamps(list: StageRamp[], mat: THREE.Material, parent: THREE.Object3D) {
+  const mesh = new THREE.InstancedMesh(wedgeGeo.clone(), withRiseBuild(mat), list.length);
+  list.forEach((r, i) => {
+    mesh.setMatrixAt(i, rampMatrix(r, r.h - r.y0, boxMatrix));
+    mesh.setColorAt(i, boxColor.setHSL(0, 0, r.light));
+    addRiser(mesh, i, r, true, r);
   });
   mesh.castShadow = mesh.receiveShadow = true;
   parent.add(mesh);
@@ -1324,14 +1414,24 @@ const heldAxeModel = heldAxe.userData.axe as THREE.Group;
 axeViewModel.add(heldAxe);
 axeViewModel.visible = false;
 
+// ---- 武器: チャクラム ----
+// 全体をクナイと同じ黒光りにする。右手で持つ
+const chakramViewModel = new THREE.Group();
+chakramViewModel.position.copy(CHAKRAM_VIEW_MODEL_POS);
+camera.add(chakramViewModel);
+const heldChakram = createHeldChakram({ metal: kunaiMat });
+const chakramRest = heldChakram.userData.rest as THREE.Group;
+chakramViewModel.add(heldChakram);
+chakramViewModel.visible = false;
+
 // ---- 武器の切り替え ----
 // 持ち替えは「今の武器を下げる → 入れ替える → 新しい武器を上げる」
-type WeaponId = 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe';
+type WeaponId = 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'chakram';
 let wantWeapon: WeaponId = 'kunai'; // 数字キーで選んだ武器
 let shownWeapon: WeaponId = 'kunai'; // 今手に持っている武器
 let holster = 0; // 0 = 構えている, 1 = 画面の下へ下げきった
 const HOLSTER_TIME = 0.14;
-const WEAPON_KEYS: Record<string, WeaponId> = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle', Digit5: 'axe' };
+const WEAPON_KEYS: Record<string, WeaponId> = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle', Digit5: 'axe', Digit6: 'chakram' };
 
 // ---- 操作 ----
 // PointerLockControls はマウスの移動量をそのまま足すので、Chrome がまれに送ってくる
@@ -1673,14 +1773,46 @@ const pickerVideo = pickerScreen.querySelector('video')!;
 const pickerNoSignal = pickerScreen.querySelector<HTMLElement>('.sw-nosig small')!;
 pickerVideo.addEventListener('loadeddata', () => pickerScreen.classList.add('has-video'));
 pickerVideo.addEventListener('error', () => pickerScreen.classList.remove('has-video'));
+// 背景: 手前の動画の新しいフレームが出るたびに canvas へ写す（2 本目の動画を流すとずれるので、同じ動画から写す）。
+// 小さく写してその中でぼかし、画面いっぱいに引き伸ばす（全画面に CSS でぼかすより軽い）。大きさは画質の設定に合わせる
+const PICKER_BG_WIDTH: Record<Quality, number> = { low: 96, medium: 160, high: 320 };
+const pickerBg = picker.querySelector<HTMLCanvasElement>('.sw-bg')!;
+const pickerBgCtx = pickerBg.getContext('2d')!;
+function drawPickerBg() {
+  if (pickerVideo.readyState < 2) return;
+  const w = PICKER_BG_WIDTH[options.quality];
+  if (pickerBg.width !== w) {
+    pickerBg.width = w;
+    pickerBg.height = Math.round((w * 9) / 16);
+  }
+  pickerBgCtx.filter = `blur(${w / 240}px)`; // 大きさを変えると消えるので毎回掛ける。効かないブラウザでも引き伸ばしで粗さはぼける
+  pickerBgCtx.drawImage(pickerVideo, 0, 0, pickerBg.width, pickerBg.height);
+}
+const onPickerFrame = () => {
+  drawPickerBg();
+  pickerVideo.requestVideoFrameCallback(onPickerFrame);
+};
+pickerVideo.requestVideoFrameCallback(onPickerFrame);
+pickerVideo.addEventListener('loadeddata', () => {
+  drawPickerBg();
+  pickerBg.classList.add('has-video');
+});
+pickerVideo.addEventListener('error', () => pickerBg.classList.remove('has-video'));
 function showPickerVideo(id: WeaponId) {
   const src = `${PREVIEW_VIDEO_DIR}/${id}.mp4`;
   pickerNoSignal.textContent = src;
   if (pickerVideo.dataset.id === id) return;
   pickerVideo.dataset.id = id;
   pickerScreen.classList.remove('has-video');
+  pickerBg.classList.remove('has-video');
   pickerVideo.src = src;
-  pickerVideo.play().catch(() => {}); // 無いファイルや自動再生の拒否は NO SIGNAL のままにする
+  playPickerVideos(); // 無いファイルや自動再生の拒否は NO SIGNAL のままにする
+}
+function playPickerVideos() {
+  pickerVideo.play().catch(() => {});
+}
+function pausePickerVideos() {
+  pickerVideo.pause();
 }
 // 差し込んだ武器名とアイコンの尾。着くまでは伸ばしたまま、着いたら一気に巻き取る（CSS の sw-in-smear / sw-in-ic と同じ長さ・同じ着く時刻）
 const SMEAR_TIME = 0.3;
@@ -1751,11 +1883,11 @@ function closePicker(decide: boolean) {
     sfx.playUiBack();
   }
   overlay.classList.remove('pick-weapon');
-  pickerVideo.pause(); // 閉じている間は流さない（開いたら movePicker で続きから）
+  pausePickerVideos(); // 閉じている間は流さない（開いたら movePicker で続きから）
 }
 // 開き直したとき、同じ武器の動画は読み直さずに再開する
 function resumePickerVideo() {
-  if (pickerScreen.classList.contains('has-video')) pickerVideo.play().catch(() => {});
+  if (pickerScreen.classList.contains('has-video')) playPickerVideos();
 }
 // 行に乗ったらカーソルをそこへ（音はメニュー共通の乗ったときの音が鳴る）
 for (const [i, b] of pickerRows.entries()) b.addEventListener('mouseenter', () => i !== pickerIndex && movePicker(i));
@@ -1814,7 +1946,7 @@ selectLoadout(loadoutIndex);
 function setStageSelect(on: boolean) {
   overlay.classList.toggle('select-stage', on);
   overlay.classList.remove('pick-weapon');
-  pickerVideo.pause();
+  pausePickerVideos();
   showStagePreview(on ? selectedStageId() : null);
   overlayPrompt.textContent = on ? 'SELECT STAGE' : 'SELECT MODE';
   overlayStatus.textContent = on ? 'ESC — BACK' : 'ESC — PAUSE';
@@ -1912,6 +2044,35 @@ function quitToTitle() {
   overlay.classList.add('quitting');
   setTimeout(() => location.reload(), 380);
 }
+// 倒れたステージをやり直す。タイトルへ戻るのと同じく読み込み直し、そのステージを選んだステージ選択から始める
+// （ポインターロックと音はユーザー操作が無いと始められないので、入るのは START を押してから）
+const RETRY_STORE = 'fast-finish.retry';
+function retryStage() {
+  try {
+    sessionStorage.setItem(RETRY_STORE, String(stageIndex));
+  } catch {
+    // 覚えておけない環境では、ただタイトルへ戻る
+  }
+  quitToTitle();
+}
+function restoreRetry() {
+  let saved: string | null = null;
+  try {
+    saved = sessionStorage.getItem(RETRY_STORE);
+    sessionStorage.removeItem(RETRY_STORE);
+  } catch {
+    return;
+  }
+  const i = Number(saved);
+  if (saved === null || !stageSelectable(i)) return;
+  selectStage(i);
+  setStageSelect(true);
+}
+function decideGameOver(choice: 'retry' | 'title') {
+  sfx.playUiSelect();
+  if (choice === 'retry') retryStage();
+  else quitToTitle();
+}
 overlay.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
   if (target.closest('[data-action="title"]')) {
@@ -1922,6 +2083,10 @@ overlay.addEventListener('click', (e) => {
   if (target.closest('.options')) return onOptionsClick(target);
   // 結果の画面では TITLE 以外を受け付けない（倒しきった勢いのクリックで何か起きないように）
   if (overlay.classList.contains('result')) return;
+  if (overlay.classList.contains('over')) {
+    if (target.closest('[data-action="retry"]')) decideGameOver('retry');
+    return;
+  }
   if (overlay.classList.contains('title')) {
     if (overlay.classList.contains('select-stage')) return onStageSelectClick(target);
     if (target.closest('[data-action="game"]')) {
@@ -1959,6 +2124,22 @@ window.addEventListener('keydown', (e) => {
     if (skipResult()) return; // 演出の途中なら、まず最後まで飛ばす
     sfx.playUiSelect();
     return quitToTitle();
+  }
+  // ゲームオーバー: 上下で選んで ENTER で決める。R はやり直し、Q はタイトルへすぐ
+  if (overlay.classList.contains('over')) {
+    const dir = { ArrowUp: -1, KeyW: -1, ArrowDown: 1, KeyS: 1 }[e.code];
+    if (dir) {
+      e.preventDefault();
+      if (stepGameOverMenu(dir)) sfx.playUiHover();
+    } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+      e.preventDefault();
+      decideGameOver(gameOverChoice());
+    } else if (e.code === 'KeyR') {
+      decideGameOver('retry');
+    } else if (e.code === 'KeyQ') {
+      decideGameOver('title');
+    }
+    return;
   }
   if (e.code === 'Enter' || e.code === 'NumpadEnter') {
     e.preventDefault();
@@ -2000,7 +2181,7 @@ function setPlaying(on: boolean) {
     // 払い出しの途中で止められたら、その場で一時停止の画面にする
     endOverlayLeave();
     overlay.classList.toggle('hidden', controls.isLocked);
-    if (!controls.isLocked && !overlay.classList.contains('quitting') && !overlay.classList.contains('result')) sfx.playUiPause();
+    if (!controls.isLocked && !overlay.classList.contains('quitting') && !overlay.classList.contains('result') && !overlay.classList.contains('over')) sfx.playUiPause();
   }
 }
 document.addEventListener('pointerlockchange', () => {
@@ -2014,6 +2195,7 @@ document.addEventListener('pointerlockchange', () => {
 });
 // 視点を回す（ラジアン）。マウスとパッドの右スティックで共用する
 function turnView(yaw: number, pitch: number) {
+  if (isDown()) return; // 倒れている間は見回せない
   lookEuler.setFromQuaternion(camera.quaternion);
   lookEuler.y -= yaw;
   lookEuler.x -= pitch;
@@ -2127,7 +2309,7 @@ const PAD_WEAPONS: [number, WeaponId][] = [
   [PAD.DOWN, 'sword'],
   [PAD.LEFT, 'sickle'],
 ];
-const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe']; // LB / RB で順に回す
+const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'chakram']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 const PAD_MENU_KEYS: [number, string][] = [
   [PAD.A, 'Enter'],
@@ -2323,8 +2505,10 @@ function damagePlayer(amount: number) {
   if (playerHp <= 0 || amount <= 0) return;
   if (stageRun?.running) stageRun.damage += amount;
   const before = playerHp;
-  playerHp = Math.max(1, playerHp - amount); // 今は死なない。1 で耐えて、被弾の演出だけは出す
+  // ステージでは 0 で倒れる。訓練場（と倒しきった後）は死なず、1 で耐えて被弾の演出だけを出す
+  playerHp = Math.max(stageRun?.running ? 0 : 1, playerHp - amount);
   hpShown = playerHp;
+  if (playerHp <= 0) downPlayer();
   hpChipHold = HP_CHIP_HOLD;
 
   // バーを揺らす（斜めの形は保ったまま）
@@ -2406,8 +2590,76 @@ function updateHpHud(dt: number) {
   hpChipBar.style.width = `${(hpChip / PLAYER_MAX_HP) * 100}%`;
   hpCount = hpCount > hpShown ? Math.max(hpShown, hpCount - HP_COUNT_SPEED * dt) : hpShown;
   hpNum.textContent = String(Math.ceil(hpCount));
-  hpHud.classList.toggle('low', playerHp > 0 && playerHp <= HP_LOW);
-  hurtLow.classList.toggle('on', playerHp > 0 && playerHp <= HP_LOW);
+  hpHud.classList.toggle('low', playerHp <= HP_LOW);
+  hurtLow.classList.toggle('on', playerHp <= HP_LOW);
+}
+
+// ---- 倒れる ----
+// ステージで体力が尽きたら、時間を測るのをやめて操作を取り上げ、世界を白黒のスローにしたまま視点を床へ崩す。
+// 倒れきってからゲームオーバーの画面を出す（そこからはやり直すかタイトルへ戻るだけ）
+const DOWN_SLOW_SCALE = 0.15; // 倒れている間の時間の速さ
+const DOWN_SLOW_IN = 0.25; // そこまで落とす時間（実時間）
+const DOWN_FALL_TIME = 1.1; // 視点が床へ崩れきるまで（実時間）
+const DOWN_EYE = 0.35; // 崩れきったときの目の高さ
+const DOWN_ROLL = 0.55; // 崩れきったときの傾き (rad)
+const DOWN_PITCH = -0.18; // 崩れきったときにうつむく量 (rad)
+const GAMEOVER_DELAY = 2.6; // 倒れてから画面を出すまで（実時間）
+let downT = -1; // 倒れてからの実時間。-1 = 倒れていない
+const isDown = () => downT >= 0;
+function downPlayer() {
+  if (isDown() || !stageRun) return;
+  downT = 0;
+  stageRun.running = false;
+  hitStop = Math.max(hitStop, 0.14);
+  hitStopTotal = hitStop;
+  addTrauma(1);
+  fovKick += 10;
+  if (deadEye !== 'off') endDeadEye();
+  sfx.playDeath();
+  document.body.classList.add('player-down');
+}
+// 0（倒れた瞬間）〜 1（崩れきった）
+function downFall() {
+  if (!isDown()) return 0;
+  const k = Math.min(1, downT / DOWN_FALL_TIME);
+  return 1 - (1 - k) ** 3;
+}
+function downSlowFactor() {
+  if (!isDown()) return 1;
+  return THREE.MathUtils.lerp(1, DOWN_SLOW_SCALE, Math.min(1, downT / DOWN_SLOW_IN));
+}
+// 倒れている間は、押したものを全部捨てる（押しっぱなしの移動も、溜めた攻撃も効かせない）
+function dropPlayerInput() {
+  keys.clear();
+  pressed.clear();
+  attackPressed = attackHeld = throwHeld = throwPressed = focusPressed = axeLaunchPressed = deadEyePressed = false;
+  reloadQueued = tossPressed = false;
+  padMove.x = padMove.y = 0;
+  padSprint = false;
+}
+function updatePlayerDown(realDt: number) {
+  if (!isDown()) return;
+  const shown = downT >= GAMEOVER_DELAY;
+  downT += realDt;
+  dropPlayerInput();
+  if (!shown && downT >= GAMEOVER_DELAY && stageRun) showGameOver(stageRun);
+}
+// 一時停止の画面をゲームオーバーの画面に作り替えて止める。記録は残さない
+function showGameOver(run: StageRun) {
+  const button = stageButtons[stageIndex];
+  overlay.classList.add('over');
+  overlayStatus.textContent = '';
+  overlayPrompt.textContent = 'ENTER — RETRY';
+  showGameOverView({
+    stageNo: button.querySelector('.no')!.textContent!,
+    stageName: button.dataset.stage!.toUpperCase(),
+    difficulty: DIFFICULTIES[difficultyIndex].toUpperCase(),
+    time: run.time,
+    kills: run.kills,
+    quota: run.quota,
+    score: totalScore(),
+  });
+  pauseGame();
 }
 
 // ---- プレイヤー物理 ----
@@ -2546,6 +2798,18 @@ function collideBox(b: Block, prevY: number) {
     return;
   }
   if (position.y >= b.h || position.y + head <= y0 || dist >= PLAYER_RADIUS) return;
+  // 坂に立っているときは、坂の上の端につながる床の縁（坂の傾きの分だけのわずかな段）を上る
+  if (groundRamp && b.h - position.y <= RAMP_LIP) {
+    position.y = b.h;
+    velocity.y = 0;
+    onGround = true;
+    return;
+  }
+  pushOutOfBox(b, px, pz, dx, dz, dist);
+}
+
+// 箱の側面から外へ押し出す（(px, pz) は箱の上でいちばん近い点、(dx, dz) はそこからの差、dist はその長さ）
+function pushOutOfBox(b: Block, px: number, pz: number, dx: number, dz: number, dist: number) {
   let nx: number;
   let nz: number;
   if (dist > 1e-6) {
@@ -2568,6 +2832,37 @@ function collideBox(b: Block, prevY: number) {
     velocity.x -= nx * vn;
     velocity.z -= nz * vn;
   }
+}
+
+// 坂との当たり判定: 上面の近くにいれば上面に立たせ（上り坂ではめり込んだ分を押し上げ、下り坂では浮いた分を吸い付ける）、
+// 上面より十分低い所から横に触れたら、箱の側面と同じように押し出す。立ったら groundRamp に入れる
+const RAMP_STEP = 0.6; // 上面からこれだけ下にめり込んでいても、上面へ押し上げる（上り坂を速く走るとき）
+const RAMP_SNAP = 0.6; // 坂に立っていたら、上面からこれだけ浮いても上面へ吸い付ける（下り坂を速く走るとき）
+const RAMP_LIP = 0.3; // 坂に立っているときに上る段の高さ（坂の上の端と、つながる床の縁との差）
+const RAMP_SLIDE_GRAVITY = 40; // スライディング中に坂を下る向きへ掛かる加速度 = これ × 勾配
+let groundRamp: Ramp | null = null; // 今立っている坂
+function collideRamp(r: Ramp, prevY: number, stick: boolean) {
+  const px = THREE.MathUtils.clamp(position.x, r.minX, r.maxX);
+  const pz = THREE.MathUtils.clamp(position.z, r.minZ, r.maxZ);
+  const dx = position.x - px;
+  const dz = position.z - pz;
+  const dist = Math.hypot(dx, dz);
+  if (dist >= PLAYER_RADIUS) return;
+  const top = rampTop(r, px, pz);
+  if (
+    dist < PLAYER_RADIUS * 0.5 && velocity.y <= 0 && position.y <= top + (stick ? RAMP_SNAP : 1e-4)
+    && (position.y >= top - RAMP_STEP || prevY >= top - 1e-4)
+  ) {
+    if (position.y < top) landImpact = Math.max(landImpact, -velocity.y);
+    position.y = top;
+    velocity.y = 0;
+    onGround = true;
+    groundRamp = r;
+    return;
+  }
+  const head = sliding ? PLAYER_HEAD_SLIDE : PLAYER_HEAD;
+  if (position.y >= top - RAMP_STEP || position.y + head <= r.y0) return;
+  pushOutOfBox(r, px, pz, dx, dz, dist);
 }
 
 // 壁の方を向いて W を押しているか（nx, nz は体から壁へ向かう水平の向き）
@@ -2813,6 +3108,12 @@ function update(dt: number) {
     // 少しずつ減速しながら、ゆるく曲がれる
     if (hasWish && velocity.x * wish.x + velocity.z * wish.z > 0) rotateHorizontalToward(wish, SLIDE_TURN_RATE * dt);
     setHorizontalSpeed(Math.max(0, hSpeed - SLIDE_FRICTION * dt));
+    // 坂では、下る向きへ加速する（上る向きなら早く止まる）
+    if (groundRamp) {
+      const u = rampUpDir(groundRamp);
+      velocity.x -= u.x * RAMP_SLIDE_GRAVITY * u.slope * dt;
+      velocity.z -= u.z * RAMP_SLIDE_GRAVITY * u.slope * dt;
+    }
   } else if (onGround) {
     if (hasWish) steerHorizontal(wish, maxSpeed, GROUND_ACCEL, GROUND_TURN_RATE, OVERSPEED_DECAY, dt);
     else setHorizontalSpeed(Math.max(0, hSpeed - GROUND_FRICTION * dt));
@@ -2854,8 +3155,11 @@ function update(dt: number) {
     const prevY = position.y;
     position.addScaledVector(velocity, dt);
     onGround = false;
+    groundRamp = null;
 
     for (const e of enemies) if (e.alive) collideCylinder(e.root.position.x, e.root.position.z, DUMMY_RADIUS, e.root.position.y + DUMMY_HEIGHT, prevY);
+    // 坂を先に調べる（坂に立っていれば、続く箱の判定で坂の上の端の段を上れる）
+    for (const r of ramps) collideRamp(r, prevY, wasOnGround);
     for (const b of blocks) collideBox(b, prevY);
 
     // 外周壁の外へは出さない（外へ向かう速度だけ消す）
@@ -3079,7 +3383,9 @@ function updateCamera(dt: number) {
   landShakeT = Math.min(1, landShakeT + dt / LAND_SHAKE_TIME);
 
   const landJolt = landShakeAmount() * 0.06 * Math.sin(shakeTime * 91.7 + 3.3);
-  camera.position.set(position.x, position.y + eyeHeight + landDip + landJolt, position.z);
+  // 倒れたら目の高さを床近くまで崩す
+  const eye = THREE.MathUtils.lerp(eyeHeight, DOWN_EYE, downFall());
+  camera.position.set(position.x, position.y + eye + landDip + landJolt, position.z);
 }
 
 // 描画の直前にだけ揺れと傾きを足す（PointerLockControls の視点を壊さないよう、描画後に戻す）
@@ -3096,8 +3402,9 @@ function applyCameraOffset() {
     s * 0.04 * Math.sin(t * 53.1 + 4.1) + kick.y + ls * 0.05 * Math.sin(t * 89.3 + 2.2),
     roll + s * 0.05 * Math.sin(t * 41.7 + 2.7) + kick.z + ls * 0.07 * Math.sin(t * 103.7 + 5.1) + handCam.z,
   );
-  shakeEuler.x += handCam.x;
+  shakeEuler.x += handCam.x + DOWN_PITCH * downFall();
   shakeEuler.y += handCam.y;
+  shakeEuler.z += DOWN_ROLL * downFall();
   camera.quaternion.multiply(shakeQuat.setFromEuler(shakeEuler));
 }
 
@@ -3121,6 +3428,7 @@ const HAND_PROBE_SWORD = new THREE.Vector3(0, 0.35, 0);
 const HAND_PROBE_GUN = new THREE.Vector3(0, 0, -0.1);
 const HAND_PROBE_SICKLE = new THREE.Vector3(0, 0.1, 0);
 const HAND_PROBE_AXE = new THREE.Vector3(0, 0.6, 0);
+const HAND_PROBE_CHAKRAM = new THREE.Vector3(0, 0, 0);
 
 // frame 座標の点 local を、root の手前まで親をたどって root の座標へ移す（root 自身の揺れは入れない）
 function probeToRoot(frame: THREE.Object3D, root: THREE.Object3D, local: THREE.Vector3, out: THREE.Vector3) {
@@ -3148,6 +3456,8 @@ function measureHand(out: THREE.Vector3) {
       return out.add(SICKLE_VIEW_MODEL_POS).add(sickleBodyPos);
     case 'axe':
       return probeToRoot(axeRest, axeViewModel, HAND_PROBE_AXE, out).add(AXE_VIEW_MODEL_POS);
+    case 'chakram':
+      return probeToRoot(chakramRest, chakramViewModel, HAND_PROBE_CHAKRAM, out).add(CHAKRAM_VIEW_MODEL_POS);
   }
 }
 
@@ -3282,7 +3592,9 @@ function updateWeaponSwitch(dt: number) {
   const swordBusy = swordAttack !== null || rushTime >= 0 || swordHold >= 0 || chargeDashTime > 0;
   const busy = (shownWeapon === 'kunai' && kunaiBusy) || (shownWeapon === 'sword' && swordBusy) || grapple !== null
     || sickleMelee !== null || (shownWeapon === 'axe' && axeAttack !== null);
-  if (wantWeapon !== shownWeapon && !busy) {
+  if (isDown()) {
+    holster = Math.min(1, holster + realDt / (HOLSTER_TIME * 2)); // 倒れたら武器を画面の下へ落とす
+  } else if (wantWeapon !== shownWeapon && !busy) {
     holster = Math.min(1, holster + dt / HOLSTER_TIME);
     if (holster === 1) {
       shownWeapon = wantWeapon;
@@ -3298,6 +3610,7 @@ function updateWeaponSwitch(dt: number) {
   swordViewModel.visible = shownWeapon === 'sword';
   sickleViewModel.visible = shownWeapon === 'sickle';
   axeViewModel.visible = shownWeapon === 'axe';
+  chakramViewModel.visible = shownWeapon === 'chakram';
 }
 
 const handJoltPos = new THREE.Vector3();
@@ -3440,6 +3753,19 @@ function updateViewModel(dt: number) {
     aSlide * 0.35 + roll,
   );
 
+  // チャクラムもハンドガンと同じ揺れ方をさせる
+  chakramViewModel.position.set(
+    CHAKRAM_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03,
+    CHAKRAM_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
+      + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12,
+    CHAKRAM_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack,
+  );
+  chakramViewModel.rotation.set(
+    -dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5,
+    -lookSwayX * 2,
+    slidePose * 0.35 + roll,
+  );
+
   // 高いところからの着地で、手元も画面と一緒に強く揺らす
   const ls = landShakeAmount();
   if (ls > 0) {
@@ -3451,7 +3777,7 @@ function updateViewModel(dt: number) {
     );
     const rx = -ls * 0.25 * Math.abs(Math.sin(t * 88.7 + 2.6));
     const rz = ls * 0.18 * Math.sin(t * 101.3 + 0.2);
-    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
+    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, chakramViewModel]) {
       vm.position.add(handJoltPos);
       vm.rotation.x += rx;
       vm.rotation.z += rz;
@@ -3469,7 +3795,7 @@ function updateViewModel(dt: number) {
 
   // 持ち替え中は手元を画面の下へ下げる
   const h = holster * holster * (3 - 2 * holster);
-  for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
+  for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, chakramViewModel]) {
     vm.position.y -= h * 0.25;
     vm.rotation.x -= h * 0.9;
   }
@@ -3530,6 +3856,7 @@ interface AttackDef {
   knock?: number; // 当たったときに敵が後ろへ傾く勢い（度/秒）
   hitStop?: number; // 当たったときに時間を止める長さ（秒）
   fx?: number; // 当たりの光の演出の強さ（1 が基準）
+  dmg?: number; // ダメージの倍率。省くと fx と同じ
   slash?: number; // 斬撃の線の画面上の角度（度、水平が 0）。突きのように線にならない攻撃は省く
 }
 
@@ -3908,6 +4235,7 @@ const FLASH_FADE = 0.12; // そこから元の色へ戻る時間
 // 体力: 0 になると体ごと砕け散り、しばらくするとその場で生えるように起き上がる
 const DUMMY_MAX_HP = 100;
 const HIT_DAMAGE: Record<HitKind, number> = { kunai: 14, sword: 18, throw: 15, bullet: 30, axe: 24 }; // fx = 1 のときの量
+const SICKLE_DAMAGE_SCALE = 0.85; // 鎖鎌の近接は刀と同じ 'sword' の量に、これを掛けて少し抑える
 const KILL_HIT_STOP = 0.16; // とどめの一撃は長く止める
 const KILL_SLOW_SCALE = 0.25; // 砕けた直後は時間をゆっくりにして、飛び散る破片を見せる
 const KILL_SLOW_HOLD = 0.55; // スローを保つ実時間
@@ -3969,15 +4297,15 @@ function inReachOf(reach: number, angle: number): boolean {
 const hitPoint = new THREE.Vector3();
 
 // 当たりの反応と演出。hitDir（攻撃した側から敵の奥への水平の向き）は呼ぶ前に入れておく
-type HitDef = Pick<AttackDef, 'kick' | 'knock' | 'hitStop' | 'fx' | 'slash'>;
+type HitDef = Pick<AttackDef, 'kick' | 'knock' | 'hitStop' | 'fx' | 'dmg' | 'slash'>;
 // swing は刃が動いていた向き（ワールド座標）。渡すと、光の線や飛び散るものを斬り抜けた向きへ流す
-const hitDamage = (def: HitDef, kind: HitKind) => HIT_DAMAGE[kind] * (def.fx ?? 1);
+const hitDamage = (def: HitDef, kind: HitKind) => HIT_DAMAGE[kind] * (def.dmg ?? def.fx ?? 1);
 // 投げ物と弾が頭（首から上）に当たったら、ダメージを大きくする
 const HEADSHOT_HEIGHT = 1.55; // 敵の足元からの高さ
 const HEADSHOT_MULT = 2.5;
 
-// scar = false なら切り跡を残さない（刃の当たらない衝撃波など）
-function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar = true) {
+// scar = false なら切り跡を残さない（刃の当たらない衝撃波など）。dmgScale はダメージだけに掛ける倍率
+function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar = true, dmgScale = 1) {
   const headshot = (kind === 'throw' || kind === 'bullet') && at.y - en.root.position.y >= HEADSHOT_HEIGHT;
   staggerDummy(def.knock ?? DEFAULT_KNOCK, at, swing);
   en.flashT = 0;
@@ -3996,7 +4324,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   spawnHitFx(at, hitDir, def, swing);
   if (scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) addSlashScar(at, def, kind, swing);
 
-  const damage = hitDamage(def, kind) * (headshot ? HEADSHOT_MULT : 1);
+  const damage = hitDamage(def, kind) * dmgScale * (headshot ? HEADSHOT_MULT : 1);
   en.hp -= damage;
   if (def !== SWORD_ISSEN && def !== DEADEYE_HIT) chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
   countHit(en.hp <= 0);
@@ -4064,15 +4392,15 @@ function startleAllies() {
   en = dead;
 }
 
-// 倒したご褒美: ダッシュを満タンにし、少し回復し、今の進む向きへ勢いを足す（止まらずに次へ向かえるように）
+// 倒したご褒美: ダッシュを満タンにし、鎖鎌の引き寄せを 1 回分戻し、少し回復し、今の進む向きへ勢いを足す（止まらずに次へ向かえるように）
 const KILL_HEAL = 15;
 const KILL_BOOST = 5; // 水平の速さへ足す量
 const KILL_BOOST_MAX = 30; // 勢いを足してもこれ以上は速くしない
 function rewardKill() {
   dashCharges = DASH_CHARGES;
   dashRecharge = 0;
-  hookCharges = HOOK_CHARGES;
-  hookRecharge = 0;
+  hookCharges = Math.min(HOOK_CHARGES, hookCharges + 1); // 鎖鎌の引き寄せは 1 回分だけ戻す
+  if (hookCharges >= HOOK_CHARGES) hookRecharge = 0;
   healPlayer(KILL_HEAL);
   if (mantleTime >= 0) return;
   const speed = Math.hypot(velocity.x, velocity.z);
@@ -4340,8 +4668,9 @@ function finishMarkHp(): number {
     case 'kunai': return hitDamage(SLASH_1, 'kunai');
     case 'handgun': return hitDamage(BULLET_HIT, 'bullet');
     case 'sword': return hitDamage(SWORD_KESA, 'sword');
-    case 'sickle': return hitDamage(SICKLE_KESA_HIT, 'sword');
+    case 'sickle': return hitDamage(SICKLE_KESA_HIT, 'sword') * SICKLE_DAMAGE_SCALE;
     case 'axe': return hitDamage(AXE_KESA, 'axe');
+    case 'chakram': return 0; // 技がまだ無いので印は出さない
   }
 }
 const FINISH_MARK_PAD = 6; // 体のまわりに空ける余白 (px)
@@ -5440,14 +5769,19 @@ const moveInvQ = new THREE.Quaternion();
 function enemyCanStand(x: number, z: number): boolean {
   if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ) return false;
   if (Math.abs(floorAt(x, z, en.baseY + 0.05) - en.baseY) > 0.01) return false;
+  return !enemyBlockedAt(x, z, en.baseY);
+}
+
+// 足もとの高さ y で (x, z) に立った敵の体が、箱や坂（を囲む箱）に掛かるか。足もとの床と、頭より上の物は除く
+function enemyBlockedAt(x: number, z: number, y: number): boolean {
   const r = DUMMY_RADIUS + ENEMY_WALL_GAP;
-  for (const b of blocks) {
-    if (b.h <= en.baseY + 0.2 || (b.y0 ?? 0) >= en.baseY + DUMMY_HEIGHT) continue; // 足もとの床と、頭より上の物は除く
+  const hit = (b: Block) => {
+    if (b.h <= y + 0.2 || (b.y0 ?? 0) >= y + DUMMY_HEIGHT) return false;
     const dx = x - THREE.MathUtils.clamp(x, b.minX, b.maxX);
     const dz = z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ);
-    if (dx * dx + dz * dz < r * r) return false;
-  }
-  return true;
+    return dx * dx + dz * dz < r * r;
+  };
+  return blocks.some(hit) || ramps.some(hit);
 }
 
 // ---- 斧で吹き飛ばされた敵 ----
@@ -5498,15 +5832,7 @@ function updateEnemyKnock(dt: number) {
 // (x, z) で en の体が壁や柱（ステージの端を含む）に掛かるか。段差の縁で止まったときは壁にしない
 function enemyWallAt(x: number, z: number): boolean {
   if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ) return true;
-  const r = DUMMY_RADIUS + ENEMY_WALL_GAP;
-  const y = en.baseY + en.airY;
-  for (const b of blocks) {
-    if (b.h <= y + 0.2 || (b.y0 ?? 0) >= y + DUMMY_HEIGHT) continue;
-    const dx = x - THREE.MathUtils.clamp(x, b.minX, b.maxX);
-    const dz = z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ);
-    if (dx * dx + dz * dz < r * r) return true;
-  }
-  return false;
+  return enemyBlockedAt(x, z, en.baseY + en.airY);
 }
 
 // ---- 壁への叩きつけ ----
@@ -5780,6 +6106,10 @@ const CATCH_DIST = 0.5; // 左手からこの距離まで来たら受け止め�
 const RETURN_SWISH: SwishDef = { at: 0, dur: 0.2, f0: 1400, f1: 600, gain: 0.06 };
 const BLADE_TIP = 0.17; // クナイの原点（刃の付け根）から切っ先まで
 const STICK_DEPTH = 0.05; // 刺さったときに埋まる深さ
+// 少しだけホーミング: 放つ瞬間に照準の近くにいた敵の胸へ、飛びながらゆるく曲がる
+const HOMING_CONE = 7 * (Math.PI / 180); // 照準からこの角度以内の敵を狙う
+const HOMING_TURN = 3; // 曲がる速さの上限 (rad/s)。55 m/s なら半径 18 m ほどの弧
+const HOMING_GIVE_UP = 60 * (Math.PI / 180); // 狙いがこれ以上横や後ろへ外れたら追うのをやめる
 // 数本が続けて当たるたびに時間を止めるとカクつくので、投擲ではヒットストップを使わない
 const THROW_HIT: HitDef = { kick: [-1.5, 0, 0], knock: 140, hitStop: 0, fx: 0.7 };
 const THROW_SWISH: SwishDef = { at: 0, dur: 0.16, f0: 900, f1: 2800, gain: 0.1 };
@@ -6120,6 +6450,7 @@ interface Thrown {
   phase: ThrownPhase;
   spin: number;
   trail: Ribbon | null;
+  target: Enemy | null; // ホーミングで追う敵
 }
 const thrown: Thrown[] = [];
 const thrownTemplate = createKunai();
@@ -6130,6 +6461,7 @@ const KUNAI_AXIS = new THREE.Vector3(0, 1, 0);
 
 // 当たり判定: 地面と柱は計算で直接求め（柱 1000 本をメッシュの交差判定に回すと重い）、敵だけメッシュで調べる
 const castHit = { point: new THREE.Vector3(), enemy: null as Enemy | null, part: null as THREE.Object3D | null };
+let rayExit = 0; // rayBox で、光線が箱から出る距離
 function rayBox(o: THREE.Vector3, d: THREE.Vector3, b: Block, far: number) {
   let tmin = 0;
   let tmax = far;
@@ -6148,6 +6480,26 @@ function rayBox(o: THREE.Vector3, d: THREE.Vector3, b: Block, far: number) {
   t2 = (b.maxZ - o.z) * iz;
   tmin = Math.max(tmin, Math.min(t1, t2));
   tmax = Math.min(tmax, Math.max(t1, t2));
+  rayExit = tmax;
+  return tmin <= tmax ? tmin : -1;
+}
+// 坂: 囲む箱を通る区間を、斜面より下の側に絞る
+function rayRamp(o: THREE.Vector3, d: THREE.Vector3, r: Ramp, far: number) {
+  let tmin = rayBox(o, d, r, far);
+  if (tmin < 0) return -1;
+  let tmax = rayExit;
+  // 斜面の下側: y - y0 - kx (x - ax) - kz (z - az) <= 0（(ax, az) は低い端）
+  const u = rampUpDir(r);
+  const kx = u.x * u.slope;
+  const kz = u.z * u.slope;
+  const ax = u.x < 0 ? r.maxX : r.minX;
+  const az = u.z < 0 ? r.maxZ : r.minZ;
+  const fo = o.y - r.y0 - kx * (o.x - ax) - kz * (o.z - az);
+  const fd = d.y - kx * d.x - kz * d.z;
+  if (Math.abs(fd) < 1e-9) {
+    if (fo > 0) return -1;
+  } else if (fd > 0) tmax = Math.min(tmax, -fo / fd);
+  else tmin = Math.max(tmin, -fo / fd);
   return tmin <= tmax ? tmin : -1;
 }
 // 地面と柱だけを調べ、最初に当たるまでの距離を返す（なければ far のまま）
@@ -6159,6 +6511,10 @@ function castWorld(origin: THREE.Vector3, dir: THREE.Vector3, far: number): numb
   }
   for (const b of blocks) {
     const t = rayBox(origin, dir, b, best);
+    if (t >= 0) best = t;
+  }
+  for (const r of ramps) {
+    const t = rayRamp(origin, dir, r, best);
     if (t >= 0) best = t;
   }
   return best;
@@ -6247,6 +6603,53 @@ function findAssistTarget(): typeof assistTarget | null {
   return best;
 }
 
+// 敵の胸の位置（エイムアシストと同じ高さ）
+function enemyChest(e: Enemy, out: THREE.Vector3) {
+  e.spine.getWorldPosition(out);
+  e.neck.getWorldPosition(assistNeck);
+  return out.lerp(assistNeck, ASSIST_CHEST);
+}
+
+// 照準から HOMING_CONE 以内で、いちばん照準に近い敵（壁の向こうは除く）
+const homingDir = new THREE.Vector3();
+const homingAim = new THREE.Vector3();
+function findHomingTarget(): Enemy | null {
+  camera.getWorldDirection(homingAim);
+  let best: Enemy | null = null;
+  let bestAngle = HOMING_CONE;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    homingDir.subVectors(enemyChest(e, homingDir), camera.position);
+    const dist = homingDir.length();
+    if (dist < 0.5 || dist > THROW_RANGE) continue;
+    homingDir.divideScalar(dist);
+    const angle = homingDir.angleTo(homingAim);
+    if (angle >= bestAngle) continue;
+    if (castWorld(camera.position, homingDir, dist) < dist - 0.3) continue;
+    bestAngle = angle;
+    best = e;
+  }
+  return best;
+}
+
+// 狙った敵の胸へ、このフレームで曲がれる分だけ向きを寄せる
+const homingWant = new THREE.Vector3();
+function steerThrown(t: Thrown, dt: number) {
+  const e = t.target;
+  if (!e) return;
+  if (!e.alive) return void (t.target = null);
+  homingWant.subVectors(enemyChest(e, homingWant), t.mesh.position).normalize();
+  const angle = t.vel.angleTo(homingWant);
+  if (angle > HOMING_GIVE_UP) return void (t.target = null);
+  if (angle < 1e-4) return;
+  const speed = t.vel.length();
+  const k = Math.min(1, (HOMING_TURN * dt) / angle);
+  // 今の向きから狙いの向きへ、角度で k の割合だけ回す
+  homingDir.copy(t.vel).divideScalar(speed);
+  homingDir.lerp(homingWant, k).normalize();
+  t.vel.copy(homingDir).multiplyScalar(speed);
+}
+
 function releaseThrow() {
   const order = THROW_ORDER[chargeStage - 1];
   charging = false;
@@ -6286,8 +6689,11 @@ function launchKunai(index: number) {
   const trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightRibbonMat);
   scene.add(trail.mesh);
   const vel = throwDir.clone().multiplyScalar(THROW_SPEED);
-  const missAt = Math.min(MISS_RETURN_MAX, throwFrom.distanceTo(throwAim) / THROW_SPEED + MISS_MARGIN);
-  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail };
+  const target = findHomingTarget();
+  let reach = throwFrom.distanceTo(throwAim);
+  if (target) reach = Math.max(reach, throwFrom.distanceTo(enemyChest(target, homingWant)) * 1.2);
+  const missAt = Math.min(MISS_RETURN_MAX, reach / THROW_SPEED + MISS_MARGIN);
+  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target };
   orientThrown(t, throwDir);
   sampleFlightTrail(t, throwFrom, throwDir);
   thrown.push(t);
@@ -6417,6 +6823,7 @@ function updateThrown(dt: number) {
       if (updateReturn(t, dt)) removeThrown(i);
       continue;
     }
+    steerThrown(t, dt);
     const step = t.vel.length() * dt;
     throwDir.copy(t.vel).normalize();
     // 切っ先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
@@ -6575,7 +6982,7 @@ const capPoint = new THREE.Vector3();
 
 const sickleReady = () => shownWeapon === 'sickle' && wantWeapon === 'sickle' && holster === 0;
 
-// 引き寄せの回数: 建物か敵に掛かるたびに 1 消費（外れたら消費しない）。時間で 1 本ずつ戻り、倒すと満タンに戻る。
+// 引き寄せの回数: 建物か敵に掛かるたびに 1 消費（外れたら消費しない）。時間で 1 本ずつ戻り、倒すと 1 本戻る。
 // 残りが無いときは振りかぶれない
 const HOOK_CHARGES = 2;
 const HOOK_RECHARGE = 4; // 1 回分回復する時間 (s)
@@ -6607,6 +7014,13 @@ function castBlocks(origin: THREE.Vector3, dir: THREE.Vector3, far: number): num
     if (t >= 0) {
       best = t;
       hitBlock = b;
+    }
+  }
+  for (const r of ramps) {
+    const t = rayRamp(origin, dir, r, best);
+    if (t >= 0) {
+      best = t;
+      hitBlock = r;
     }
   }
   return best;
@@ -7821,7 +8235,7 @@ function trySickleHit(m: SickleMelee, imp: SickleImpact) {
   hitPointFromTip(meleeTip, hitPoint);
   camera.updateMatrixWorld();
   meleeSwing.set(imp.swing[0] * h.side, imp.swing[1], imp.swing[2]).transformDirection(camera.matrixWorld);
-  applyDummyHit(imp.hit, hitPoint, 'sword', meleeSwing);
+  applyDummyHit(imp.hit, hitPoint, 'sword', meleeSwing, true, SICKLE_DAMAGE_SCALE);
 }
 
 function updateSickleMelee(dt: number) {
@@ -8868,7 +9282,8 @@ function updateHitFx(dt: number) {
 
   // パリィ: 止まっている間は白黒のまま、最初の一瞬だけ白黒を反転させ、スローが明けるのに合わせて色を戻す
   // 最後の 1 体を倒したときも同じ白黒を使う
-  u.uMono.value = Math.max(parryMono(), finaleMono());
+  u.uMono.value = Math.max(parryMono(), finaleMono(), downFall()); // 倒れたときも白黒にしていく
+  u.uDim.value = Math.max(u.uDim.value, downFall() * 0.35);
   u.uInvert.value = parryFxAge < PARRY_INVERT_TIME || (finale && killSlowTime < FINALE_INVERT_TIME) ? 1 : 0;
   // 世界のスロー: 遅さに合わせて色を抜き、入った瞬間だけ輪を広げる
   // 一瞬で切り替えず、少しなめらかに寄せる
@@ -9083,6 +9498,7 @@ const SWORD_KESA = makeSwordAttack({
   knock: 260,
   hitStop: 0.075,
   fx: 1.15,
+  dmg: 1.3, // 袈裟・逆袈裟・唐竹・袈裟の 4 発で倒しきる（23.4 + 23.4 + 32.4 + 23.4 = 102.6）
 });
 
 // 2 段目: 逆袈裟。振り抜いた左下からそのまま刃を返し、右上へ斬り上げる
@@ -9116,6 +9532,7 @@ const SWORD_GYAKU = makeSwordAttack({
   knock: 260,
   hitStop: 0.075,
   fx: 1.15,
+  dmg: 1.3,
 });
 
 // 3 段目（締め）: 唐竹割り。頭上へ高く振りかぶり、溜めきってから真っ向から斬り下ろす。
@@ -9249,7 +9666,8 @@ const SWORD_ISSEN = makeSwordAttack({
   ],
   knock: 480,
   hitStop: 0.18,
-  fx: 2,
+  fx: 2.5,
+  dmg: 5.6, // 満タンの敵でも一撃で倒す（18 × 5.6 = 100.8）
 });
 
 // 溜め斬り（左クリック長押し）: 刀を右の後ろへ大きく引いて溜め、離すと視線の方向へ踏み込みながら
@@ -11840,7 +12258,7 @@ const DEADEYE_TURN = 30; // 次の印へ視点を寄せる速さ (1/s)
 const DEADEYE_STACK_OFFSET = 9; // 同じ敵に重ねた印を、画面上でずらす量 (px)
 const DEADEYE_HIT: HitDef = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1 };
 
-interface DeadEyeMark { enemy: Enemy; local: THREE.Vector3; el: HTMLElement; done: boolean }
+interface DeadEyeMark { enemy: Enemy; local: THREE.Vector3; el: HTMLElement; done: boolean; stack: number }
 let deadEye: 'off' | 'mark' | 'fire' | 'after' = 'off';
 let deadEyePressed = false; // 右クリックを押した瞬間
 let deadEyeT = 0; // 今の段に入ってからの時間（実時間）
@@ -11872,9 +12290,13 @@ function addDeadEyeMark(e: Enemy, at: THREE.Vector3) {
   e.root.updateMatrixWorld();
   const el = document.createElement('div');
   el.className = 'deadeye-mark';
-  el.innerHTML = '<svg viewBox="0 0 20 20"><path d="M4 4 L16 16 M16 4 L4 16" /></svg>';
+  el.innerHTML =
+    '<svg viewBox="0 0 20 20"><path class="br" d="M-9 0 V-9 H0 M20 -9 H29 V0 M29 20 V29 H20 M0 29 H-9 V20" />' +
+    '<path class="x" d="M4 4 L16 16 M16 4 L4 16" /></svg>';
   document.body.appendChild(el);
-  deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false });
+  // ずらし量は付けた時に決めておく（先の印を撃って消しても、残りの印が跳ばないように）
+  const stack = deadEyeMarks.filter((m) => !m.done && m.enemy === e).length;
+  deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false, stack });
   sfx.playDeadEyeMark(deadEyeMarks.length);
 }
 
@@ -11974,9 +12396,11 @@ function updateDeadEye() {
   deadEyeBlend += ((on ? 1 : 0) - deadEyeBlend) * Math.min(1, realDt * (on ? 8 : 6));
 }
 
-// 印を敵の体に重ねる。同じ敵に重ねた印は少しずつずらす
+// 印を敵の体に重ねる。同じ敵に重ねた印は少しずつずらす。
+// 揺れと反動を足したカメラで描くので、applyCameraOffset の後に呼ぶ（でないと撃つたびに印が敵からずれる）
 function placeDeadEyeMarks() {
-  for (const [i, m] of deadEyeMarks.entries()) {
+  camera.updateMatrixWorld();
+  for (const m of deadEyeMarks) {
     if (m.done) continue;
     if (!m.enemy.alive) {
       m.done = true;
@@ -11985,10 +12409,8 @@ function placeDeadEyeMarks() {
     }
     deadEyeScreen.copy(markWorld(m, deadEyeAt)).project(camera);
     m.el.style.display = deadEyeScreen.z > 1 ? 'none' : '';
-    let stack = 0;
-    for (let j = 0; j < i; j++) if (!deadEyeMarks[j].done && deadEyeMarks[j].enemy === m.enemy) stack++;
-    const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth + stack * DEADEYE_STACK_OFFSET;
-    const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight + stack * DEADEYE_STACK_OFFSET;
+    const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth + m.stack * DEADEYE_STACK_OFFSET;
+    const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight + m.stack * DEADEYE_STACK_OFFSET;
     m.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
 }
@@ -12015,6 +12437,11 @@ function floorAt(x: number, z: number, y: number) {
   let floor = 0;
   for (const b of blocks) {
     if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && y >= b.h - 0.1) floor = Math.max(floor, b.h);
+  }
+  for (const r of ramps) {
+    if (x < r.minX || x > r.maxX || z < r.minZ || z > r.maxZ) continue;
+    const top = rampTop(r, x, z);
+    if (y >= top - 0.1) floor = Math.max(floor, top);
   }
   return floor;
 }
@@ -12442,7 +12869,7 @@ const ammoHud = document.getElementById('ammo')!;
 const weaponHud = document.getElementById('weapon')!;
 const weaponName = weaponHud.querySelector<HTMLElement>('.name span')!;
 const weaponIcons = [...weaponHud.querySelectorAll<SVGElement>('.icon svg')];
-const WEAPON_LABELS: Record<WeaponId, string> = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE' };
+const WEAPON_LABELS: Record<WeaponId, string> = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE', chakram: 'CHAKRAM' };
 let weaponHudShown: WeaponId | null = null;
 // 右下の武器表示: 構えている武器のアイコンと名前。持ち替えたら差し込み直す
 function updateWeaponHud() {
@@ -12488,6 +12915,7 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[] }[]
     { label: '攻撃', keys: [{ input: 'attack' }] },
     { label: '打ち上げ', keys: [{ input: 'attack', hold: true }] },
   ],
+  chakram: [], // 技はまだ無い
 };
 // マウス: 押すボタンの側を塗る
 const mouseIcon = (side: 'left' | 'right') =>
@@ -12592,7 +13020,6 @@ function updateGun(dt: number) {
   muzzleFlash.visible = muzzleFlashAge < MUZZLE_FLASH_LIFE;
 
   updateBullets(dt);
-  placeDeadEyeMarks();
 
   ammoHud.classList.toggle('hidden', shownWeapon !== 'handgun');
   ammoHud.classList.toggle('reloading', gunReloading);
@@ -12924,7 +13351,7 @@ function runAxeDebug(def: AxeAttackDef, params: URLSearchParams) {
 }
 
 // 居合の構えを確かめる: ?focus=0.5（構えてからの実時間）&rush=0.2（突進を始めてからの時間。省くと構えたまま）
-// ステージの見た目を確かめる: ?stage=station / warehouse（組み上がった状態を始めの位置から見る）。
+// ステージの見た目を確かめる: ?stage=station / warehouse / parking（組み上がった状態を始めの位置から見る）。
 // &x=0&y=1.6&z=4（目の位置。省くと始めの位置）&yaw=0&pitch=0（度。yaw は左へ回すと正）
 // &sim=5 で、その秒数だけゲームを進めてから見る（敵の歩きを確かめる。1 秒ごとの敵の位置を console に出す）
 function runStageDebug(params: URLSearchParams) {
@@ -12933,15 +13360,25 @@ function runStageDebug(params: URLSearchParams) {
   enterStage(params.get('stage') as StageId);
   applyStageRise(Infinity);
   const num = (k: string, v: number) => (params.has(k) ? Number(params.get(k)) : v);
+  // &px=0&py=0&pz=0（足もとの位置）&vx=0&vy=0&vz=0（速度）で、プレイヤーを置いてから進める（坂などの当たり判定を確かめる）。
+  // 0.1 秒ごとのプレイヤーの位置を console に出す
+  const placed = ['px', 'py', 'pz'].some((k) => params.has(k));
+  if (placed) {
+    position.set(num('px', position.x), num('py', position.y), num('pz', position.z));
+    velocity.set(num('vx', 0), num('vy', 0), num('vz', 0));
+  }
   if (params.has('sim')) {
     const step = 1 / 60;
     const log: string[] = [];
+    const playerLog: string[] = [];
     const r = (v: number) => v.toFixed(1);
     for (let i = 0; i * step < num('sim', 0); i++) {
       update(step);
       if (i % 60 === 0) log.push(`${r(i * step)}s hp=${playerHp} ` + enemies.map((e) => `(${r(e.root.position.x)},${r(e.root.position.y)},${r(e.root.position.z)}${e.moving ? ' walk' : ''})`).join(' '));
+      if (placed && i % 6 === 0) playerLog.push(`${r(i * step)}s (${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)}) v=(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)})${onGround ? ' ground' : ''}${groundRamp ? ' ramp' : ''}`);
     }
     console.log('ENEMY_LOG\n' + log.join('\n'));
+    if (placed) console.log('PLAYER_LOG\n' + playerLog.join('\n'));
   }
   camera.position.set(num('x', position.x), num('y', position.y + EYE_HEIGHT), num('z', position.z));
   camera.quaternion.setFromEuler(new THREE.Euler(num('pitch', 0) * DEG, num('yaw', 0) * DEG, 0, 'YXZ'));
@@ -13099,8 +13536,9 @@ function applyStageRise(t: number) {
     let h = 0;
     if (s >= 0) h = Math.max(RISE_BASE_HEIGHT, (b.h - y0) * easeOutCubic(k));
     if (h <= 0) riseMatrix.makeScale(0, 0, 0);
-    else riseMatrix.makeScale(b.maxX - b.minX, h, b.maxZ - b.minZ);
-    r.mesh.setMatrixAt(r.index, riseMatrix.setPosition(b.minX, y0, b.minZ));
+    else if (r.ramp) rampMatrix(r.ramp, h, riseMatrix);
+    else riseMatrix.makeScale(b.maxX - b.minX, h, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ);
+    r.mesh.setMatrixAt(r.index, riseMatrix);
     const fill = f >= 1 ? RISE_FILL_DONE : f > 0 ? y0 + (b.h - y0) * easeInOutCubic(f) : -1;
     (r.mesh.geometry.getAttribute('aFill') as THREE.InstancedBufferAttribute).setX(r.index, fill);
     // 高い柱が組み上がった瞬間に、ずしりと揺らす
@@ -13142,14 +13580,15 @@ function updateStageRise(dt: number) {
   if (applyStageRise(riseT - INTRO_RISE_DELAY)) {
     applyStageRise(Infinity); // 床のグリッドを果てまで出しきる
     riseT = -1;
+    sfx.stopStageRise();
   }
 }
 
 // ---- ステージへ入る ----
 // 訓練場（アリーナ）を丸ごと外し、選んだステージの箱を置き直す。タイトルへ戻ると読み込み直すので、
 // 1 度入ったら訓練場へ戻す処理は持たない。敵は操作を返してから出す
-type StageId = 'station' | 'warehouse';
-const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { station: buildStation, warehouse: buildWarehouse };
+type StageId = 'station' | 'warehouse' | 'parking';
+const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { station: buildStation, warehouse: buildWarehouse, parking: buildParking };
 let pendingStage: StageId | null = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
@@ -13165,11 +13604,12 @@ function mergeBoxes(list: Block[]): Block[] {
 }
 
 const stageLooks = { terrain: TERRAIN_GRID, struct: STRUCT_GRID } as const;
-const stageMaterial = (b: StageBox) =>
+type StageLook = Pick<StageBox, 'look' | 'gridOrigin'>;
+const stageMaterial = (b: StageLook) =>
   b.look === 'plain' ? new THREE.MeshLambertMaterial({ color: 0xffffff }) : gridMaterial(stageLooks[b.look], b.gridOrigin);
 // 線の引き方と格子の起点が同じ箱ごとに分ける（1 つのメッシュにまとめる単位）
-function groupStageBoxes(list: readonly StageBox[]) {
-  const groups = new Map<string, StageBox[]>();
+function groupStageBoxes<T extends StageLook>(list: readonly T[]) {
+  const groups = new Map<string, T[]>();
   for (const b of list) {
     const o = b.gridOrigin;
     const key = `${b.look}|${o ? `${o.x},${o.y},${o.z}` : ''}`;
@@ -13191,6 +13631,7 @@ function enterStage(id: StageId) {
   const layout = STAGE_BUILDERS[id]();
   scene.remove(arenaRoot);
   blocks.length = 0;
+  ramps.length = 0;
   risers.length = 0;
   riseMeshes.clear();
   riseLines.length = 0;
@@ -13227,7 +13668,9 @@ function enterStage(id: StageId) {
   for (const [list, inArena] of [[[...layout.boxes, ...layout.decor], true], [layout.scenery, false]] as const) {
     for (const group of groupStageBoxes(list)) addBoxes(group, stageMaterial(group[0]), (b) => b.light, root, inArena);
   }
+  for (const group of groupStageBoxes(layout.ramps ?? [])) addRamps(group, stageMaterial(group[0]), root);
   blocks.push(...mergeBoxes([...layout.boxes, ...layout.colliders]));
+  ramps.push(...(layout.ramps ?? []));
   for (const line of addStageLines(layout, root)) riseLines.push(line);
   // 前後の端（線路が続いていく先）に、近づくと浮かぶ境界の壁を立てる
   const width = bounds.maxX - bounds.minX;
@@ -13281,6 +13724,15 @@ function getStagePreview(id: StageId) {
       const y0 = b.y0 ?? 0;
       mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));
       mesh.setColorAt(i, boxColor.setHSL(0, 0, b.light));
+    });
+    mesh.castShadow = mesh.receiveShadow = true;
+    root.add(mesh);
+  }
+  for (const group of groupStageBoxes(layout.ramps ?? [])) {
+    const mesh = new THREE.InstancedMesh(wedgeGeo, stageMaterial(group[0]), group.length);
+    group.forEach((r, i) => {
+      mesh.setMatrixAt(i, rampMatrix(r, r.h - r.y0, boxMatrix));
+      mesh.setColorAt(i, boxColor.setHSL(0, 0, r.light));
     });
     mesh.castShadow = mesh.receiveShadow = true;
     root.add(mesh);
@@ -13507,6 +13959,7 @@ if (debugAttack) {
   }
   setupTitleStage();
   prebuildStagePreviews();
+  restoreRetry();
   const clock = new THREE.Clock();
   renderer.setAnimationLoop(() => {
     const rawFrame = clock.getDelta();
@@ -13537,8 +13990,9 @@ if (debugAttack) {
       return;
     }
     updateStageRun(realFrame);
-    // 倒した直後とパリィの後のスローは、演出も含めて全体にかける
-    const slow = killSlowFactor(realFrame) * parrySlowFactor(realFrame);
+    updatePlayerDown(realFrame);
+    // 倒した直後とパリィの後、倒れた後のスローは、演出も含めて全体にかける
+    const slow = killSlowFactor(realFrame) * parrySlowFactor(realFrame) * downSlowFactor();
     const dt = realFrame * slow;
     if (hitStop > 0) {
       // ヒットストップ中は全体を止める（入力は溜めておき、揺れだけ続ける）
@@ -13563,6 +14017,7 @@ if (debugAttack) {
     });
     applyCameraOffset();
     updateFinishMark();
+    placeDeadEyeMarks();
     composer.render(dt);
     camera.quaternion.copy(savedQuat);
   });
