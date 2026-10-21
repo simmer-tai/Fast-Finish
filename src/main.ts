@@ -50,63 +50,21 @@ import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_PO
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
-
-// ---- 設定 ----
-const EYE_HEIGHT = 1.6;
-const WALK_SPEED = 8;
-const SPRINT_SPEED = 15;
-const JUMP_SPEED = 6;
-const GRAVITY = 20;
-const GROUND_ACCEL = 90; // 地上での加減速
-const GROUND_FRICTION = 60; // 入力がないときの地上での減速
-const GROUND_TURN_RATE = 14; // 地上で進行方向を曲げる速さ (rad/s)
-const OVERSPEED_DECAY = 8; // 最高速を超えた分を地上で失う速さ (m/s²)。空中では失わない
-const AIR_ACCEL = 45;
-const AIR_TURN_RATE = 4;
-const PLAYER_RADIUS = 0.35;
-
-// ダッシュ（ステップ）
-const DASH_SPEED = 38;
-const DASH_TIME = 0.14;
-const DASH_EXIT_SPEED = 23; // ダッシュ後に残す速さ（勢い）
-const DASH_CHARGES = 2;
-const DASH_RECHARGE = 0.9; // 地上で 1 回分回復する時間
-const DASH_COOLDOWN = 0.2;
-
-// スライディング
-const SLIDE_EYE_HEIGHT = 0.9;
-const SLIDE_START_SPEED = 10;
-const SLIDE_END_SPEED = 6;
-const SLIDE_BOOST = 6;
-const SLIDE_BOOST_MAX = 30; // ブーストでこれ以上は加速しない
-const SLIDE_BOOST_COOLDOWN = 0.8;
-const SLIDE_FRICTION = 7;
-const SLIDE_TURN_RATE = 1.5;
-
-// よじ登り
-const MANTLE_REACH = 3.0; // 足元からこの高さまでの縁に手が届く
-const MANTLE_FACING = 0.6; // 視線（水平）と壁へ向かう向きの内積がこれ以上なら「壁を向いている」とみなす（約 53° 以内）
-const MANTLE_TIME_BASE = 0.15; // よじ登りにかかる時間 = BASE + 登る高さ × PER_METER
-const MANTLE_TIME_PER_METER = 0.12;
-const MANTLE_KEEP = 0.6; // 登りきった後に残す、登る前の水平の勢いの割合
-
-// 壁走り
-const WALLRUN_MIN_SPEED = 7; // 壁に沿う速さがこれ以上なら壁走りを始める
-const WALLRUN_SPEED = 14; // 壁走り中はこの速さまで加速する（これより速ければ勢いを保つ）
-const WALLRUN_ACCEL = 20;
-const WALLRUN_GRAVITY = 3; // 壁走り中の重力（ゆっくり落ちる）
-const WALLRUN_START_LIFT = 2; // 飛びついた瞬間の上向きの速さの上限（落下中なら落下を止める）
-const WALLRUN_MAX_FALL = 3; // 壁走り中の落下速度の上限
-const WALLRUN_MAX_TIME = 1.6;
-const WALLRUN_MIN_HEIGHT = 1; // 壁の上端が足元からこれ以上高くないと走り始めない
-const WALLJUMP_UP = 6.5;
-const WALLJUMP_OUT = 7; // 壁から離れる向きへ足す速さ
-const WALLRUN_ROLL = 0.12; // 壁と反対側へ頭を傾ける量 (rad)
-
-// カメラ
-const BASE_FOV = 75;
-const MAX_FOV_BONUS = 22; // 速度による最大の視野拡大
-const FOV_SPEED_MAX = 32; // この速さで視野拡大が最大になる
+import {
+  AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED,
+  DASH_TIME, EYE_HEIGHT, FOV_SPEED_MAX, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED,
+  MAX_FOV_BONUS, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED,
+  SLIDE_EYE_HEIGHT, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT,
+  WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_ROLL, WALLRUN_SPEED,
+} from './player/config.js';
+import { dashDir, forward, player, position, right, velocity, wallNormal, wallTangent, wish } from './player/state.js';
+import {
+  RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, hasHeadroom,
+  initMovement, moveToward, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantle, tryMantleBox,
+  tryStartWallRun, updateMantle,
+} from './player/movement.js';
+import { keys, padMove, pressed } from './input.js';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, easeOutQuart, linear, type Ease } from './ease.js';
 
 // ---- 基本セットアップ ----
 // 画面のアンチエイリアスは後処理のマルチサンプル描画で行うので、キャンバス側では持たない
@@ -816,8 +774,6 @@ document.addEventListener('mousemove', (e) => {
   turnView(e.movementX * look, e.movementY * look);
 });
 
-const keys = new Set<string>(); // 押しっぱなしのキー
-const pressed = new Set<string>(); // このフレームで押されたキー
 window.addEventListener('keydown', (e) => {
   if (!controls.isLocked) return; // タイトル / 一時停止の間のキーはゲームに渡さない
   // ロックしていないと Esc でロックが外れないので、自分で一時停止にする
@@ -920,7 +876,6 @@ const PAD_MENU_KEYS: [number, string][] = [
 const PAD_LOOK_SPEED = 4.2; // 右スティックを倒しきったときの視点の速さ (rad/s)
 const PAD_LOOK_CURVE = 2.2; // 小さく倒したときに細かく狙えるよう、倒した量を累乗して使う
 const PAD_SPRINT = 0.9; // 左スティックをこれ以上倒すと走る
-const padMove = { x: 0, y: 0 }; // 左スティック（x: 右, y: 前）
 let padSprint = false;
 
 function sendPadKey(code: string) {
@@ -1256,360 +1211,8 @@ function showGameOver(run: StageRun) {
 }
 
 // ---- プレイヤー物理 ----
-// position は足元の位置
-const position = new THREE.Vector3(0, 0, 5);
-const velocity = new THREE.Vector3();
-let onGround = false;
-let landImpact = 0; // このフレームで着地したときの落下速度
-
-let dashTime = 0;
-let dashCooldown = 0;
-let dashCharges = DASH_CHARGES;
-let dashRecharge = 0;
-let dashSpeedBefore = 0;
-const dashDir = new THREE.Vector3();
-
-let sliding = false;
-let slideLock = false; // スライディングが止まった後、C を離すまで再開しない
-let slideBoostCooldown = 0;
-
-let mantleTime = -1; // よじ登り中の経過時間。負ならよじ登っていない
-let mantleDuration = 0;
-let mantleExitSpeed = 0;
-const mantleFrom = new THREE.Vector3();
-const mantleTo = new THREE.Vector3();
-const mantleDir = new THREE.Vector3();
-const mantlePrev = new THREE.Vector3();
-
-let wallRunning = false;
-let wallRunTime = 0;
-const wallNormal = new THREE.Vector3(); // 壁から外向き
-const wallTangent = new THREE.Vector3(); // 壁に沿って走る向き
-const wallProbe = new THREE.Vector3();
-// 壁から離れた後、地面に降りるまでは同じ向きの壁で走り直さない（同じ壁を登り続けられないように）
-const lastWallNormal = new THREE.Vector3();
-let hasLastWall = false;
-
-let eyeHeight = EYE_HEIGHT;
-
-function moveToward(current: number, target: number, maxDelta: number) {
-  return Math.abs(target - current) <= maxDelta ? target : current + Math.sign(target - current) * maxDelta;
-}
-
-// 水平速度の向きを dir へ最大 maxAngle だけ回す（速さは変えない）
-function rotateHorizontalToward(dir: THREE.Vector3, maxAngle: number) {
-  const speed = Math.hypot(velocity.x, velocity.z);
-  if (speed < 1e-6) return;
-  const cur = Math.atan2(velocity.z, velocity.x);
-  const diff = Math.atan2(Math.sin(Math.atan2(dir.z, dir.x) - cur), Math.cos(Math.atan2(dir.z, dir.x) - cur));
-  const ang = cur + THREE.MathUtils.clamp(diff, -maxAngle, maxAngle);
-  velocity.x = Math.cos(ang) * speed;
-  velocity.z = Math.sin(ang) * speed;
-}
-
-// 入力方向 dir（正規化済み）へ水平速度を近づける。
-// 進行方向から大きく外れていなければ「向きを曲げる」ので、曲がっても勢いが落ちない。
-// 真逆へ切り返したときだけ、ベクトルごと近づけて減速させる。
-function steerHorizontal(dir: THREE.Vector3, maxSpeed: number, accel: number, turnRate: number, overspeedDecay: number, dt: number) {
-  const speed = Math.hypot(velocity.x, velocity.z);
-  const targetSpeed = speed > maxSpeed ? Math.max(maxSpeed, speed - overspeedDecay * dt) : maxSpeed;
-  const dot = speed > 0 ? (velocity.x * dir.x + velocity.z * dir.z) / speed : -1;
-  if (speed < 1 || dot < -0.5) {
-    const dx = dir.x * targetSpeed - velocity.x;
-    const dz = dir.z * targetSpeed - velocity.z;
-    const len = Math.hypot(dx, dz);
-    if (len > 0) {
-      const k = Math.min(1, (accel * dt) / len);
-      velocity.x += dx * k;
-      velocity.z += dz * k;
-    }
-    return;
-  }
-  rotateHorizontalToward(dir, turnRate * dt);
-  const newSpeed = moveToward(speed, targetSpeed, accel * dt);
-  velocity.x *= newSpeed / speed;
-  velocity.z *= newSpeed / speed;
-}
-
-function setHorizontalSpeed(s: number) {
-  const speed = Math.hypot(velocity.x, velocity.z);
-  if (speed < 1e-6) return;
-  velocity.x *= s / speed;
-  velocity.z *= s / speed;
-}
-
-// 円柱との当たり判定: 上から落ちてきたら上面に乗り、横からなら押し出す
-function collideCylinder(cx: number, cz: number, r: number, h: number, prevY: number) {
-  const dx = position.x - cx;
-  const dz = position.z - cz;
-  const dist = Math.hypot(dx, dz);
-  if (prevY >= h - 1e-4 && position.y < h && velocity.y <= 0 && dist < r + PLAYER_RADIUS * 0.5) {
-    landImpact = Math.max(landImpact, -velocity.y);
-    position.y = h;
-    velocity.y = 0;
-    onGround = true;
-    return;
-  }
-  if (position.y >= h) return;
-  const minDist = r + PLAYER_RADIUS;
-  if (dist >= minDist || dist < 1e-6) return;
-  const nx = dx / dist;
-  const nz = dz / dist;
-  position.x = cx + nx * minDist;
-  position.z = cz + nz * minDist;
-  // 壁へ向かう成分だけ消して、沿う方向の勢いは残す
-  const vn = velocity.x * nx + velocity.z * nz;
-  if (vn < 0) {
-    velocity.x -= nx * vn;
-    velocity.z -= nz * vn;
-  }
-}
-
-// 箱との当たり判定: 上から落ちてきたら上面に乗り、横からなら一番近い面から押し出す
-// プレイヤーの頭の高さ（足もとから）。浮いた箱の下をくぐれるかどうかに使う
-const PLAYER_HEAD = 1.8;
-const PLAYER_HEAD_SLIDE = 1.1;
-function collideBox(b: Block, prevY: number) {
-  const px = THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
-  const pz = THREE.MathUtils.clamp(position.z, b.minZ, b.maxZ);
-  const dx = position.x - px;
-  const dz = position.z - pz;
-  const dist = Math.hypot(dx, dz);
-  if (prevY >= b.h - 1e-4 && position.y < b.h && velocity.y <= 0 && dist < PLAYER_RADIUS * 0.5) {
-    landImpact = Math.max(landImpact, -velocity.y);
-    position.y = b.h;
-    velocity.y = 0;
-    onGround = true;
-    return;
-  }
-  // 浮いた箱の下から頭をぶつけたら、底面で止める
-  const y0 = b.y0 ?? 0;
-  const head = sliding ? PLAYER_HEAD_SLIDE : PLAYER_HEAD;
-  if (y0 > 0 && prevY + head <= y0 + 1e-4 && position.y + head > y0 && dist < PLAYER_RADIUS * 0.5) {
-    position.y = y0 - head;
-    if (velocity.y > 0) velocity.y = 0;
-    return;
-  }
-  if (position.y >= b.h || position.y + head <= y0 || dist >= PLAYER_RADIUS) return;
-  // 坂に立っているときは、坂の上の端につながる床の縁（坂の傾きの分だけのわずかな段）を上る
-  if (groundRamp && b.h - position.y <= RAMP_LIP) {
-    position.y = b.h;
-    velocity.y = 0;
-    onGround = true;
-    return;
-  }
-  pushOutOfBox(b, px, pz, dx, dz, dist);
-}
-
-// 箱の側面から外へ押し出す（(px, pz) は箱の上でいちばん近い点、(dx, dz) はそこからの差、dist はその長さ）
-function pushOutOfBox(b: Block, px: number, pz: number, dx: number, dz: number, dist: number) {
-  let nx: number;
-  let nz: number;
-  if (dist > 1e-6) {
-    nx = dx / dist;
-    nz = dz / dist;
-    position.x = px + nx * PLAYER_RADIUS;
-    position.z = pz + nz * PLAYER_RADIUS;
-  } else {
-    // 中心が箱の中に入ってしまったら、一番浅い面の外へ出す
-    const pen = [position.x - b.minX, b.maxX - position.x, position.z - b.minZ, b.maxZ - position.z];
-    const k = pen.indexOf(Math.min(...pen));
-    nx = k === 0 ? -1 : k === 1 ? 1 : 0;
-    nz = k === 2 ? -1 : k === 3 ? 1 : 0;
-    if (nx !== 0) position.x = (nx < 0 ? b.minX : b.maxX) + nx * PLAYER_RADIUS;
-    else position.z = (nz < 0 ? b.minZ : b.maxZ) + nz * PLAYER_RADIUS;
-  }
-  // 壁へ向かう成分だけ消して、沿う方向の勢いは残す
-  const vn = velocity.x * nx + velocity.z * nz;
-  if (vn < 0) {
-    velocity.x -= nx * vn;
-    velocity.z -= nz * vn;
-  }
-}
-
-// 坂との当たり判定: 上面の近くにいれば上面に立たせ（上り坂ではめり込んだ分を押し上げ、下り坂では浮いた分を吸い付ける）、
-// 上面より十分低い所から横に触れたら、箱の側面と同じように押し出す。立ったら groundRamp に入れる
-const RAMP_STEP = 0.6; // 上面からこれだけ下にめり込んでいても、上面へ押し上げる（上り坂を速く走るとき）
-const RAMP_SNAP = 0.6; // 坂に立っていたら、上面からこれだけ浮いても上面へ吸い付ける（下り坂を速く走るとき）
-const RAMP_LIP = 0.3; // 坂に立っているときに上る段の高さ（坂の上の端と、つながる床の縁との差）
-const RAMP_SLIDE_GRAVITY = 40; // スライディング中に坂を下る向きへ掛かる加速度 = これ × 勾配
-let groundRamp: Ramp | null = null; // 今立っている坂
-function collideRamp(r: Ramp, prevY: number, stick: boolean) {
-  const px = THREE.MathUtils.clamp(position.x, r.minX, r.maxX);
-  const pz = THREE.MathUtils.clamp(position.z, r.minZ, r.maxZ);
-  const dx = position.x - px;
-  const dz = position.z - pz;
-  const dist = Math.hypot(dx, dz);
-  if (dist >= PLAYER_RADIUS) return;
-  const top = rampTop(r, px, pz);
-  if (
-    dist < PLAYER_RADIUS * 0.5 && velocity.y <= 0 && position.y <= top + (stick ? RAMP_SNAP : 1e-4)
-    && (position.y >= top - RAMP_STEP || prevY >= top - 1e-4)
-  ) {
-    if (position.y < top) landImpact = Math.max(landImpact, -velocity.y);
-    position.y = top;
-    velocity.y = 0;
-    onGround = true;
-    groundRamp = r;
-    return;
-  }
-  const head = sliding ? PLAYER_HEAD_SLIDE : PLAYER_HEAD;
-  if (position.y >= top - RAMP_STEP || position.y + head <= r.y0) return;
-  pushOutOfBox(r, px, pz, dx, dz, dist);
-}
-
-// 壁の方を向いて W を押しているか（nx, nz は体から壁へ向かう水平の向き）
-function facingLedge(nx: number, nz: number): boolean {
-  return (keys.has('KeyW') || padMove.y > 0.5) && forward.x * nx + forward.z * nz >= MANTLE_FACING;
-}
-
-// 空中で箱の側面に触れ、そちらを向いて W を押していて、上面に手が届くならよじ登り始める
-// 足もとの高さ y で (x, z) に立ったとき、頭の上が浮いた箱でふさがっていないか（柱の上面が屋根の底に接しているときなど）
-function hasHeadroom(x: number, z: number, y: number): boolean {
-  for (const b of blocks) {
-    const y0 = b.y0 ?? 0;
-    if (y0 <= 0 || y0 >= y + PLAYER_HEAD || b.h <= y) continue;
-    if (x > b.minX - PLAYER_RADIUS && x < b.maxX + PLAYER_RADIUS && z > b.minZ - PLAYER_RADIUS && z < b.maxZ + PLAYER_RADIUS) return false;
-  }
-  return true;
-}
-
-function tryMantleBox(b: Block, speedBefore: number): boolean {
-  const px = THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
-  const pz = THREE.MathUtils.clamp(position.z, b.minZ, b.maxZ);
-  const dx = px - position.x;
-  const dz = pz - position.z;
-  const dist = Math.hypot(dx, dz);
-  if (dist > PLAYER_RADIUS + 0.05 || dist < 1e-6) return false;
-  const climb = b.h - position.y;
-  if (climb <= 0 || climb > MANTLE_REACH) return false;
-  const nx = dx / dist;
-  const nz = dz / dist;
-  if (!facingLedge(nx, nz)) return false;
-
-  // 縁から少し内側へ乗る。乗る所の上が別の箱（屋根など）でふさがっていれば登らない
-  mantleTo.set(
-    THREE.MathUtils.clamp(px + nx * PLAYER_RADIUS, b.minX, b.maxX),
-    b.h,
-    THREE.MathUtils.clamp(pz + nz * PLAYER_RADIUS, b.minZ, b.maxZ),
-  );
-  if (!hasHeadroom(mantleTo.x, mantleTo.z, b.h)) return false;
-  mantleFrom.copy(position);
-  startMantle(nx, nz, climb, speedBefore);
-  return true;
-}
-
-// 空中で円柱の側面に触れ、そちらを向いて W を押していて、上面に手が届くならよじ登り始める
-function tryMantle(cx: number, cz: number, r: number, h: number, speedBefore: number): boolean {
-  const dx = cx - position.x;
-  const dz = cz - position.z;
-  const dist = Math.hypot(dx, dz);
-  if (dist > r + PLAYER_RADIUS + 0.05 || dist < 1e-6) return false;
-  const climb = h - position.y;
-  if (climb <= 0 || climb > MANTLE_REACH) return false;
-  const nx = dx / dist;
-  const nz = dz / dist;
-  if (!facingLedge(nx, nz)) return false;
-
-  // 縁から少し内側（細い柱なら中心）へ乗る
-  const inset = Math.max(0, r - PLAYER_RADIUS);
-  mantleFrom.copy(position);
-  mantleTo.set(cx - nx * inset, h, cz - nz * inset);
-  startMantle(nx, nz, climb, speedBefore);
-  return true;
-}
-
-function startMantle(nx: number, nz: number, climb: number, speedBefore: number) {
-  mantleDir.set(nx, 0, nz);
-  mantleExitSpeed = speedBefore * MANTLE_KEEP;
-  mantleDuration = MANTLE_TIME_BASE + climb * MANTLE_TIME_PER_METER;
-  mantleTime = 0;
-  dashTime = 0;
-  sliding = false;
-  wallRunning = false;
-  onGround = false;
-  onMantleStart();
-}
-
-function updateMantle(dt: number) {
-  mantleTime += dt;
-  const u = Math.min(1, mantleTime / mantleDuration);
-  // 先に体を引き上げ、縁を越えたあたりから前へ乗り出す
-  const up = easeOutCubic(Math.min(1, u / 0.7));
-  const fwd = easeInOutCubic(THREE.MathUtils.clamp((u - 0.4) / 0.6, 0, 1));
-  mantlePrev.copy(position);
-  position.set(
-    mantleFrom.x + (mantleTo.x - mantleFrom.x) * fwd,
-    mantleFrom.y + (mantleTo.y - mantleFrom.y) * up,
-    mantleFrom.z + (mantleTo.z - mantleFrom.z) * fwd,
-  );
-  if (u >= 1) {
-    mantleTime = -1;
-    velocity.set(mantleDir.x * mantleExitSpeed, 0, mantleDir.z * mantleExitSpeed);
-    onGround = true;
-    onMantleEnd();
-  } else {
-    // 視野や揺れの演出が実際の動きに合うよう、移動量から速度を出しておく
-    velocity.subVectors(position, mantlePrev).divideScalar(dt);
-  }
-}
-
-// 体の横に触れている箱の側面を探し、その外向きの法線を out に入れる。
-// 上端が足元から minAbove 以上高い壁だけを見る
-function findWall(minAbove: number, out: THREE.Vector3): boolean {
-  for (const b of blocks) {
-    if (b.h - position.y < minAbove) continue;
-    if ((b.y0 ?? 0) > position.y + 1) continue; // 底面が胸より高い浮いた箱は壁にしない
-    const dx = position.x - THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
-    const dz = position.z - THREE.MathUtils.clamp(position.z, b.minZ, b.maxZ);
-    if ((dx === 0 && dz === 0) || Math.hypot(dx, dz) > PLAYER_RADIUS + 0.05) continue;
-    // 角に触れているときは近い方の面とみなす
-    if (Math.abs(dx) >= Math.abs(dz)) out.set(Math.sign(dx), 0, 0);
-    else out.set(0, 0, Math.sign(dz));
-    return true;
-  }
-  return false;
-}
-
-// 空中で壁に沿って十分な速さで動き、前へ入力していれば壁走りを始める
-function tryStartWallRun(): boolean {
-  if (!findWall(WALLRUN_MIN_HEIGHT, wallProbe)) return false;
-  if (hasLastWall && wallProbe.dot(lastWallNormal) > 0.7) return false;
-  const vn = velocity.x * wallProbe.x + velocity.z * wallProbe.z;
-  const tx = velocity.x - wallProbe.x * vn;
-  const tz = velocity.z - wallProbe.z * vn;
-  const along = Math.hypot(tx, tz);
-  if (along < WALLRUN_MIN_SPEED) return false;
-  wallTangent.set(tx / along, 0, tz / along);
-  if (wish.dot(wallTangent) < 0.3 || wish.dot(wallProbe) > 0.5) return false;
-
-  wallRunning = true;
-  wallRunTime = 0;
-  wallNormal.copy(wallProbe);
-  velocity.x = wallTangent.x * along;
-  velocity.z = wallTangent.z * along;
-  velocity.y = THREE.MathUtils.clamp(velocity.y, 0, WALLRUN_START_LIFT);
-  onWallRunStart();
-  return true;
-}
-
-// 同じ壁に触れたまま、前へ入力して勢いが残っている間だけ走り続ける
-function canKeepWallRun(): boolean {
-  if (onGround || wallRunTime > WALLRUN_MAX_TIME) return false;
-  if (wish.dot(wallTangent) <= 0 || wish.dot(wallNormal) > 0.5) return false;
-  if (Math.hypot(velocity.x, velocity.z) < WALLRUN_MIN_SPEED * 0.5) return false; // 前の壁にぶつかった等
-  return findWall(0.3, wallProbe) && wallProbe.dot(wallNormal) > 0.9;
-}
-
-function endWallRun() {
-  wallRunning = false;
-  lastWallNormal.copy(wallNormal);
-  hasLastWall = true;
-}
-
-const forward = new THREE.Vector3();
-const right = new THREE.Vector3();
-const wish = new THREE.Vector3();
+// 状態は player/state.ts、移動・当たり判定・よじ登り・壁走りは player/movement.ts
+initMovement({ onMantleStart, onMantleEnd, onWallRunStart });
 function update(dt: number) {
   const locked = controls.isLocked;
 
@@ -1634,45 +1237,45 @@ function update(dt: number) {
   const sprinting = locked && (keys.has('ShiftLeft') || keys.has('ShiftRight') || padSprint);
   const maxSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
   const slideKey = locked && keys.has('KeyC');
-  if (!slideKey) slideLock = false;
+  if (!slideKey) player.slideLock = false;
 
   // ---- ダッシュ ----
-  dashCooldown -= dt;
-  slideBoostCooldown -= dt;
-  if ((onGround || wallRunning) && dashCharges < DASH_CHARGES) {
-    dashRecharge += dt;
-    if (dashRecharge >= DASH_RECHARGE) {
-      dashRecharge = 0;
-      dashCharges++;
+  player.dashCooldown -= dt;
+  player.slideBoostCooldown -= dt;
+  if ((player.onGround || player.wallRunning) && player.dashCharges < DASH_CHARGES) {
+    player.dashRecharge += dt;
+    if (player.dashRecharge >= DASH_RECHARGE) {
+      player.dashRecharge = 0;
+      player.dashCharges++;
     }
   }
-  if (locked && !stuck && mantleTime < 0 && rushTime < 0 && chargeDashTime <= 0 && [...pressed].some(isSprintKey) && dashCharges > 0 && dashCooldown <= 0) {
+  if (locked && !stuck && player.mantleTime < 0 && rushTime < 0 && chargeDashTime <= 0 && [...pressed].some(isSprintKey) && player.dashCharges > 0 && player.dashCooldown <= 0) {
     dashDir.copy(hasWish ? wish : forward);
-    dashSpeedBefore = Math.hypot(velocity.x, velocity.z);
-    dashTime = DASH_TIME;
-    dashCooldown = DASH_COOLDOWN;
-    dashCharges--;
-    dashRecharge = 0;
-    sliding = false;
-    if (wallRunning) endWallRun();
+    player.dashSpeedBefore = Math.hypot(velocity.x, velocity.z);
+    player.dashTime = DASH_TIME;
+    player.dashCooldown = DASH_COOLDOWN;
+    player.dashCharges--;
+    player.dashRecharge = 0;
+    player.sliding = false;
+    if (player.wallRunning) endWallRun();
     onDash();
   }
 
   // ---- スライディングの開始・終了 ----
   const hSpeed = Math.hypot(velocity.x, velocity.z);
-  if (!sliding && !stuck && slideKey && !slideLock && onGround && dashTime <= 0 && hSpeed >= SLIDE_START_SPEED) {
-    sliding = true;
-    if (slideBoostCooldown <= 0) {
+  if (!player.sliding && !stuck && slideKey && !player.slideLock && player.onGround && player.dashTime <= 0 && hSpeed >= SLIDE_START_SPEED) {
+    player.sliding = true;
+    if (player.slideBoostCooldown <= 0) {
       setHorizontalSpeed(Math.max(hSpeed, Math.min(hSpeed + SLIDE_BOOST, SLIDE_BOOST_MAX)));
-      slideBoostCooldown = SLIDE_BOOST_COOLDOWN;
+      player.slideBoostCooldown = SLIDE_BOOST_COOLDOWN;
     }
     onSlideStart();
-  } else if (sliding) {
-    if (!slideKey || !onGround) {
-      sliding = false;
+  } else if (player.sliding) {
+    if (!slideKey || !player.onGround) {
+      player.sliding = false;
     } else if (hSpeed < SLIDE_END_SPEED) {
-      sliding = false;
-      slideLock = true;
+      player.sliding = false;
+      player.slideLock = true;
     }
   }
 
@@ -1681,33 +1284,33 @@ function update(dt: number) {
     updateRush(dt);
   } else if (chargeDashTime > 0) {
     updateChargeDash(dt);
-  } else if (dashTime > 0) {
-    dashTime -= dt;
+  } else if (player.dashTime > 0) {
+    player.dashTime -= dt;
     velocity.x = dashDir.x * DASH_SPEED;
     velocity.z = dashDir.z * DASH_SPEED;
     velocity.y = 0; // ダッシュ中は落ちない
-    if (dashTime <= 0) {
-      const exit = Math.max(DASH_EXIT_SPEED, dashSpeedBefore);
+    if (player.dashTime <= 0) {
+      const exit = Math.max(DASH_EXIT_SPEED, player.dashSpeedBefore);
       velocity.x = dashDir.x * exit;
       velocity.z = dashDir.z * exit;
     }
-  } else if (wallRunning) {
+  } else if (player.wallRunning) {
     // 壁に沿って走る。遅ければ加速し、速ければ勢いをそのまま保つ。壁へ少し押し付けて離れないようにする
-    wallRunTime += dt;
+    player.wallRunTime += dt;
     const speed = hSpeed < WALLRUN_SPEED ? moveToward(hSpeed, WALLRUN_SPEED, WALLRUN_ACCEL * dt) : hSpeed;
     velocity.x = wallTangent.x * speed - wallNormal.x;
     velocity.z = wallTangent.z * speed - wallNormal.z;
-  } else if (sliding) {
+  } else if (player.sliding) {
     // 少しずつ減速しながら、ゆるく曲がれる
     if (hasWish && velocity.x * wish.x + velocity.z * wish.z > 0) rotateHorizontalToward(wish, SLIDE_TURN_RATE * dt);
     setHorizontalSpeed(Math.max(0, hSpeed - SLIDE_FRICTION * dt));
     // 坂では、下る向きへ加速する（上る向きなら早く止まる）
-    if (groundRamp) {
-      const u = rampUpDir(groundRamp);
+    if (player.groundRamp) {
+      const u = rampUpDir(player.groundRamp);
       velocity.x -= u.x * RAMP_SLIDE_GRAVITY * u.slope * dt;
       velocity.z -= u.z * RAMP_SLIDE_GRAVITY * u.slope * dt;
     }
-  } else if (onGround) {
+  } else if (player.onGround) {
     if (hasWish) steerHorizontal(wish, maxSpeed, GROUND_ACCEL, GROUND_TURN_RATE, OVERSPEED_DECAY, dt);
     else setHorizontalSpeed(Math.max(0, hSpeed - GROUND_FRICTION * dt));
   } else if (hasWish) {
@@ -1716,16 +1319,16 @@ function update(dt: number) {
   }
 
   // ---- ジャンプ（スライディング中も可。勢いはそのまま） ----
-  if (locked && !stuck && onGround && dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0 && keys.has('Space')) {
+  if (locked && !stuck && player.onGround && player.dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0 && keys.has('Space')) {
     velocity.y = JUMP_SPEED;
-    onGround = false;
-    sliding = false;
+    player.onGround = false;
+    player.sliding = false;
     sfx.playJump();
   }
 
   // ---- 壁ジャンプ: 走る勢いは残したまま、壁から斜め上へ跳ぶ ----
   // 押しっぱなしで飛びついた直後に跳ねないよう、押した瞬間だけ受け付ける
-  if (locked && wallRunning && pressed.has('Space')) {
+  if (locked && player.wallRunning && pressed.has('Space')) {
     velocity.x += wallNormal.x * WALLJUMP_OUT;
     velocity.z += wallNormal.z * WALLJUMP_OUT;
     velocity.y = WALLJUMP_UP;
@@ -1733,22 +1336,22 @@ function update(dt: number) {
     onWallJump();
   }
 
-  if (dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0) velocity.y -=(wallRunning ? WALLRUN_GRAVITY : GRAVITY) * dt;
-  if (wallRunning) velocity.y = Math.max(velocity.y, -WALLRUN_MAX_FALL);
+  if (player.dashTime <= 0 && rushTime < 0 && chargeDashTime <= 0) velocity.y -=(player.wallRunning ? WALLRUN_GRAVITY : GRAVITY) * dt;
+  if (player.wallRunning) velocity.y = Math.max(velocity.y, -WALLRUN_MAX_FALL);
   // 鎖鎌が掛かっている間は、ここまでの速度を引き寄せる向きへ置き換える
   if (grapple?.phase === 'pull') updateGrapplePull(dt);
 
   // ---- 移動と当たり判定 ----
-  const wasOnGround = onGround;
-  landImpact = 0;
-  if (mantleTime >= 0) {
+  const wasOnGround = player.onGround;
+  player.landImpact = 0;
+  if (player.mantleTime >= 0) {
     // よじ登り中は決まった軌道で動かす（上で計算した速度は使わない）
     updateMantle(dt);
   } else {
     const prevY = position.y;
     position.addScaledVector(velocity, dt);
-    onGround = false;
-    groundRamp = null;
+    player.onGround = false;
+    player.groundRamp = null;
 
     for (const e of enemies) if (e.alive) collideCylinder(e.root.position.x, e.root.position.z, DUMMY_RADIUS, e.root.position.y + DUMMY_HEIGHT, prevY);
     // 坂を先に調べる（坂に立っていれば、続く箱の判定で坂の上の端の段を上れる）
@@ -1766,17 +1369,17 @@ function update(dt: number) {
     }
 
     if (position.y <= 0) {
-      landImpact = Math.max(landImpact, -velocity.y);
+      player.landImpact = Math.max(player.landImpact, -velocity.y);
       position.y = 0;
       velocity.y = 0;
-      onGround = true;
+      player.onGround = true;
     }
 
-    if (wallRunning && !canKeepWallRun()) endWallRun();
-    if (onGround) hasLastWall = false;
+    if (player.wallRunning && !canKeepWallRun()) endWallRun();
+    if (player.onGround) player.hasLastWall = false;
 
     // よじ登れる縁があればそちらを優先し、なければ壁走りを試す
-    if (locked && !onGround && rushTime < 0) {
+    if (locked && !player.onGround && rushTime < 0) {
       // 鎖鎌で引き寄せた勢いは、よじ登った後へ持ち越さない（引き寄せる前の速さまでに抑える）
       const mantleSpeed = grapple && grapple.pullTime > 0 ? Math.min(hSpeed, grapple.speedBefore) : hSpeed;
       let mantled = enemies.some((e) => e.alive && tryMantle(e.root.position.x, e.root.position.z, DUMMY_RADIUS, e.root.position.y + DUMMY_HEIGHT, mantleSpeed));
@@ -1785,18 +1388,18 @@ function update(dt: number) {
         mantled = tryMantleBox(b, mantleSpeed);
       }
       // 引き寄せの最中は壁走りを始めない（壁沿いに引かれる速さを壁走りが拾ってしまう）
-      if (!mantled && !wallRunning && dashTime <= 0 && chargeDashTime <= 0 && grapple?.phase !== 'pull') tryStartWallRun();
+      if (!mantled && !player.wallRunning && player.dashTime <= 0 && chargeDashTime <= 0 && grapple?.phase !== 'pull') tryStartWallRun();
     }
   }
 
   borderUniforms.uPlayer.value.set(position.x, position.y + 1.2, position.z);
-  if (onGround && !wasOnGround) onLand(landImpact);
+  if (player.onGround && !wasOnGround) onLand(player.landImpact);
 
   pressed.clear();
 
   for (let i = 0; i < dashGauges.length; i++) {
     // 使える分は満タン、回復中の 1 本は進み具合、それ以外は空
-    const fill = i < dashCharges ? 1 : i === dashCharges ? dashRecharge / DASH_RECHARGE : 0;
+    const fill = i < player.dashCharges ? 1 : i === player.dashCharges ? player.dashRecharge / DASH_RECHARGE : 0;
     // pathLength=100 なので、塗る長さ = fill * 100
     dashGauges[i].style.strokeDasharray = `${(fill * 100).toFixed(1)} 100`;
     dashGauges[i].style.opacity = fill > 0 ? '1' : '0'; // 0 だと丸い線端が点として残るので消す
@@ -1860,7 +1463,7 @@ function onDash() {
 // ダッシュの直前に振り始めた普段の攻撃は、ダッシュ技に差し替える（ほぼ同時押しでもダッシュ技が出るように）
 const DASH_ATTACK_GRACE = 0.12;
 function upgradeAttackOnDash() {
-  if (sliding) return;
+  if (player.sliding) return;
   // クナイ
   if (attack && attackTime < DASH_ATTACK_GRACE && !firedImpact) {
     const i = GROUND_COMBO.indexOf(attack);
@@ -1889,9 +1492,9 @@ function upgradeAttackOnDash() {
     if (i >= 0 || j >= 0) startSickleMove(SICKLE_DASH);
   }
   // 斧: 普段の攻撃は突進振り下ろし、打ち上げは突き飛ばしへ
-  if (axeAttack && axeTime < DASH_ATTACK_GRACE && !axeFiredImpact && !wallRunning) {
+  if (axeAttack && axeTime < DASH_ATTACK_GRACE && !axeFiredImpact && !player.wallRunning) {
     const i = AXE_COMBO.indexOf(axeAttack);
-    if (i >= 0 && (onGround || !axeRushAirUsed)) {
+    if (i >= 0 && (player.onGround || !axeRushAirUsed)) {
       axeComboStep = i;
       startAxeAttack(AXE_RUSH);
     } else if (axeAttack === AXE_LAUNCH && axeSlamRecover <= 0) {
@@ -1963,12 +1566,12 @@ function updateCamera(dt: number) {
   landDip = Math.max(-0.5, landDip + landDipVel * dt);
 
   // スライディングで視点を下げる
-  eyeHeight += ((sliding ? SLIDE_EYE_HEIGHT : EYE_HEIGHT) - eyeHeight) * Math.min(1, dt * 12);
+  player.eyeHeight += ((player.sliding ? SLIDE_EYE_HEIGHT : EYE_HEIGHT) - player.eyeHeight) * Math.min(1, dt * 12);
 
   // 横移動とスライディングでカメラを傾ける。壁走り中は壁と反対側へ傾ける
   const lateral = (velocity.x * right.x + velocity.z * right.z) / SPRINT_SPEED;
-  const wallRoll = wallRunning ? -(wallNormal.x * right.x + wallNormal.z * right.z) * WALLRUN_ROLL : 0;
-  const targetRoll = -lateral * 0.025 + (sliding ? 0.07 : 0) + wallRoll;
+  const wallRoll = player.wallRunning ? -(wallNormal.x * right.x + wallNormal.z * right.z) * WALLRUN_ROLL : 0;
+  const targetRoll = -lateral * 0.025 + (player.sliding ? 0.07 : 0) + wallRoll;
   roll += (targetRoll - roll) * Math.min(1, dt * 8);
 
   trauma = Math.max(0, trauma - dt * 1.5);
@@ -1977,7 +1580,7 @@ function updateCamera(dt: number) {
 
   const landJolt = landShakeAmount() * 0.06 * Math.sin(shakeTime * 91.7 + 3.3);
   // 倒れたら目の高さを床近くまで崩す
-  const eye = THREE.MathUtils.lerp(eyeHeight, DOWN_EYE, downFall());
+  const eye = THREE.MathUtils.lerp(player.eyeHeight, DOWN_EYE, downFall());
   camera.position.set(position.x, position.y + eye + landDip + landJolt, position.z);
 }
 
@@ -2209,7 +1812,7 @@ function updateWeaponSwitch(dt: number) {
 const handJoltPos = new THREE.Vector3();
 function updateViewModel(dt: number) {
   const hSpeed = Math.hypot(velocity.x, velocity.z);
-  const target = (onGround || wallRunning) && !sliding ? Math.min(hSpeed / SPRINT_SPEED, 1) : 0;
+  const target = (player.onGround || player.wallRunning) && !player.sliding ? Math.min(hSpeed / SPRINT_SPEED, 1) : 0;
   bobAmount += (target - bobAmount) * Math.min(1, dt * 10);
   const prevBob = bobPhase;
   bobPhase += dt * (4 + Math.min(hSpeed, SPRINT_SPEED) * 1.2);
@@ -2219,10 +1822,10 @@ function updateViewModel(dt: number) {
   }
 
   // ダッシュ中は手前へ引き、スライディング中は低く構える
-  dashPull += ((dashTime > 0 ? 1 : 0) - dashPull) * Math.min(1, dt * (dashTime > 0 ? 30 : 8));
-  slidePose += ((sliding ? 1 : 0) - slidePose) * Math.min(1, dt * 10);
+  dashPull += ((player.dashTime > 0 ? 1 : 0) - dashPull) * Math.min(1, dt * (player.dashTime > 0 ? 30 : 8));
+  slidePose += ((player.sliding ? 1 : 0) - slidePose) * Math.min(1, dt * 10);
   // よじ登り中は手を縁に掛けるので、クナイを下げてよける
-  mantlePose += ((mantleTime >= 0 ? 1 : 0) - mantlePose) * Math.min(1, dt * 14);
+  mantlePose += ((player.mantleTime >= 0 ? 1 : 0) - mantlePose) * Math.min(1, dt * 14);
 
   // 視点移動の遅れは時間で戻す
   lookSwayX += -lookSwayX * Math.min(1, dt * 10);
@@ -2287,7 +1890,7 @@ function updateViewModel(dt: number) {
   // 剣は歩く速さを超えて走っている間、前へ倒した構えに移る。スライディング中は横に寝かせる
   const running = hSpeed > WALK_SPEED + 1;
   swordRunPose += ((running ? 1 : 0) - swordRunPose) * Math.min(1, dt * (running ? 8 : 6));
-  swordSlidePose += ((sliding ? 1 : 0) - swordSlidePose) * Math.min(1, dt * (sliding ? 12 : 8));
+  swordSlidePose += ((player.sliding ? 1 : 0) - swordSlidePose) * Math.min(1, dt * (player.sliding ? 12 : 8));
   swordRestQuat.slerpQuaternions(SWORD_STAND_QUAT, SWORD_RUN_QUAT, swordRunPose).slerp(SWORD_SLIDE_QUAT, swordSlidePose);
 
   // 剣もクナイと同じ揺れ方をさせる。振っている間は揺れを弱めて振りの形を崩さない
@@ -2397,13 +2000,6 @@ function updateViewModel(dt: number) {
 // ---- 近接攻撃（クナイ） ----
 // 振りはキーフレームで作る。各 key は「構えの位置」「拳の向き」「輪を中心にした回転」を持ち、
 // 位置は Catmull-Rom で滑らかな弧に、向きは球面補間でつなぐ。
-type Ease = (u: number) => number;
-const linear: Ease = (u) => u;
-const easeInQuad: Ease = (u) => u * u;
-const easeOutCubic: Ease = (u) => 1 - (1 - u) ** 3;
-const easeInOutCubic: Ease = (u) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2);
-// 行き過ぎてから戻る（u ≈ 0.37 で 1 に届き、少し越えて収まる）。握り直した瞬間の「決め」に使う
-const easeOutBack: Ease = (u) => 1 + 2.7 * (u - 1) ** 3 + 1.7 * (u - 1) ** 2;
 
 type V3 = [number, number, number];
 interface KeyDef {
@@ -2705,8 +2301,8 @@ function startAttack(def: AttackDef) {
 }
 
 function chooseAttack(): AttackDef {
-  if (sliding) return SLIDE_UP;
-  if (dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return DASH_SLASH;
+  if (player.sliding) return SLIDE_UP;
+  if (player.dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return DASH_SLASH;
   const def = GROUND_COMBO[comboStep];
   comboStep = (comboStep + 1) % GROUND_COMBO.length;
   return def;
@@ -2727,7 +2323,7 @@ function applyLunge(amount: number) {
   if (lungeDir.lengthSq() < 1e-6) return;
   lungeDir.normalize();
   let add = amount;
-  if (!onGround) {
+  if (!player.onGround) {
     const along = velocity.x * lungeDir.x + velocity.z * lungeDir.z;
     add = Math.max(0, amount * AIR_LUNGE_SCALE - along);
   }
@@ -2990,12 +2586,12 @@ const KILL_HEAL = 15;
 const KILL_BOOST = 5; // 水平の速さへ足す量
 const KILL_BOOST_MAX = 30; // 勢いを足してもこれ以上は速くしない
 function rewardKill() {
-  dashCharges = DASH_CHARGES;
-  dashRecharge = 0;
+  player.dashCharges = DASH_CHARGES;
+  player.dashRecharge = 0;
   hookCharges = Math.min(HOOK_CHARGES, hookCharges + 1); // 鎖鎌の引き寄せは 1 回分だけ戻す
   if (hookCharges >= HOOK_CHARGES) hookRecharge = 0;
   healPlayer(KILL_HEAL);
-  if (mantleTime >= 0) return;
+  if (player.mantleTime >= 0) return;
   const speed = Math.hypot(velocity.x, velocity.z);
   if (speed < 1) {
     // ほとんど止まっていたら、向いている方へ押し出す
@@ -3062,7 +2658,7 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   if (en.hits >= 2 && en.comboKept) out.push({ label: 'COMBO', detail: `${en.hits} HITS`, add: 1 });
   if (en.spun) out.push({ label: '360', add: 1 });
   if (!en.hitPlayer) out.push({ label: 'NO DAMAGE', add: 0.5 });
-  if (sliding || def === SLIDE_UP || def === SWORD_SWEEP) out.push({ label: 'SLIDE KILL', add: 1 });
+  if (player.sliding || def === SLIDE_UP || def === SWORD_SWEEP) out.push({ label: 'SLIDE KILL', add: 1 });
   if (def === SWORD_ISSEN) out.push({ label: 'IAI', add: 1 });
   if (def === DEADEYE_HIT) out.push({ label: 'DEAD EYE', add: 1 });
   if (def === DASH_SLASH || def === AXE_DRIVE || def === SWORD_THRUST || def === SICKLE_DASH_HIT || def === SICKLE_DASH_LAST) out.push({ label: 'DASH KILL', add: 0.5 });
@@ -3072,8 +2668,8 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   if (def === FLOOR_SLAM_HIT) out.push({ label: 'GROUND SLAM', add: 1 });
   if (en.airY > 0.5) out.push({ label: 'JUGGLE', add: 1 });
   if (def === SICKLE_PULL_HIT || def === SICKLE_PULL_LAST || def === GRAPPLE_STICK_HIT) out.push({ label: 'HOOK KILL', add: 1 });
-  if (wallRunning) out.push({ label: 'WALL RUN', add: 1 });
-  else if (!onGround && mantleTime < 0) out.push({ label: 'AERIAL', add: 0.5 });
+  if (player.wallRunning) out.push({ label: 'WALL RUN', add: 1 });
+  else if (!player.onGround && player.mantleTime < 0) out.push({ label: 'AERIAL', add: 0.5 });
   const dist = camera.position.distanceTo(killAt.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z));
   if (dist >= LONG_SHOT_DIST) {
     const add = Math.min(LONG_SHOT_MAX, 0.5 + Math.floor((dist - LONG_SHOT_DIST) / 6) * 0.5);
@@ -4818,7 +4414,7 @@ const slideTrailBase = new THREE.Vector3();
 
 function updateKunaiSlideSpin(dt: number) {
   kunaiSlideSpinPrev = kunaiSlideSpin;
-  const spinning = sliding && kunaiReady() && !attack;
+  const spinning = player.sliding && kunaiReady() && !attack;
   if (spinning) {
     kunaiSlideSpinVel += (KUNAI_SLIDE_SPIN_SPEED - kunaiSlideSpinVel) * Math.min(1, dt * 12);
     kunaiSlideSpinTarget = NaN;
@@ -5637,7 +5233,7 @@ function arriveGrapple(g: Grapple) {
 // 当たり判定はそのまま通すので、途中で何かに阻まれたらそこで止まる
 function updateGrapplePull(dt: number) {
   if (!grapple) return;
-  if (dashTime > 0 || mantleTime >= 0 || rushTime >= 0 || chargeDashTime > 0) {
+  if (player.dashTime > 0 || player.mantleTime >= 0 || rushTime >= 0 || chargeDashTime > 0) {
     releaseGrapple(false);
     return;
   }
@@ -5673,8 +5269,8 @@ function updateGrapplePull(dt: number) {
   const u = grapple.pullTime / grapple.zipDur;
   zipWant.lerpVectors(grapple.zipFrom, grapple.zipTo, 1 - (1 - u) ** 2);
   velocity.subVectors(zipWant, position).divideScalar(Math.max(dt, 1e-4));
-  onGround = false;
-  sliding = false;
+  player.onGround = false;
+  player.sliding = false;
 }
 
 function updateGrapple(dt: number) {
@@ -5721,7 +5317,7 @@ function updateGrapple(dt: number) {
   if (grapple?.phase === 'fly' && hooks.every((h) => h.thrown && h.stuckTime >= 0)) {
     // 2 本とも刺さった: 次のフレームから、掛かった所へ一気に飛ぶ
     grapple.phase = 'pull';
-    if (wallRunning) endWallRun();
+    if (player.wallRunning) endWallRun();
     sfx.playStick();
     sfx.playChain('pull');
     addTrauma(0.15);
@@ -6566,10 +6162,10 @@ const ROLL_AXIS = new THREE.Vector3(0, 1, 0); // 鎌の座標で、柄の軸
 
 
 function chooseSickleMove(): SickleMoveDef {
-  if (sliding) return SICKLE_SLIDE;
-  if (dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return SICKLE_DASH;
+  if (player.sliding) return SICKLE_SLIDE;
+  if (player.dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return SICKLE_DASH;
   if (sickleComboTimer <= 0) sickleCombo = sickleAirCombo = 0;
-  if (!onGround && !wallRunning) {
+  if (!player.onGround && !player.wallRunning) {
     const def = SICKLE_AIR_COMBO[sickleAirCombo];
     sickleAirCombo = (sickleAirCombo + 1) % SICKLE_AIR_COMBO.length;
     return def;
@@ -6675,7 +6271,7 @@ function updateSickleMelee(dt: number) {
   sickleComboTimer -= dt;
   updateTossInput();
   updateSlideDir(dt);
-  if (onGround && !sickleMelee) sickleAirCombo = 0; // 着地したら空中の連携は 1 段目から
+  if (player.onGround && !sickleMelee) sickleAirCombo = 0; // 着地したら空中の連携は 1 段目から
   for (const p of meleeHands) {
     p.want.pos.set(0, 0, 0);
     p.want.rot.set(0, 0, 0);
@@ -6804,8 +6400,8 @@ const slideMix = [0, 0, 0, 0, 0, 0, 0];
 let slideDirFresh = true; // 次に滑り出したら、向きをなめらかにせずすぐ合わせる
 function updateSlideDir(dt: number) {
   const speed = Math.hypot(velocity.x, velocity.z);
-  if (!sliding) slideDirFresh = true;
-  if (!sliding || speed < 0.5) return;
+  if (!player.sliding) slideDirFresh = true;
+  if (!player.sliding || speed < 0.5) return;
   camera.getWorldDirection(meleeFwdDir);
   meleeFwdDir.y = 0;
   if (meleeFwdDir.lengthSq() < 1e-6) return;
@@ -6819,7 +6415,7 @@ function updateSlideDir(dt: number) {
 }
 
 function applySlidePose(h: GrappleHook, handPos: THREE.Vector3, dt: number) {
-  const want = sliding && !sickleMelee && !h.thrown && h.windT < 0 && h.launchIn < 0 ? 1 : 0;
+  const want = player.sliding && !sickleMelee && !h.thrown && h.windT < 0 && h.launchIn < 0 ? 1 : 0;
   h.slide += (want - h.slide) * Math.min(1, dt * (want ? 14 : 8));
   const w = h.slide;
   if (w < 1e-3) return;
@@ -7549,14 +7145,14 @@ const swordCharged = () => swordHold >= CHARGE_DELAY + CHARGE_TIME;
 function startChargeSlash() {
   // 視線の方向へ踏み込む。地上で下を向いていても地面へ潜らないよう、下向きの分は捨てる
   camera.getWorldDirection(chargeDashDir);
-  if (onGround && chargeDashDir.y < 0) chargeDashDir.y = 0;
+  if (player.onGround && chargeDashDir.y < 0) chargeDashDir.y = 0;
   if (chargeDashDir.lengthSq() < 1e-4) chargeDashDir.copy(forward);
   chargeDashDir.normalize();
   chargeDashTime = CHARGE_DASH_TIME;
-  sliding = false;
-  dashTime = 0;
-  if (wallRunning) endWallRun();
-  if (chargeDashDir.y > 0) onGround = false;
+  player.sliding = false;
+  player.dashTime = 0;
+  if (player.wallRunning) endWallRun();
+  if (chargeDashDir.y > 0) player.onGround = false;
   fovKick += 10;
   addTrauma(0.25);
   sfx.playRush();
@@ -7677,9 +7273,9 @@ function startRush() {
   rushTime = 0;
   rushArrived = false;
   timeScale = 1; // スローを一気に解く
-  sliding = false;
-  dashTime = 0;
-  if (wallRunning) endWallRun();
+  player.sliding = false;
+  player.dashTime = 0;
+  if (player.wallRunning) endWallRun();
   fovKick += 14;
   addTrauma(0.3);
   kickVel.x += 1.2 * DEG * 22;
@@ -7856,8 +7452,8 @@ function startSwordAttack(def: SwordAttackDef) {
 
 // スライディング中・ダッシュ直後の技。この状況では長押しの溜めを待たず、押した瞬間に振る
 function specialSwordAttack(): SwordAttackDef | null {
-  if (sliding) return SWORD_SWEEP;
-  if (dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return SWORD_THRUST;
+  if (player.sliding) return SWORD_SWEEP;
+  if (player.dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) return SWORD_THRUST;
   return null;
 }
 
@@ -8710,8 +8306,8 @@ const AXE_STANCE_TREMBLE = 0.0018; // 構えている間に手元が震える大
 let axeStance = false; // 打ち上げの構えで止めている
 let axeCocked = false; // 構えきった（握り直しの音を鳴らした）
 let axeLaunchedAir = false; // 打ち上げで自分も跳び上がり、まだ着地していない（この間だけ叩きつけが出る）
-const axeDashing = () => dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW;
-const axeLaunchable = () => onGround && !sliding && !wallRunning && !axeDashing();
+const axeDashing = () => player.dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW;
+const axeLaunchable = () => player.onGround && !player.sliding && !player.wallRunning && !axeDashing();
 
 let axePower = 0; // 今の攻撃の勢い (0..1)
 let axeSmashFromY = NaN; // 空中の叩きつけで落ち始めた高さ（足元）。着地するまで NaN 以外
@@ -9185,11 +8781,11 @@ function startAxeAttack(def: AxeAttackDef) {
 }
 
 function chooseAxeAttack(): AxeAttackDef {
-  if (sliding) return AXE_SWEEP;
+  if (player.sliding) return AXE_SWEEP;
   // ダッシュ中・ダッシュ直後は突進振り下ろし（空中では 1 回だけ）
-  if ((dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) && !wallRunning && (onGround || !axeRushAirUsed)) return AXE_RUSH;
+  if ((player.dashTime > 0 || sinceDash < DASH_ATTACK_WINDOW) && !player.wallRunning && (player.onGround || !axeRushAirUsed)) return AXE_RUSH;
   // 空中の叩きつけは、打ち上げで跳び上がっている間だけ（1 回の打ち上げにつき 1 回）
-  if (axeLaunchedAir && !onGround && !wallRunning) {
+  if (axeLaunchedAir && !player.onGround && !player.wallRunning) {
     axeLaunchedAir = false;
     return AXE_AIR;
   }
@@ -9328,12 +8924,12 @@ function tryAxeHit(def: AxeAttackDef): boolean {
     if (def === AXE_LAUNCH) launchEnemy();
   }
   if (!any) return false;
-  if (def === AXE_LAUNCH && onGround) { // 構えたまま跳んで空中で振ったときは、自分は跳び上がらない
+  if (def === AXE_LAUNCH && player.onGround) { // 構えたまま跳んで空中で振ったときは、自分は跳び上がらない
     velocity.y = AXE_LAUNCH_SELF_SPEED;
     velocity.x *= AXE_LAUNCH_KEEP;
     velocity.z *= AXE_LAUNCH_KEEP;
-    onGround = false;
-    sliding = false;
+    player.onGround = false;
+    player.sliding = false;
     axeLaunchedAir = true;
   }
   // 刃が食い込んで振りが重くなり、手元は振っていた向きと逆へ跳ね返される
@@ -9345,7 +8941,7 @@ function tryAxeHit(def: AxeAttackDef): boolean {
 function startAxeRush() {
   axeRushTime = 0;
   axeWheelHits.clear();
-  if (!onGround) axeRushAirUsed = true;
+  if (!player.onGround) axeRushAirUsed = true;
   camera.getWorldDirection(axeRushDir);
   axeRushDir.y = 0;
   if (axeRushDir.lengthSq() < 1e-6) axeRushDir.set(0, 0, -1);
@@ -9370,7 +8966,7 @@ function updateAxeRush(dt: number, before: number) {
     if (axeRushDir.lengthSq() > 1e-6) axeRushDir.normalize();
     velocity.x = axeRushDir.x * AXE_RUSH_SPEED;
     velocity.z = axeRushDir.z * AXE_RUSH_SPEED;
-    if (!onGround) velocity.y = Math.max(velocity.y, 0);
+    if (!player.onGround) velocity.y = Math.max(velocity.y, 0);
     let caught = axeRushTime >= AXE_RUSH_TIME;
     for (const e of enemies) {
       en = e;
@@ -9403,7 +8999,7 @@ function updateAxeAttack(dt: number) {
   if (axeLaunchPressed) {
     axeLaunchPressed = false;
     // ダッシュ中・ダッシュ直後なら突き飛ばし（地上でも空中でも）
-    if (axeReady() && axeDashing() && !wallRunning && axeAttack !== AXE_DRIVE && axeSlamRecover <= 0) {
+    if (axeReady() && axeDashing() && !player.wallRunning && axeAttack !== AXE_DRIVE && axeSlamRecover <= 0) {
       if (!axeAttack || axeTime >= axeAttack.cancel) {
         axeLaunchQueued = false;
         startAxeAttack(AXE_DRIVE);
@@ -9477,7 +9073,7 @@ function updateAxeAttack(dt: number) {
       axeFiredLunge = true;
       applyLunge(def.lunge);
       if (def !== AXE_AIR && def !== AXE_RUSH) pullTowardAxeTarget();
-      if (def.drop && !onGround) {
+      if (def.drop && !player.onGround) {
         velocity.y = Math.min(velocity.y, -def.drop);
         axeSmashFromY = position.y; // 着地したらここからの高さで衝撃波を出す
       }
@@ -9496,7 +9092,7 @@ function updateAxeAttack(dt: number) {
       if (tryAxeHit(def)) axeHitLanded = true;
     }
     // 空振りでも、足が着いていれば地面を叩いた重さを返す（空中の叩きつけは着地の衝撃波が代わりに返す）
-    if (def.ground && !def.drop && axeFiredImpact && !axeFiredGround && !axeHitLanded && onGround
+    if (def.ground && !def.drop && axeFiredImpact && !axeFiredGround && !axeHitLanded && player.onGround
       && axeTime <= (def.hitUntil ?? def.impact) + 0.05) {
       axeFiredGround = true;
       sfx.playAxeGround(def.ground);
@@ -9523,15 +9119,15 @@ function updateAxeAttack(dt: number) {
     axeComboTimer -= dt;
     if (axeComboTimer <= 0) axeComboStep = 0;
   }
-  if (axeLaunchedAir && (onGround || wallRunning || shownWeapon !== 'axe' || grapple !== null)) axeLaunchedAir = false;
-  if (onGround || wallRunning) axeRushAirUsed = false;
+  if (axeLaunchedAir && (player.onGround || player.wallRunning || shownWeapon !== 'axe' || grapple !== null)) axeLaunchedAir = false;
+  if (player.onGround || player.wallRunning) axeRushAirUsed = false;
   // 叩きつけで落ちている途中に着地したら衝撃波（攻撃の時間が過ぎてから着いても出す）
   if (!Number.isNaN(axeSmashFromY)) {
-    if (onGround) {
+    if (player.onGround) {
       axeShockwave(axeSmashFromY - position.y);
       axeSmashFromY = NaN;
       axeSlamRecover = AXE_SLAM_RECOVER;
-    } else if (wallRunning || shownWeapon !== 'axe' || grapple !== null) {
+    } else if (player.wallRunning || shownWeapon !== 'axe' || grapple !== null) {
       axeSmashFromY = NaN;
     }
   }
@@ -9875,7 +9471,7 @@ function applyGunSpin(dt: number) {
 }
 function updateSlideSpin(dt: number) {
   slideSpinHold = Math.max(0, slideSpinHold - dt);
-  const spinning = sliding && gunReady() && !gunReloading && twirlT < 0 && slideSpinHold <= 0;
+  const spinning = player.sliding && gunReady() && !gunReloading && twirlT < 0 && slideSpinHold <= 0;
   if (spinning) {
     slideSpinVel += (SLIDE_SPIN_SPEED - slideSpinVel) * Math.min(1, dt * 12);
     slideSpinTarget = NaN;
@@ -10375,7 +9971,7 @@ const enemyPan = new THREE.Vector3();
 const wrapAngle = (a: number) => THREE.MathUtils.euclideanModulo(a + Math.PI, Math.PI * 2) - Math.PI;
 // 狙う所: プレイヤーの胸
 function aimTarget(out: THREE.Vector3) {
-  return out.set(position.x, position.y + eyeHeight - 0.35, position.z);
+  return out.set(position.x, position.y + player.eyeHeight - 0.35, position.z);
 }
 
 function updateDummyAim(dt: number) {
@@ -10458,7 +10054,7 @@ function updateEnemyBullets(dt: number) {
       enemyNext.copy(b.pos).addScaledVector(b.dir, wall);
       enemyPath.set(b.pos, enemyNext);
       enemyBody.start.set(position.x, position.y + 0.15, position.z);
-      enemyBody.end.set(position.x, position.y + eyeHeight + 0.05, position.z);
+      enemyBody.end.set(position.x, position.y + player.eyeHeight + 0.05, position.z);
       if (playerHp > 0 && tryParry(b)) {
         b.mesh.removeFromParent();
         enemyBullets.splice(i, 1);
@@ -10774,7 +10370,7 @@ let speedFx = 0;
 function updateSpeedFx(dt: number) {
   const hSpeed = Math.hypot(velocity.x, velocity.z);
   let target = THREE.MathUtils.clamp((hSpeed - SPEED_FX_START) / (SPEED_FX_FULL - SPEED_FX_START), 0, 1);
-  if (dashTime > 0) target = 1;
+  if (player.dashTime > 0) target = 1;
   // 強くなるときは素早く、弱まるときはゆっくり
   speedFx += (target - speedFx) * Math.min(1, dt * (target > speedFx ? 12 : 4));
   if (target === 0 && speedFx < 0.002) speedFx = 0;
@@ -10948,7 +10544,7 @@ function runStageDebug(params: URLSearchParams) {
     for (let i = 0; i * step < num('sim', 0); i++) {
       update(step);
       if (i % 60 === 0) log.push(`${r(i * step)}s hp=${playerHp} ` + enemies.map((e) => `(${r(e.root.position.x)},${r(e.root.position.y)},${r(e.root.position.z)}${e.moving ? ' walk' : ''})`).join(' '));
-      if (placed && i % 6 === 0) playerLog.push(`${r(i * step)}s (${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)}) v=(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)})${onGround ? ' ground' : ''}${groundRamp ? ' ramp' : ''}`);
+      if (placed && i % 6 === 0) playerLog.push(`${r(i * step)}s (${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)}) v=(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)})${player.onGround ? ' ground' : ''}${player.groundRamp ? ' ramp' : ''}`);
     }
     console.log('ENEMY_LOG\n' + log.join('\n'));
     if (placed) console.log('PLAYER_LOG\n' + playerLog.join('\n'));
@@ -11020,7 +10616,7 @@ function runGrappleDebug(params: URLSearchParams) {
     if (params.has('shift')) keys.add('ShiftLeft');
     update(step);
     const r = (v: number) => v.toFixed(2);
-    log.push(`${r(t)} ${grapple?.phase ?? '-'} pos(${r(position.x)},${r(position.y)},${r(position.z)}) vel(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)}) h=${r(Math.hypot(velocity.x, velocity.z))} mantle=${r(mantleTime)} ground=${onGround}`);
+    log.push(`${r(t)} ${grapple?.phase ?? '-'} pos(${r(position.x)},${r(position.y)},${r(position.z)}) vel(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)}) h=${r(Math.hypot(velocity.x, velocity.z))} mantle=${r(player.mantleTime)} ground=${player.onGround}`);
   }
   console.log('GRAPPLE_LOG\n' + log.join('\n'));
   keys.clear();
@@ -11047,7 +10643,6 @@ const RISE_DUMMY_TIME = 0.6;
 let introT = -1; // 演出の経過時間。-1 = 演出中でない
 let riseT = -1; // せり上がりの経過時間。-1 = 伸びきった（または伸びていない）
 const riseMatrix = new THREE.Matrix4();
-const easeOutQuart = (k: number) => 1 - (1 - k) ** 4;
 
 function setViewModelsVisible(v: boolean) {
   viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = axeViewModel.visible = v;
@@ -11583,8 +11178,8 @@ if (debugAttack) {
     updateHudSway(realFrame);
     sfx.updateAudio({
       speed: controls.isLocked ? Math.hypot(velocity.x, velocity.z) : 0,
-      airborne: !onGround && !wallRunning,
-      sliding: sliding && controls.isLocked,
+      airborne: !player.onGround && !player.wallRunning,
+      sliding: player.sliding && controls.isLocked,
       focusing,
       timeScale: timeScale * slow * worldSlow, // 世界だけのスローでも音はこもらせる
     });
