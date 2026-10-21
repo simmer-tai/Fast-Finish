@@ -17,6 +17,7 @@ export interface GameHooks {
   applyCameraOffset(): void; // 描画の向きに揺れと傾きを足す（クロスヘアの指す向きになる）
   restoreCameraOffset(): void; // applyCameraOffset で足した分を戻す
   damagePlayer(amount: number): void; // プレイヤーの体力を削る（ステージでは 0 で倒れ、訓練場では 1 で耐える）
+  pauseGame(): void; // 一時停止にする（パッドのメニューボタン）
 }
 export let hooks: GameHooks;
 export function initGameHooks(h: GameHooks) {

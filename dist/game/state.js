@@ -25,6 +25,7 @@ export const game = {
     hitStopTotal: 0,
     hitStopShakesDummy: true, // パリィで止めたときは敵を震わせない
     downT: -1, // 倒れてからの実時間。-1 = 倒れていない
+    viewSpin: 0, // 前の当たりから視点を左右へ回した量（向きを含む, rad）
 };
 // カメラの反動（ばね）
 export const kick = new THREE.Vector3();
