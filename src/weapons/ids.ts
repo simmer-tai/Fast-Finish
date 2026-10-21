@@ -1,0 +1,4 @@
+// ---- 武器の種類 ----
+export type WeaponId = 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'chakram';
+// 数字キーで選ぶ武器
+export const WEAPON_KEYS: Record<string, WeaponId> = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle', Digit5: 'axe', Digit6: 'chakram' };

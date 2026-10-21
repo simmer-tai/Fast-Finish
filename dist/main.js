@@ -20,6 +20,10 @@ import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { createStageTitle, STAGE_TITLE_END } from './stageTitle.js';
 import { PAD, pollPad } from './gamepad.js';
+import { WEAPON_KEYS } from './weapons/ids.js';
+import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions } from './ui/options.js';
+import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
+import { loadBest, saveBest } from './records.js';
 // ---- 設定 ----
 const EYE_HEIGHT = 1.6;
 const WALK_SPEED = 8;
@@ -1311,58 +1315,23 @@ const heldChakram = createHeldChakram({ metal: kunaiMat });
 const chakramRest = heldChakram.userData.rest;
 chakramViewModel.add(heldChakram);
 chakramViewModel.visible = false;
+// ---- 武器の切り替え ----
+// 持ち替えは「今の武器を下げる → 入れ替える → 新しい武器を上げる」
 let wantWeapon = 'kunai'; // 数字キーで選んだ武器
 let shownWeapon = 'kunai'; // 今手に持っている武器
 let holster = 0; // 0 = 構えている, 1 = 画面の下へ下げきった
 const HOLSTER_TIME = 0.14;
-const WEAPON_KEYS = { Digit1: 'kunai', Digit2: 'handgun', Digit3: 'sword', Digit4: 'sickle', Digit5: 'axe', Digit6: 'chakram' };
 // ---- 操作 ----
 // PointerLockControls はマウスの移動量をそのまま足すので、Chrome がまれに送ってくる
 // 異常に大きな移動量で視点が飛ぶ。生のマウス入力を使い、飛んだ値は捨てる自前の実装にする
 const LOOK_SPEED = 0.002;
-// ---- オプション ----
-// 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
-// 画質は解像度・影・アンチエイリアスをまとめて切り替える（applyQuality）。次に開いたときのために覚えておく
-const OPTIONS_STORE = 'fast-finish.options';
-const RANGES = {
-    mouseSens: { min: 0.1, max: 3, step: 0.1 },
-    padSens: { min: 0.1, max: 3, step: 0.1 },
-    brightness: { min: 0.5, max: 2, step: 0.1 },
-};
-const QUALITIES = ['low', 'medium', 'high'];
-const isRangeKey = (k) => !!k && k in RANGES;
-const QUALITY_NOTES = {
-    low: '解像度を下げ、影とアンチエイリアスを切る。いちばん軽い',
-    medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
-    high: '高解像度（最大 2 倍）に、細かい影と 4x アンチエイリアス',
-};
-const options = { mouseSens: 1, padSens: 1, brightness: 1, quality: 'high' };
-try {
-    const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
-    for (const k of Object.keys(RANGES)) {
-        if (typeof saved[k] === 'number')
-            options[k] = THREE.MathUtils.clamp(saved[k], RANGES[k].min, RANGES[k].max);
-    }
-    if (QUALITIES.includes(saved.quality))
-        options.quality = saved.quality;
-}
-catch {
-    // 読めなければ初期値のまま
-}
+// ---- オプション ----（値と画面は ui/options.ts）
 // LinearToneMapping は露出を掛けるだけなので、明るさ 1 なら今までと同じ見た目になる
 renderer.toneMapping = THREE.LinearToneMapping;
 function applyBrightness() {
     renderer.toneMappingExposure = options.brightness;
 }
 applyBrightness();
-function saveOptions() {
-    try {
-        localStorage.setItem(OPTIONS_STORE, JSON.stringify(options));
-    }
-    catch {
-        // 保存できなくても、この回の間は効いている
-    }
-}
 // isLocked は「プレイ中」の意味で使う。マウスではポインターロックと一緒に切り替わり、
 // パッドで始めたときはロックなしでプレイ中にする（padPlaying）
 const controls = { isLocked: false };
@@ -1425,118 +1394,7 @@ function togglePanel(name) {
     if (on && name === 'options')
         renderOptions();
 }
-// ---- オプション画面 ----
-// 上下で項目を選び、左右で値を変える。感度と明るさは目盛りをクリック / ドラッグしても変えられる
-const optionRows = [...overlay.querySelectorAll('.options .opt')];
-const qualityButtons = [...overlay.querySelectorAll('.options [data-quality]')];
-const qualityNote = overlay.querySelector('.options .note');
-let optionIndex = 0;
-function renderOptions() {
-    optionRows.forEach((row, i) => {
-        row.classList.toggle('active', i === optionIndex);
-        const key = row.dataset.opt;
-        if (!isRangeKey(key))
-            return;
-        const v = options[key];
-        const { min, max } = RANGES[key];
-        row.querySelector('.bar i').style.setProperty('--p', `${((v - min) / (max - min)) * 100}%`);
-        row.querySelector('.val').textContent = v.toFixed(1);
-    });
-    for (const b of qualityButtons)
-        b.classList.toggle('active', b.dataset.quality === options.quality);
-    qualityNote.textContent = QUALITY_NOTES[options.quality];
-}
-// 変わったら true
-function setRange(key, v) {
-    const { min, max, step } = RANGES[key];
-    v = Number(THREE.MathUtils.clamp(Math.round(v / step) * step, min, max).toFixed(2));
-    if (v === options[key])
-        return false;
-    options[key] = v;
-    saveOptions();
-    if (key === 'brightness')
-        applyBrightness();
-    renderOptions();
-    return true;
-}
-function setQuality(q) {
-    if (q === options.quality)
-        return false;
-    options.quality = q;
-    saveOptions();
-    applyQuality();
-    renderOptions();
-    return true;
-}
-function stepOption(row, dir) {
-    const key = row.dataset.opt;
-    const changed = key === 'quality'
-        ? setQuality(QUALITIES[THREE.MathUtils.clamp(QUALITIES.indexOf(options.quality) + dir, 0, QUALITIES.length - 1)])
-        : setRange(key, options[key] + dir * RANGES[key].step);
-    if (changed)
-        sfx.playUiSelect();
-    else
-        sfx.playUiDenied();
-}
-function onOptionsClick(target) {
-    const row = target.closest('.opt');
-    if (!row)
-        return;
-    optionIndex = optionRows.indexOf(row);
-    const step = target.closest('[data-step]');
-    const quality = target.closest('[data-quality]');
-    if (step)
-        stepOption(row, Number(step.dataset.step));
-    else if (quality && setQuality(quality.dataset.quality))
-        sfx.playUiSelect();
-    renderOptions();
-}
-function onOptionsKey(e) {
-    const dir = { ArrowUp: -1, KeyW: -1, ArrowDown: 1, KeyS: 1 }[e.code];
-    const side = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1 }[e.code];
-    if (e.code === 'Escape' || e.code === 'KeyO')
-        return togglePanel('options');
-    if (e.code === 'Enter' || e.code === 'NumpadEnter')
-        return e.preventDefault(); // 開いている間は始めない
-    if (dir) {
-        e.preventDefault();
-        const next = THREE.MathUtils.clamp(optionIndex + dir, 0, optionRows.length - 1);
-        if (next !== optionIndex)
-            sfx.playUiHover();
-        optionIndex = next;
-        renderOptions();
-    }
-    else if (side) {
-        e.preventDefault();
-        stepOption(optionRows[optionIndex], side);
-    }
-}
-for (const row of optionRows) {
-    row.addEventListener('mouseenter', () => {
-        optionIndex = optionRows.indexOf(row);
-        renderOptions();
-    });
-    const bar = row.querySelector('.bar');
-    if (!bar)
-        continue;
-    const key = row.dataset.opt;
-    const { min, max } = RANGES[key];
-    const fromPointer = (e) => {
-        const r = bar.getBoundingClientRect();
-        const t = THREE.MathUtils.clamp((e.clientX - r.left) / r.width, 0, 1);
-        if (setRange(key, min + t * (max - min)))
-            sfx.playUiHover();
-    };
-    bar.addEventListener('pointerdown', (e) => {
-        bar.setPointerCapture(e.pointerId);
-        fromPointer(e);
-    });
-    bar.addEventListener('pointermove', (e) => {
-        if (bar.hasPointerCapture(e.pointerId))
-            fromPointer(e);
-    });
-}
-renderOptions();
+initOptions({ onBrightness: applyBrightness, onQuality: applyQuality, onClose: () => togglePanel('options') });
 // タイトルでは、本編（GAME）か訓練場（TRAINING）かを選ぶ。今の場所は訓練場として使う
 const overlayPrompt = overlay.querySelector('.foot .prompt');
 // ---- ステージ選択 ----
@@ -1604,24 +1462,6 @@ function selectDifficulty(i) {
         // 覚えられなくても選ぶことはできる
     }
 }
-const bestKey = (stage, difficulty) => `fast-finish.best.${stage}.${difficulty}`;
-function loadBest(stage, difficulty) {
-    try {
-        const v = JSON.parse(localStorage.getItem(bestKey(stage, difficulty)) ?? 'null');
-        return v && typeof v.time === 'number' && typeof v.score === 'number' ? v : null;
-    }
-    catch {
-        return null;
-    }
-}
-function saveBest(stage, difficulty, best) {
-    try {
-        localStorage.setItem(bestKey(stage, difficulty), JSON.stringify(best));
-    }
-    catch {
-        // 保存できない環境では、その場の結果だけ出す
-    }
-}
 // ステージ選択の BEST に、選んでいるステージと難易度の自己ベストを出す
 const bestTimeEl = overlay.querySelector('[data-best="time"]');
 const bestScoreEl = overlay.querySelector('[data-best="score"]');
@@ -1633,242 +1473,11 @@ function showStageBest() {
     bestTimeEl.classList.toggle('set', !!best);
     bestScoreEl.classList.toggle('set', !!best);
 }
-// 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく
-const LOADOUT_STORE = 'fast-finish.weapon';
-// 詳細の欄には今の武器を 1 行で出し、押すと武器の選択画面を開く。選択画面では上下でカーソルを動かして右に大きく見せ、
-// 決めたら詳細の欄へ戻す。名前と和名は選択画面の行から写す
-const loadoutSlot = overlay.querySelector('.sw-slot');
-const picker = overlay.querySelector('.sw-picker');
-const pickerRows = [...picker.querySelectorAll('.sw-rows [data-weapon]')];
-const pickerPreview = picker.querySelector('.sw-preview');
-const LOADOUT_IDS = pickerRows.map((b) => b.dataset.weapon);
-// 右下の HUD のアイコンを写して、入れ物に武器の数だけ入れる（見せるものだけ on にする）
-const cloneWeaponIcon = (id) => {
-    const svg = document.querySelector(`#weapon .icon svg[data-w="${id}"]`).cloneNode(true);
-    svg.removeAttribute('class');
-    return svg;
-};
-const fillIcons = (box) => LOADOUT_IDS.map((id) => box.appendChild(cloneWeaponIcon(id)));
-const showIcon = (icons, i) => icons.forEach((svg, j) => svg.classList.toggle('on', j === i));
-pickerRows.forEach((b, i) => showIcon(fillIcons(b.querySelector('.ic')), i));
-const slotIcons = fillIcons(loadoutSlot.querySelector('.ic'));
-const previewIcons = fillIcons(pickerPreview.querySelector('.ic'));
-const setName = (el, i) => {
-    el.querySelector('.nm').textContent = pickerRows[i].dataset.name ?? '';
-    el.querySelector('.ja').textContent = pickerRows[i].dataset.ja ?? '';
-};
-let loadoutIndex = 0; // 持ち込むと決めた武器
-let pickerIndex = 0; // 選択画面のカーソル
-try {
-    const saved = LOADOUT_IDS.indexOf(localStorage.getItem(LOADOUT_STORE));
-    if (saved >= 0)
-        loadoutIndex = saved;
-}
-catch {
-    // 保存できない環境では毎回クナイから
-}
-const selectedLoadout = () => LOADOUT_IDS[loadoutIndex];
-const pickerOpen = () => overlay.classList.contains('pick-weapon');
-function selectLoadout(i) {
-    loadoutIndex = i;
-    showIcon(slotIcons, i);
-    setName(loadoutSlot, i);
-    try {
-        localStorage.setItem(LOADOUT_STORE, selectedLoadout());
-    }
-    catch {
-        // 覚えられなくても選ぶことはできる
-    }
-}
-// プレビュー動画: previews/<武器>.mp4 を音なしで繰り返し流す。読めるまで（無ければずっと）NO SIGNAL の画面を出す
-const PREVIEW_VIDEO_DIR = 'previews';
-const pickerScreen = pickerPreview.querySelector('.sw-video');
-const pickerVideo = pickerScreen.querySelector('video');
-const pickerNoSignal = pickerScreen.querySelector('.sw-nosig small');
-pickerVideo.addEventListener('loadeddata', () => pickerScreen.classList.add('has-video'));
-pickerVideo.addEventListener('error', () => pickerScreen.classList.remove('has-video'));
-// 背景: 手前の動画の新しいフレームが出るたびに canvas へ写す（2 本目の動画を流すとずれるので、同じ動画から写す）。
-// 小さく写してその中でぼかし、画面いっぱいに引き伸ばす（全画面に CSS でぼかすより軽い）。大きさは画質の設定に合わせる
-const PICKER_BG_WIDTH = { low: 96, medium: 160, high: 320 };
-const pickerBg = picker.querySelector('.sw-bg');
-const pickerBgCtx = pickerBg.getContext('2d');
-function drawPickerBg() {
-    if (pickerVideo.readyState < 2)
-        return;
-    const w = PICKER_BG_WIDTH[options.quality];
-    if (pickerBg.width !== w) {
-        pickerBg.width = w;
-        pickerBg.height = Math.round((w * 9) / 16);
-    }
-    pickerBgCtx.filter = `blur(${w / 240}px)`; // 大きさを変えると消えるので毎回掛ける。効かないブラウザでも引き伸ばしで粗さはぼける
-    pickerBgCtx.drawImage(pickerVideo, 0, 0, pickerBg.width, pickerBg.height);
-}
-const onPickerFrame = () => {
-    drawPickerBg();
-    pickerVideo.requestVideoFrameCallback(onPickerFrame);
-};
-pickerVideo.requestVideoFrameCallback(onPickerFrame);
-pickerVideo.addEventListener('loadeddata', () => {
-    drawPickerBg();
-    pickerBg.classList.add('has-video');
-});
-pickerVideo.addEventListener('error', () => pickerBg.classList.remove('has-video'));
-function showPickerVideo(id) {
-    const src = `${PREVIEW_VIDEO_DIR}/${id}.mp4`;
-    pickerNoSignal.textContent = src;
-    if (pickerVideo.dataset.id === id)
-        return;
-    pickerVideo.dataset.id = id;
-    pickerScreen.classList.remove('has-video');
-    pickerBg.classList.remove('has-video');
-    pickerVideo.src = src;
-    playPickerVideos(); // 無いファイルや自動再生の拒否は NO SIGNAL のままにする
-}
-function playPickerVideos() {
-    pickerVideo.play().catch(() => { });
-}
-function pausePickerVideos() {
-    pickerVideo.pause();
-}
-// 差し込んだ武器名とアイコンの尾。着くまでは伸ばしたまま、着いたら一気に巻き取る（CSS の sw-in-smear / sw-in-ic と同じ長さ・同じ着く時刻）
-const SMEAR_TIME = 0.3;
-const SMEAR_LAND = 0.22;
-const pickerName = pickerPreview.querySelector('.nm');
-const pickerIcon = pickerPreview.querySelector('.ic');
-const smearDilates = [...document.querySelectorAll(':is(#sw-smear, #sw-smear-ic) feMorphology')];
-const smearOffsets = [...document.querySelectorAll(':is(#sw-smear, #sw-smear-ic) feOffset')];
-let smearRun = 0;
-function smearPicker(dir) {
-    const run = ++smearRun;
-    const len = parseFloat(getComputedStyle(pickerName).fontSize) * 0.24; // 尾の長さ（文字の高さに対して）
-    const start = performance.now();
-    pickerName.style.filter = 'url(#sw-smear)';
-    pickerIcon.style.filter = 'url(#sw-smear-ic)';
-    const step = (now) => {
-        if (run !== smearRun)
-            return;
-        const t = (now - start) / 1000 / SMEAR_TIME;
-        if (t >= 1) {
-            pickerName.style.filter = ''; // 止まったら素の文字に戻す
-            pickerIcon.style.filter = '';
-            return;
-        }
-        const k = t < SMEAR_LAND ? 1 : 2 ** (-10 * ((t - SMEAR_LAND) / (1 - SMEAR_LAND)));
-        const r = (len * k) / 2;
-        // 段ごとに data-len の割合だけ伸ばす。下から来たら下へ、上から来たら上へ尾を引く
-        for (const el of smearDilates)
-            el.setAttribute('radius', `0 ${r * Number(el.dataset.len)}`);
-        for (const el of smearOffsets)
-            el.setAttribute('dy', String((dir > 0 ? r : -r) * Number(el.dataset.len)));
-        requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-}
-// カーソルを動かして右に大きく見せる。dir: 動いた向き（1 = 下へ, -1 = 上へ, 0 = 動きなし）。その向きから差し込む
-function movePicker(i, dir = Math.sign(i - pickerIndex)) {
-    pickerIndex = i;
-    pickerRows.forEach((b, j) => {
-        b.classList.toggle('active', j === i);
-        b.classList.toggle('equipped', j === loadoutIndex);
-    });
-    showIcon(previewIcons, i);
-    setName(pickerPreview, i);
-    showPickerVideo(LOADOUT_IDS[i]);
-    pickerPreview.classList.remove('in-next', 'in-prev');
-    if (dir) {
-        void pickerPreview.offsetWidth; // 続けて動かしても頭から流し直す
-        pickerPreview.classList.add(dir > 0 ? 'in-next' : 'in-prev');
-        smearPicker(dir);
-    }
-}
-// 端まで行ったら反対の端へ回る
-function stepPicker(dir) {
-    sfx.playUiHover();
-    movePicker((pickerIndex + dir + LOADOUT_IDS.length) % LOADOUT_IDS.length, dir);
-}
-function openPicker() {
-    sfx.playUiOpen();
-    overlay.classList.add('pick-weapon');
-    movePicker(loadoutIndex, 0);
-    resumePickerVideo();
-}
-// decide: カーソルの武器に決めて閉じる。false なら選び直さずに閉じる
-function closePicker(decide) {
-    if (!pickerOpen())
-        return;
-    if (decide) {
-        sfx.playUiSelect();
-        selectLoadout(pickerIndex);
-    }
-    else {
-        sfx.playUiBack();
-    }
-    overlay.classList.remove('pick-weapon');
-    pausePickerVideos(); // 閉じている間は流さない（開いたら movePicker で続きから）
-}
-// 開き直したとき、同じ武器の動画は読み直さずに再開する
-function resumePickerVideo() {
-    if (pickerScreen.classList.contains('has-video'))
-        playPickerVideos();
-}
-// 行に乗ったらカーソルをそこへ（音はメニュー共通の乗ったときの音が鳴る）
-for (const [i, b] of pickerRows.entries())
-    b.addEventListener('mouseenter', () => i !== pickerIndex && movePicker(i));
-// 選択画面の上でホイールを回しても上下に動かす。トラックパッドの細かい連続を 1 つずつに均すため、動かしたら少し待つ
-let pickerWheelAt = 0;
-picker.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if (!e.deltaY || e.timeStamp - pickerWheelAt < 160)
-        return;
-    pickerWheelAt = e.timeStamp;
-    stepPicker(Math.sign(e.deltaY));
-}, { passive: false });
-function onPickerClick(target) {
-    const row = target.closest('.sw-rows [data-weapon]');
-    if (row) {
-        movePicker(pickerRows.indexOf(row));
-        return closePicker(true);
-    }
-    if (target.closest('[data-action="weapon-decide"]'))
-        return closePicker(true);
-    // 窓の外（靄）か BACK を押したら閉じる
-    if (target.closest('[data-action="weapon-close"]') || !target.closest('.sw-win'))
-        closePicker(false);
-}
-function onPickerKey(e) {
-    switch (e.code) {
-        case 'Escape':
-        case 'KeyQ':
-            return closePicker(false);
-        case 'Enter':
-        case 'NumpadEnter':
-        case 'Space':
-            e.preventDefault();
-            return closePicker(true);
-        case 'ArrowUp':
-        case 'KeyW':
-        case 'PageUp':
-            e.preventDefault();
-            return stepPicker(-1);
-        case 'ArrowDown':
-        case 'KeyS':
-        case 'PageDown':
-            e.preventDefault();
-            return stepPicker(1);
-    }
-    const n = WEAPON_KEYS[e.code] ? LOADOUT_IDS.indexOf(WEAPON_KEYS[e.code]) : -1;
-    if (n >= 0 && n !== pickerIndex) {
-        sfx.playUiHover();
-        movePicker(n);
-    }
-}
 selectStage(stageIndex);
 selectDifficulty(difficultyIndex);
-selectLoadout(loadoutIndex);
 function setStageSelect(on) {
     overlay.classList.toggle('select-stage', on);
-    overlay.classList.remove('pick-weapon');
-    pausePickerVideos();
+    hidePicker();
     showStagePreview(on ? selectedStageId() : null);
     overlayPrompt.textContent = on ? 'SELECT STAGE' : 'SELECT MODE';
     overlayStatus.textContent = on ? 'ESC — BACK' : 'ESC — PAUSE';
