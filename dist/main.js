@@ -7,7 +7,7 @@ import { SICKLE_VIEW_MODEL_POS } from './weapons/chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './weapons/battleAxe.js';
 import { CHAKRAM_VIEW_MODEL_POS } from './weapons/chakram.js';
 import * as sfx from './audio.js';
-import { ensureAudio, playHit, playRing, playSwish } from './audio.js';
+import { ensureAudio, playHit } from './audio.js';
 import { showKillScore, totalScore, updateScoreHud } from './score.js';
 import { finalScore, fmtTime, showResult, skipResult } from './result.js';
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
@@ -37,27 +37,32 @@ import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger 
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
 import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, playerEye, playerLook, poseEnemyTumble, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js';
 import { DEG, UP, wrapAngle } from './math.js';
-import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, DASH_TIME, EYE_HEIGHT, FOV_SPEED_MAX, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, MAX_FOV_BONUS, OVERSPEED_DECAY, PLAYER_MAX_HP, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_EYE_HEIGHT, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_ROLL, WALLRUN_SPEED, } from './player/config.js';
+import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, DASH_TIME, EYE_HEIGHT, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_SPEED, } from './player/config.js';
 import { dashDir, forward, lookEuler, player, position, right, velocity, wallNormal, wallTangent, wish, } from './player/state.js';
 import { RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, initMovement, moveToward, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantle, tryMantleBox, tryStartWallRun, updateMantle, } from './player/movement.js';
 import { keys, padMove, pressed } from './input.js';
 import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js';
-import { ATTACKS, DASH_SLASH, GROUND_COMBO, SLASH_1, SLIDE_UP, } from './weapons/kunaiAttacks.js';
-import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js';
-import { AXE_ATTACKS, AXE_COMBO, AXE_DRIVE, AXE_KESA, AXE_LAUNCH, AXE_RUSH, } from './weapons/axeAttacks.js';
+import { ATTACKS, DASH_SLASH, SLASH_1, SLIDE_UP } from './weapons/kunaiAttacks.js';
+import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js';
+import { AXE_ATTACKS, AXE_DRIVE, AXE_KESA } from './weapons/axeAttacks.js';
 import { camera, controls, renderer, scene } from './core.js';
-import { DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
-import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeRest, axeViewModel, chakramRest, chakramViewModel, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiRest, leftViewModel, sickleViewModel, sword, swordRest, swordRestQuat, swordViewModel, viewModel, } from './weapons/viewModels.js';
+import { DEFAULT_HIT_STOP, game, kickVel } from './game/state.js';
+import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, chakramViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, sword, swordRestQuat, swordViewModel, viewModel, } from './weapons/viewModels.js';
 import { AXE_SHOCK_HIT, applyAxePose, axePoseAt, axeState, axeTrailPose, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
-import { CHARGE_ZOOM, FOCUS_DIM, FOCUS_ZOOM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, startSwordTwirl, swordPoseAt, swordReady, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
+import { FOCUS_DIM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, swordPoseAt, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
 import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget } from './player/aimAssist.js';
-import { BULLET_HIT, DASH_TWIRL_TIME, DEADEYE_HIT, DEADEYE_ZOOM, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, applyGunSpin, deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, startTwirl, updateBullets, updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js';
-import { GRAPPLE_STICK_HIT, HOOK_CHARGES, HOOK_RECHARGE, SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DAMAGE_SCALE, SICKLE_DASH, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT, SICKLE_PULL_HIT, SICKLE_PULL_LAST, grappleHooks, sickleBodyPos, sickleBodyRot, sickleState, startSickleMove, tossOnDash, twirlSickles, updateGrapple, updateGrapplePull, updateSickleMelee, } from './weapons/sickleCombat.js';
-import { WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiReady, kunaiState, pendingThrows, startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js';
-import { ammoHud, ammoPips, updateWeaponHud, weaponHud } from './ui/weaponHud.js';
+import { BULLET_HIT, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, applyGunSpin, deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, updateBullets, updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js';
+import { GRAPPLE_STICK_HIT, HOOK_CHARGES, SICKLE_DAMAGE_SCALE, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT, SICKLE_PULL_HIT, SICKLE_PULL_LAST, sickleBodyPos, sickleBodyRot, sickleState, updateGrapple, updateGrapplePull, updateSickleMelee, } from './weapons/sickleCombat.js';
+import { WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiState, pendingThrows, startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js';
+import { ammoHud, ammoPips, updateWeaponHud } from './ui/weaponHud.js';
 import { ENEMY_FIRST_SHOT, attachEnemyGun, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js';
 import { PARRY_INVERT_TIME, parryMono, parrySlowFactor, parryState } from './combat/parry.js';
+import { updateHudSway } from './ui/hudSway.js';
+import { updateHandCam } from './fx/handCam.js';
+import { addTrauma, applyCameraOffset, cameraFx, landShakeAmount, onDash, onLand, onMantleEnd, onMantleStart, onSlideStart, onWallJump, onWallRunStart, restoreCameraOffset, savedQuat, updateCamera, updateKick, } from './fx/camera.js';
+import { GAMEOVER_DELAY, downFall, downSlowFactor, isDown } from './player/down.js';
+import { dashGauges, healPlayer, showPlayerDamage, updateHookHud, updateHpHud } from './ui/hud.js';
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
 // ---- ライト ----
@@ -836,60 +841,7 @@ function updatePad(dt) {
         lookSwayY = THREE.MathUtils.clamp(lookSwayY + pad.ry * k * 0.25, -0.06, 0.06);
     }
 }
-// ---- HUD: ダッシュの残り回数（クロスヘア左右の円弧。左が 1 回目、右が 2 回目） ----
-const dashGauges = [...document.querySelectorAll('#crosshair .gauge')];
-// ---- HUD: 鎖鎌の引き寄せの残り回数（クロスヘアの下の斜めの帯 2 本。左から使い、左から溜まる）。鎖鎌を構えている間だけ出す ----
-const hookHud = document.getElementById('hookgauge');
-const hookCells = [...hookHud.querySelectorAll('.cell')];
-const hookFills = hookCells.map((c) => c.querySelector('.f'));
-let hookShown = -1; // 表示に反映済みの残り回数
-function updateHookHud() {
-    hookHud.style.opacity = game.shownWeapon === 'sickle' ? '1' : '0';
-    hookHud.classList.toggle('empty', sickleState.hookEmptyFlash > 0);
-    for (let i = 0; i < hookCells.length; i++) {
-        const fill = i < sickleState.hookCharges ? 1 : i === sickleState.hookCharges ? sickleState.hookRecharge / HOOK_RECHARGE : 0;
-        hookFills[i].style.transform = `scaleX(${fill.toFixed(3)})`;
-        hookCells[i].classList.toggle('ready', i < sickleState.hookCharges);
-        // 溜まりきった帯を光らせる（最初の表示では光らせない）
-        if (hookShown >= 0 && i >= hookShown && i < sickleState.hookCharges) {
-            hookCells[i].classList.remove('gain');
-            void hookCells[i].offsetWidth; // 続けて溜まったときも頭から再生し直す
-            hookCells[i].classList.add('gain');
-        }
-    }
-    hookShown = sickleState.hookCharges;
-}
-// ---- HUD: 体力（左下の斜めのバー。削れた分は白く残り、少し遅れて減る） ----
-const HP_CHIP_HOLD = 0.45; // 白い残りが減り始めるまでの時間
-const HP_CHIP_DRAIN = 75; // 白い残りが減る速さ (HP/秒)
-const HP_LOW = 30; // これ以下でバーを点滅させる
-const HP_HEAVY = 25; // これ以上のダメージは大きく揺らす
-let hpShown = PLAYER_MAX_HP; // 表示中の量。減るときは即座に、回復は滑らかに追いつく
-let hpChip = PLAYER_MAX_HP; // 白く残っている所までの量
-let hpChipHold = 0;
-let hpCount = PLAYER_MAX_HP; // 数字に出している量。減るときは一気に数え下ろす
-const HP_COUNT_SPEED = 140; // 数え下ろす速さ (HP/秒)
-const hpHud = document.getElementById('hp');
-const hpNumRow = hpHud.querySelector('.num');
-const hpNum = hpNumRow.querySelector('span');
-const hpBar = hpHud.querySelector('.bar');
-const hpFill = hpBar.querySelector('.f');
-const hpChipBar = hpBar.querySelector('.c');
-const hurtFlash = document.querySelector('#hurt .flash');
-const hurtLow = document.querySelector('#hurt .low');
-// 曲面 HUD の傾き（index.html の --hud-yaw / --hud-pitch）。被弾時はここから一瞬深く傾ける
-const hudStyle = getComputedStyle(document.getElementById('hud'));
-const HUD_YAW = parseFloat(hudStyle.getPropertyValue('--hud-yaw')) || 0;
-const HUD_PITCH = parseFloat(hudStyle.getPropertyValue('--hud-pitch')) || 0;
-// 左右の HUD を、殴られて奥へ押し込まれたように傾けてから戻す。side は左が 1、右が -1
-function kickHudPanel(el, side, kick, duration) {
-    const tf = (pitch, yaw, z) => `rotateX(${HUD_PITCH + pitch}deg) rotateY(${side * (HUD_YAW + yaw)}deg) translateZ(${z}px)`;
-    el.animate([
-        { transform: tf(kick * 0.4, kick, -kick * 3) },
-        { transform: tf(-kick * 0.1, -kick * 0.25, 0), offset: 0.35 },
-        { transform: tf(0, 0, 0) },
-    ], { duration, easing: 'cubic-bezier(.2, .8, .3, 1)' });
-}
+// ---- HUD: ダッシュ・鎖鎌の残り回数と体力 ----（ui/hud.ts。体力を減らす処理は damagePlayer）
 function damagePlayer(amount) {
     if (game.playerHp <= 0 || amount <= 0)
         return;
@@ -898,98 +850,15 @@ function damagePlayer(amount) {
     const before = game.playerHp;
     // ステージでは 0 で倒れる。訓練場（と倒しきった後）は死なず、1 で耐えて被弾の演出だけを出す
     game.playerHp = Math.max(stageRun?.running ? 0 : 1, game.playerHp - amount);
-    hpShown = game.playerHp;
     if (game.playerHp <= 0)
         downPlayer();
-    hpChipHold = HP_CHIP_HOLD;
-    // バーを揺らす（斜めの形は保ったまま）
-    const heavy = amount >= HP_HEAVY;
-    const amp = heavy ? 14 : 6;
-    hpBar.animate([
-        { transform: 'skewX(-24deg) translate(0, 0)' },
-        { transform: `skewX(-24deg) translate(${-amp}px, ${amp * 0.4}px)` },
-        { transform: `skewX(-24deg) translate(${amp * 0.8}px, ${-amp * 0.3}px)` },
-        { transform: `skewX(-24deg) translate(${-amp * 0.4}px, 0)` },
-        { transform: 'skewX(-24deg) translate(0, 0)' },
-    ], { duration: heavy ? 360 : 260, easing: 'ease-out' });
-    // 数字を叩かれたように一瞬大きくし、ダメージ量を横に飛ばす
-    hpNum.animate([
-        { transform: `translate(0, 0) scale(${heavy ? 1.22 : 1.12})` },
-        { transform: 'translate(-4px, 2px) scale(1.04)', offset: 0.35 },
-        { transform: 'translate(0, 0) scale(1)' },
-    ], { duration: heavy ? 320 : 240, easing: 'ease-out' });
-    const pop = document.createElement('div');
-    pop.className = 'pop';
-    pop.textContent = `−${Math.round(amount)}`;
-    hpNumRow.appendChild(pop);
-    pop.animate([
-        { transform: `translate(0, 8px) scale(${heavy ? 1.5 : 1.25})`, opacity: 1 },
-        { transform: 'translate(22px, -26px) scale(1)', opacity: 1, offset: 0.35 },
-        { transform: 'translate(36px, -48px) scale(0.95)', opacity: 0 },
-    ], { duration: 720, easing: 'cubic-bezier(.2, .8, .3, 1)' }).onfinish = () => pop.remove();
-    // 削れた所の真ん中に斬り傷の線を走らせる
-    const cut = document.createElement('div');
-    cut.className = 'cut';
-    cut.style.left = `calc(${(((before + game.playerHp) / 2) / PLAYER_MAX_HP) * 100}% - 1px)`;
-    hpBar.appendChild(cut);
-    cut.animate([
-        { transform: 'skewX(24deg) rotate(28deg) scaleY(0)', opacity: 1 },
-        { transform: 'skewX(24deg) rotate(28deg) scaleY(1.2)', opacity: 1, offset: 0.3 },
-        { transform: 'skewX(24deg) rotate(28deg) scaleY(1.4)', opacity: 0 },
-    ], { duration: heavy ? 420 : 320, easing: 'ease-out' }).onfinish = () => cut.remove();
-    hpFill.animate([{ filter: 'brightness(3.5)' }, { filter: 'brightness(1)' }], { duration: heavy ? 260 : 160 });
-    // 画面の縁を一瞬暗く絞り、曲面 HUD ごと押し込む
-    hurtFlash.animate([{ opacity: heavy ? 1 : 0.6 }, { opacity: 0 }], { duration: heavy ? 650 : 420, easing: 'ease-out' });
-    kickHudPanel(hpHud, 1, heavy ? 9 : 4.5, heavy ? 520 : 380);
-    kickHudPanel(weaponHud, -1, heavy ? 5 : 2.5, heavy ? 520 : 380);
-    // HUD 全体も殴られた向きへ弾き、奥へ押し込む
-    const kick = heavy ? 420 : 220;
-    const ang = Math.random() * Math.PI * 2;
-    hudImpulse(Math.cos(ang) * kick, Math.sin(ang) * kick * 0.6 + kick * 0.4, heavy ? -0.5 : -0.25);
-}
-function healPlayer(amount) {
-    if (game.playerHp <= 0 || amount <= 0)
-        return;
-    game.playerHp = Math.min(PLAYER_MAX_HP, game.playerHp + amount);
-    hpChip = Math.max(hpChip, game.playerHp);
-}
-// dt は実時間（スローやヒットストップ中も白い残りは同じ速さで減らす）
-function updateHpHud(dt) {
-    if (hpShown > game.playerHp)
-        hpShown = game.playerHp;
-    else {
-        hpShown += (game.playerHp - hpShown) * Math.min(1, dt * 7);
-        if (game.playerHp - hpShown < 0.05)
-            hpShown = game.playerHp;
-    }
-    hpChipHold -= dt;
-    if (hpChipHold <= 0 && hpChip > hpShown)
-        hpChip = Math.max(hpShown, hpChip - HP_CHIP_DRAIN * dt);
-    if (hpChip < hpShown)
-        hpChip = hpShown;
-    hpFill.style.width = `${(hpShown / PLAYER_MAX_HP) * 100}%`;
-    hpChipBar.style.width = `${(hpChip / PLAYER_MAX_HP) * 100}%`;
-    hpCount = hpCount > hpShown ? Math.max(hpShown, hpCount - HP_COUNT_SPEED * dt) : hpShown;
-    hpNum.textContent = String(Math.ceil(hpCount));
-    hpHud.classList.toggle('low', game.playerHp <= HP_LOW);
-    hurtLow.classList.toggle('on', game.playerHp <= HP_LOW);
+    showPlayerDamage(amount, before);
 }
 // ---- 倒れる ----
-// ステージで体力が尽きたら、時間を測るのをやめて操作を取り上げ、世界を白黒のスローにしたまま視点を床へ崩す。
-// 倒れきってからゲームオーバーの画面を出す（そこからはやり直すかタイトルへ戻るだけ）
-const DOWN_SLOW_SCALE = 0.15; // 倒れている間の時間の速さ
-const DOWN_SLOW_IN = 0.25; // そこまで落とす時間（実時間）
-const DOWN_FALL_TIME = 1.1; // 視点が床へ崩れきるまで（実時間）
-const DOWN_EYE = 0.35; // 崩れきったときの目の高さ
-const DOWN_ROLL = 0.55; // 崩れきったときの傾き (rad)
-const DOWN_PITCH = -0.18; // 崩れきったときにうつむく量 (rad)
-const GAMEOVER_DELAY = 2.6; // 倒れてから画面を出すまで（実時間）
-let downT = -1; // 倒れてからの実時間。-1 = 倒れていない
-const isDown = () => downT >= 0;
 function downPlayer() {
     if (isDown() || !stageRun)
         return;
-    downT = 0;
+    game.downT = 0;
     stageRun.running = false;
     game.hitStop = Math.max(game.hitStop, 0.14);
     game.hitStopTotal = game.hitStop;
@@ -999,18 +868,6 @@ function downPlayer() {
         endDeadEye();
     sfx.playDeath();
     document.body.classList.add('player-down');
-}
-// 0（倒れた瞬間）〜 1（崩れきった）
-function downFall() {
-    if (!isDown())
-        return 0;
-    const k = Math.min(1, downT / DOWN_FALL_TIME);
-    return 1 - (1 - k) ** 3;
-}
-function downSlowFactor() {
-    if (!isDown())
-        return 1;
-    return THREE.MathUtils.lerp(1, DOWN_SLOW_SCALE, Math.min(1, downT / DOWN_SLOW_IN));
 }
 // 倒れている間は、押したものを全部捨てる（押しっぱなしの移動も、溜めた攻撃も効かせない）
 function dropPlayerInput() {
@@ -1024,10 +881,10 @@ function dropPlayerInput() {
 function updatePlayerDown(realDt) {
     if (!isDown())
         return;
-    const shown = downT >= GAMEOVER_DELAY;
-    downT += game.realDt;
+    const shown = game.downT >= GAMEOVER_DELAY;
+    game.downT += game.realDt;
     dropPlayerInput();
-    if (!shown && downT >= GAMEOVER_DELAY && stageRun)
+    if (!shown && game.downT >= GAMEOVER_DELAY && stageRun)
         showGameOver(stageRun);
 }
 // 一時停止の画面をゲームオーバーの画面に作り替えて止める。記録は残さない
@@ -1273,340 +1130,9 @@ function update(dt) {
     updateGun(dt);
     updateHandCam(dt);
 }
-// ---- カメラ演出 ----
-let trauma = 0; // 画面揺れの強さ (0〜1)
-let shakeTime = 0;
-let landDip = 0; // 着地で視点が沈む量（負の値）
-let roll = 0;
-// 高いところからの着地の揺れ。trauma より短く強く、画面と手元をまとめて揺らす
-const LAND_SHAKE_TIME = 0.16; // 揺れが収まるまでの時間 (秒)
-let landShake = 0; // 揺れの強さ (0〜1)
-let landShakeT = 1; // 着地からの経過の割合 (0〜1)。1 で揺れなし
-function addTrauma(amount) {
-    trauma = Math.min(1, trauma + amount);
-}
-function onDash() {
-    addTrauma(0.2);
-    sfx.playDash();
-    game.fovKick = 8;
-    game.sinceDash = 0;
-    upgradeAttackOnDash();
-    // 振っていなければ、右手のクナイを輪に掛けた指でくるりと一周回す
-    if (kunaiReady() && !kunaiState.attack) {
-        kunaiState.dashSpinTime = 0;
-        kunaiState.firedDashSpinGrip = false;
-        playRing();
-    }
-    // ハンドガンは、トリガーに掛けた指を軸に縦にくるりと一周回す（装填後より速く）
-    if (gunReady() && !gunState.gunReloading && gunState.twirlT < 0)
-        startTwirl(DASH_TWIRL_TIME);
-    // 剣は、握った手を軸に縦にくるくると 2 回転させる
-    if (swordReady() && !swordState.swordAttack && swordState.swordHold < 0)
-        startSwordTwirl();
-    // 鎖鎌は、確率で鎌を宙へ投げ回し、そうでなければ両手の鎌を前回りにくるりと回す
-    if (!tossOnDash())
-        twirlSickles();
-    // 斧は、柄を軸にくるりと一回転させる
-    if (game.shownWeapon === 'axe' && game.wantWeapon === 'axe' && game.holster === 0 && !axeState.axeAttack) {
-        axeState.axeSpinTime = 0;
-        playSwish({ at: 0, dur: 0.22, f0: 380, f1: 1200, gain: 0.14 }, 'axe');
-    }
-}
-// ダッシュの直前に振り始めた普段の攻撃は、ダッシュ技に差し替える（ほぼ同時押しでもダッシュ技が出るように）
-const DASH_ATTACK_GRACE = 0.12;
-function upgradeAttackOnDash() {
-    if (player.sliding)
-        return;
-    // クナイ
-    if (kunaiState.attack && kunaiState.attackTime < DASH_ATTACK_GRACE && !kunaiState.firedImpact) {
-        const i = GROUND_COMBO.indexOf(kunaiState.attack);
-        if (i >= 0) {
-            kunaiState.comboStep = i;
-            startAttack(DASH_SLASH);
-        }
-    }
-    // 剣: 押してまだ離していない（普段の攻撃か溜めかを決める前）か、振り始めたばかり
-    if (swordState.swordHold >= 0 && !swordState.swordAttack && swordState.swordHold < DASH_ATTACK_GRACE) {
-        swordState.swordHold = -1;
-        startSwordAttack(SWORD_THRUST);
-    }
-    else if (swordState.swordAttack && swordState.swordTime < DASH_ATTACK_GRACE && !swordState.swordFiredImpact) {
-        const i = SWORD_COMBO.indexOf(swordState.swordAttack);
-        if (i >= 0) {
-            swordState.swordComboStep = i;
-            startSwordAttack(SWORD_THRUST);
-        }
-    }
-    // 鎖鎌
-    if (sickleState.sickleMelee && sickleState.sickleMelee.t < DASH_ATTACK_GRACE && sickleState.sickleMelee.fired === 0) {
-        const i = SICKLE_COMBO.indexOf(sickleState.sickleMelee.def);
-        const j = SICKLE_AIR_COMBO.indexOf(sickleState.sickleMelee.def);
-        if (i >= 0)
-            sickleState.sickleCombo = i;
-        if (j >= 0)
-            sickleState.sickleAirCombo = j;
-        if (i >= 0 || j >= 0)
-            startSickleMove(SICKLE_DASH);
-    }
-    // 斧: 普段の攻撃は突進振り下ろし、打ち上げは突き飛ばしへ
-    if (axeState.axeAttack && axeState.axeTime < DASH_ATTACK_GRACE && !axeState.axeFiredImpact && !player.wallRunning) {
-        const i = AXE_COMBO.indexOf(axeState.axeAttack);
-        if (i >= 0 && (player.onGround || !axeState.axeRushAirUsed)) {
-            axeState.axeComboStep = i;
-            startAxeAttack(AXE_RUSH);
-        }
-        else if (axeState.axeAttack === AXE_LAUNCH && axeState.axeSlamRecover <= 0) {
-            startAxeAttack(AXE_DRIVE);
-        }
-    }
-}
-function onSlideStart() {
-    addTrauma(0.15);
-    sfx.playSlideStart();
-    // 鎖鎌は、両手の鎌を前回りにくるりと回しながら低い構えへ移る
-    twirlSickles();
-}
-function onMantleStart() {
-    addTrauma(0.1);
-    sfx.playMantleStart();
-}
-function onMantleEnd() {
-    sfx.playMantleEnd();
-    // 縁に体を乗せたときに軽く沈み、うなずくように視線を下げる
-    game.landDipVel = Math.min(game.landDipVel, -1.5);
-    kickVel.x -= 1.2 * DEG * 22;
-}
-function onWallRunStart() {
-    addTrauma(0.08);
-    sfx.playWallRunStart();
-}
-function onWallJump() {
-    addTrauma(0.1);
-    sfx.playWallJump();
-    game.fovKick = Math.max(game.fovKick, 4);
-}
-function onLand(impact) {
-    sfx.playLand(impact);
-    game.landDipVel = Math.min(game.landDipVel, -impact * 0.5);
-    // 普通のジャンプ程度では揺らさず、高いところから落ちたときだけ揺らす。高いほど強く
-    const k = THREE.MathUtils.clamp((impact - 7) / 10, 0, 1);
-    if (k > 0 && (landShakeT >= 1 || k >= landShake * (1 - landShakeT) ** 2)) {
-        landShake = k;
-        landShakeT = 0;
-    }
-}
-// 着地の揺れの今の強さ（始めが一番強く、すぐに収まる）
-function landShakeAmount() {
-    return landShakeT >= 1 ? 0 : landShake * (1 - landShakeT) ** 2;
-}
-function updateCamera(dt) {
-    const hSpeed = Math.hypot(velocity.x, velocity.z);
-    // 速いほど視野を広げる
-    game.fovKick = moveToward(game.fovKick, 0, dt * 30);
-    const speedT = THREE.MathUtils.clamp((hSpeed - WALK_SPEED) / (FOV_SPEED_MAX - WALK_SPEED), 0, 1);
-    // 居合の構えの間はズームする（スロー中でも実時間の速さで寄せる）
-    const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + game.fovKick - swordState.focusZoom * FOCUS_ZOOM - swordState.swordChargeBlend * CHARGE_ZOOM
-        - gunState.deadEyeBlend * DEADEYE_ZOOM;
-    camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
-    camera.updateProjectionMatrix();
-    // 着地の沈み込み（ばねで戻す）
-    game.landDipVel += (-150 * landDip - 18 * game.landDipVel) * dt;
-    landDip = Math.max(-0.5, landDip + game.landDipVel * dt);
-    // スライディングで視点を下げる
-    player.eyeHeight += ((player.sliding ? SLIDE_EYE_HEIGHT : EYE_HEIGHT) - player.eyeHeight) * Math.min(1, dt * 12);
-    // 横移動とスライディングでカメラを傾ける。壁走り中は壁と反対側へ傾ける
-    const lateral = (velocity.x * right.x + velocity.z * right.z) / SPRINT_SPEED;
-    const wallRoll = player.wallRunning ? -(wallNormal.x * right.x + wallNormal.z * right.z) * WALLRUN_ROLL : 0;
-    const targetRoll = -lateral * 0.025 + (player.sliding ? 0.07 : 0) + wallRoll;
-    roll += (targetRoll - roll) * Math.min(1, dt * 8);
-    trauma = Math.max(0, trauma - dt * 1.5);
-    shakeTime += dt;
-    landShakeT = Math.min(1, landShakeT + dt / LAND_SHAKE_TIME);
-    const landJolt = landShakeAmount() * 0.06 * Math.sin(shakeTime * 91.7 + 3.3);
-    // 倒れたら目の高さを床近くまで崩す
-    const eye = THREE.MathUtils.lerp(player.eyeHeight, DOWN_EYE, downFall());
-    camera.position.set(position.x, position.y + eye + landDip + landJolt, position.z);
-}
-// 描画の直前にだけ揺れと傾きを足す（PointerLockControls の視点を壊さないよう、描画後に戻す）
-const savedQuat = new THREE.Quaternion();
-const shakeEuler = new THREE.Euler();
-const shakeQuat = new THREE.Quaternion();
-function applyCameraOffset() {
-    savedQuat.copy(camera.quaternion);
-    const s = trauma * trauma;
-    const t = shakeTime;
-    const ls = landShakeAmount();
-    shakeEuler.set(s * 0.04 * Math.sin(t * 47.3 + 1.3) + kick.x - ls * 0.09 * Math.abs(Math.sin(t * 97.1 + 0.4)), s * 0.04 * Math.sin(t * 53.1 + 4.1) + kick.y + ls * 0.05 * Math.sin(t * 89.3 + 2.2), roll + s * 0.05 * Math.sin(t * 41.7 + 2.7) + kick.z + ls * 0.07 * Math.sin(t * 103.7 + 5.1) + handCam.z);
-    shakeEuler.x += handCam.x + DOWN_PITCH * downFall();
-    shakeEuler.y += handCam.y;
-    shakeEuler.z += DOWN_ROLL * downFall();
-    camera.quaternion.multiply(shakeQuat.setFromEuler(shakeEuler));
-}
-// applyCameraOffset で足した揺れと傾きを戻す
-function restoreCameraOffset() {
-    camera.quaternion.copy(savedQuat);
-}
-// 攻撃の反動（kick）をばねで元へ戻す
-const kickTmp = new THREE.Vector3();
-function updateKick(dt) {
-    kickTmp.copy(kick).multiplyScalar(-220).addScaledVector(kickVel, -20);
-    kickVel.addScaledVector(kickTmp, dt);
-    kick.addScaledVector(kickVel, dt);
-}
-// ---- 手元につられる視線 ----
-// 構えた武器の手元が画面の中で動くと、視線をその向きへ少しだけつられさせる。
-// 手元の位置から、ゆっくり追いかける基準を引いた分だけ向ける（振った瞬間は大きく、構えを変えたままなら正面へ戻る）。
-// 歩きの揺れ・視点移動の遅れ・持ち替えの上げ下げは数えない（構えの根元 = ビューモデルより手前で測る）
-const HAND_CAM_GAIN = new THREE.Vector3(0.12, 0.15, 0.08); // 手元 1 m のずれあたりの角度 (rad): 縦, 横, 傾き
-const HAND_CAM_MAX = 0.035; // 向ける角度の上限 (rad)
-const HAND_CAM_FOLLOW = 4; // 基準が手元に追いつく速さ (1/秒)
-const HAND_CAM_STIFF = 140; // ばねの硬さ
-const HAND_CAM_DAMP = 17; // ばねの減衰
-const handCam = new THREE.Vector3(); // 今の視線のずれ (rad): x = 縦, y = 横, z = 傾き
-const handCamVel = new THREE.Vector3();
-const handCamBase = new THREE.Vector3();
-const handCamPos = new THREE.Vector3();
-const handCamTmp = new THREE.Vector3();
-let handCamWeapon = null;
-const HAND_PROBE_KUNAI = new THREE.Vector3(0, 0.1, 0); // 握りから切っ先へ少し寄った所（回転も拾う）
-const HAND_PROBE_SWORD = new THREE.Vector3(0, 0.35, 0);
-const HAND_PROBE_GUN = new THREE.Vector3(0, 0, -0.1);
-const HAND_PROBE_SICKLE = new THREE.Vector3(0, 0.1, 0);
-const HAND_PROBE_AXE = new THREE.Vector3(0, 0.6, 0);
-const HAND_PROBE_CHAKRAM = new THREE.Vector3(0, 0, 0);
-// frame 座標の点 local を、root の手前まで親をたどって root の座標へ移す（root 自身の揺れは入れない）
-function probeToRoot(frame, root, local, out) {
-    out.copy(local);
-    for (let o = frame; o && o !== root; o = o.parent) {
-        o.updateMatrix();
-        out.applyMatrix4(o.matrix);
-    }
-    return out;
-}
-// 今の武器の手元の位置（カメラ基準、構えの根元を基本位置に置いた値）
-function measureHand(out) {
-    switch (game.shownWeapon) {
-        case 'kunai':
-            return probeToRoot(kunaiRest, viewModel, HAND_PROBE_KUNAI, out).add(VIEW_MODEL_POS);
-        case 'sword':
-            return probeToRoot(swordRest, swordViewModel, HAND_PROBE_SWORD, out).add(SWORD_VIEW_MODEL_POS);
-        case 'handgun':
-            return probeToRoot(gunTwirl, gunViewModel, HAND_PROBE_GUN, out).add(GUN_VIEW_MODEL_POS).add(reloadPosOff);
-        case 'sickle':
-            // 両手の鎌の真ん中と、振りにつられた体のひねり
-            probeToRoot(grappleHooks[0].rest, sickleViewModel, HAND_PROBE_SICKLE, out);
-            out.add(probeToRoot(grappleHooks[1].rest, sickleViewModel, HAND_PROBE_SICKLE, handCamTmp)).multiplyScalar(0.5);
-            return out.add(SICKLE_VIEW_MODEL_POS).add(sickleBodyPos);
-        case 'axe':
-            return probeToRoot(axeRest, axeViewModel, HAND_PROBE_AXE, out).add(AXE_VIEW_MODEL_POS);
-        case 'chakram':
-            return probeToRoot(chakramRest, chakramViewModel, HAND_PROBE_CHAKRAM, out).add(CHAKRAM_VIEW_MODEL_POS);
-    }
-}
-function updateHandCam(dt) {
-    if (dt <= 0)
-        return;
-    measureHand(handCamPos);
-    // 持ち替えた直後は手元が飛ぶので、基準をそこへ合わせ直す
-    if (handCamWeapon !== game.shownWeapon) {
-        handCamWeapon = game.shownWeapon;
-        handCamBase.copy(handCamPos);
-    }
-    handCamBase.lerp(handCamPos, Math.min(1, dt * HAND_CAM_FOLLOW));
-    const dx = handCamPos.x - handCamBase.x;
-    const dy = handCamPos.y - handCamBase.y;
-    // 右へ動いたら右を、上へ動いたら上を向き、振った向きへ少し傾ける
-    const tx = THREE.MathUtils.clamp(dy * HAND_CAM_GAIN.x, -HAND_CAM_MAX, HAND_CAM_MAX);
-    const ty = THREE.MathUtils.clamp(-dx * HAND_CAM_GAIN.y, -HAND_CAM_MAX, HAND_CAM_MAX);
-    const tz = THREE.MathUtils.clamp(-dx * HAND_CAM_GAIN.z, -HAND_CAM_MAX, HAND_CAM_MAX);
-    // ばね（大きな dt で暴れないよう細かく刻む）
-    const steps = Math.ceil(dt / (1 / 120));
-    const h = dt / steps;
-    for (let i = 0; i < steps; i++) {
-        handCamVel.x += (HAND_CAM_STIFF * (tx - handCam.x) - HAND_CAM_DAMP * handCamVel.x) * h;
-        handCamVel.y += (HAND_CAM_STIFF * (ty - handCam.y) - HAND_CAM_DAMP * handCamVel.y) * h;
-        handCamVel.z += (HAND_CAM_STIFF * (tz - handCam.z) - HAND_CAM_DAMP * handCamVel.z) * h;
-        handCam.addScaledVector(handCamVel, h);
-    }
-}
-// ---- HUD の慣性 ----
-// 画面の HUD を、体に付けた板がばねで吊ってあるように動かす。動いた向きの逆へ遅れてずれ、
-// 速さが変わった瞬間（ダッシュ・ジャンプ・着地）には押されて弾み、前へ速く進むほど外へ広がる。
-// 衝撃は hudImpulse で直接足し、画面揺れ（trauma・着地の揺れ）にも合わせて小刻みに震える
-const HUD_LAG = 0.7; // 速さ 1 m/s あたりのずれ (px)
-const HUD_LAG_MAX = 16; // 速さによるずれの上限 (px)
-const HUD_PUSH = 22; // 速さの変化 1 m/s あたりに弾く速さ (px/秒)
-const HUD_PUSH_MAX = 520; // 1 フレームで弾く速さの上限 (px/秒)。ワープなどで飛ばないように
-const HUD_SPREAD = 0.0018; // 前へ 1 m/s あたりに広がる割合
-const HUD_STIFF = 150; // ばねの硬さ
-const HUD_DAMP = 15; // ばねの減衰
-const HUD_OFFSET_MAX = 34; // ずれの上限 (px)
-const HUD_SCALE_MAX = 0.05; // 広がり・縮みの上限
-const hudLayer = document.getElementById('hud');
-const scoreLayer = document.getElementById('score');
-const hudOff = new THREE.Vector3(); // x, y はずれ (px)、z は広がり (割合)
-const hudVel = new THREE.Vector3();
-const hudPrevVel = new THREE.Vector3();
-const hudDv = new THREE.Vector3();
-let hudPrevValid = false;
-// 衝撃で HUD を弾く。x, y は画面の向き (px/秒、y は下が正)、z は広がり（負で奥へ押し込む）
-function hudImpulse(x, y, z = 0) {
-    hudVel.x += x;
-    hudVel.y += y;
-    hudVel.z += z;
-}
-// dt は実時間（スロー中も同じ速さでばねを戻す）
-function updateHudSway(dt) {
-    if (dt <= 0)
-        return;
-    // 速さを、今向いている向きの横・前・上に分ける
-    const lateral = velocity.x * right.x + velocity.z * right.z;
-    const ahead = velocity.x * forward.x + velocity.z * forward.z;
-    // 速さが変わった分だけ、遅れる向きへ弾く（右へ加速したら左へ、着地で上向きに止まったら下へ）
-    if (hudPrevValid) {
-        hudDv.subVectors(velocity, hudPrevVel);
-        const dLat = hudDv.x * right.x + hudDv.z * right.z;
-        const dAhead = hudDv.x * forward.x + hudDv.z * forward.z;
-        hudVel.x += THREE.MathUtils.clamp(-dLat * HUD_PUSH, -HUD_PUSH_MAX, HUD_PUSH_MAX);
-        hudVel.y += THREE.MathUtils.clamp(hudDv.y * HUD_PUSH, -HUD_PUSH_MAX, HUD_PUSH_MAX);
-        hudVel.z += THREE.MathUtils.clamp(-dAhead * HUD_PUSH * 0.0009, -0.4, 0.4);
-    }
-    hudPrevVel.copy(velocity);
-    hudPrevValid = true;
-    // 速さに応じた落ち着き先: 動く向きの逆へずらし、前へ速いほど外へ広げる
-    const tx = THREE.MathUtils.clamp(-lateral * HUD_LAG, -HUD_LAG_MAX, HUD_LAG_MAX);
-    const ty = THREE.MathUtils.clamp(velocity.y * HUD_LAG, -HUD_LAG_MAX, HUD_LAG_MAX);
-    const tz = THREE.MathUtils.clamp(Math.max(0, ahead) * HUD_SPREAD, 0, HUD_SCALE_MAX * 0.6);
-    // ばね（大きな dt で暴れないよう細かく刻む）
-    const steps = Math.ceil(dt / (1 / 120));
-    const h = dt / steps;
-    for (let i = 0; i < steps; i++) {
-        hudVel.x += (HUD_STIFF * (tx - hudOff.x) - HUD_DAMP * hudVel.x) * h;
-        hudVel.y += (HUD_STIFF * (ty - hudOff.y) - HUD_DAMP * hudVel.y) * h;
-        hudVel.z += (HUD_STIFF * (tz - hudOff.z) - HUD_DAMP * hudVel.z) * h;
-        hudOff.x += hudVel.x * h;
-        hudOff.y += hudVel.y * h;
-        hudOff.z += hudVel.z * h;
-    }
-    hudOff.x = THREE.MathUtils.clamp(hudOff.x, -HUD_OFFSET_MAX, HUD_OFFSET_MAX);
-    hudOff.y = THREE.MathUtils.clamp(hudOff.y, -HUD_OFFSET_MAX, HUD_OFFSET_MAX);
-    hudOff.z = THREE.MathUtils.clamp(hudOff.z, -HUD_SCALE_MAX, HUD_SCALE_MAX);
-    // 画面揺れに合わせた小刻みな震え（ばねには入れず、見た目にだけ足す）
-    const s = trauma * trauma;
-    const ls = landShakeAmount();
-    const t = shakeTime;
-    const jx = s * 7 * Math.sin(t * 47.3 + 0.7) + ls * 4 * Math.sin(t * 89.3 + 2.2);
-    const jy = s * 7 * Math.sin(t * 53.1 + 2.9) + ls * 9 * Math.abs(Math.sin(t * 97.1 + 0.4));
-    const x = hudOff.x + jx;
-    const y = hudOff.y + jy;
-    // 板ごとずらして少し傾け、消失点は逆へ動かして曲面の向きが変わったように見せる
-    hudLayer.style.translate = `${x.toFixed(2)}px ${y.toFixed(2)}px`;
-    hudLayer.style.scale = (1 + hudOff.z).toFixed(4);
-    hudLayer.style.rotate = `${(x * 0.04).toFixed(3)}deg`;
-    hudLayer.style.perspectiveOrigin = `calc(50% - ${(x * 3).toFixed(1)}px) calc(50% - ${(y * 3).toFixed(1)}px)`;
-    // 照準の横に出るスコアは、照準から離れすぎないよう控えめに
-    scoreLayer.style.translate = `${(x * 0.5).toFixed(2)}px ${(y * 0.5).toFixed(2)}px`;
-}
+// ---- カメラ演出 ----（fx/camera.ts）
+// ---- 手元につられる視線 ----（fx/handCam.ts）
+// ---- HUD の慣性 ----（ui/hudSway.ts）
 // ---- ビューモデル（クナイ）の動き ----
 let bobPhase = 0;
 let bobAmount = 0;
@@ -1671,8 +1197,8 @@ function updateViewModel(dt) {
     const slideP = slidePose * calm;
     const mantleP = mantlePose * calm;
     viewModel.position.set(VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bob - lookSwayX * 0.5 + slideP * 0.03, VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bob - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - pull * 0.04 - slideP * 0.03 - mantleP * 0.12, VIEW_MODEL_POS.z + pull * 0.1 + speedBack);
-    viewModel.rotation.set(-pull * 0.35 + lookSwayY * 2 - mantleP * 0.5, -lookSwayX * 2, slideP * 0.35 + roll);
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - pull * 0.04 - slideP * 0.03 - mantleP * 0.12, VIEW_MODEL_POS.z + pull * 0.1 + speedBack);
+    viewModel.rotation.set(-pull * 0.35 + lookSwayY * 2 - mantleP * 0.5, -lookSwayX * 2, slideP * 0.35 + cameraFx.roll);
     // 左手は振りに加わらないので、移動の揺れだけ右手と左右対称に付ける
     // 溜めている間は少し前へ出して持ち上げ（水平に回すクナイが顔へ近づきすぎないように）、
     // 投げた瞬間は前へ突き出し、補充中は画面の下へ隠す
@@ -1682,13 +1208,13 @@ function updateViewModel(dt) {
     leftEmpty += ((empty ? 1 : 0) - leftEmpty) * Math.min(1, dt * (empty ? 6 : 14));
     leftViewModel.position.set(LEFT_VIEW_MODEL_POS.x - Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03
         + chargePose * 0.03 + kunaiState.throwPunch * 0.05, LEFT_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12
         + chargePose * 0.03 + kunaiState.throwPunch * 0.03 - leftEmpty * 0.15, LEFT_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack - chargePose * 0.04 - kunaiState.throwPunch * 0.12);
-    leftViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + chargePose * 0.25 - kunaiState.throwPunch * 0.4 - leftEmpty * 0.6, -lookSwayX * 2, slidePose * 0.35 + roll - chargePose * 0.2);
+    leftViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + chargePose * 0.25 - kunaiState.throwPunch * 0.4 - leftEmpty * 0.6, -lookSwayX * 2, slidePose * 0.35 + cameraFx.roll - chargePose * 0.2);
     // ハンドガンは右手のクナイと同じ揺れ方をさせる
     gunViewModel.position.set(GUN_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03, GUN_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, GUN_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
-    gunViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, slidePose * 0.35 + roll);
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, GUN_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
+    gunViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, slidePose * 0.35 + cameraFx.roll);
     // 剣は歩く速さを超えて走っている間、前へ倒した構えに移る。スライディング中は横に寝かせる
     const running = hSpeed > WALK_SPEED + 1;
     swordRunPose += ((running ? 1 : 0) - swordRunPose) * Math.min(1, dt * (running ? 8 : 6));
@@ -1701,15 +1227,15 @@ function updateViewModel(dt) {
     const sPull = dashPull * swordCalm;
     const sSlide = slidePose * swordCalm;
     swordViewModel.position.set(SWORD_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * sBob - lookSwayX * 0.5 + sSlide * 0.03, SWORD_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * sBob - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - sPull * 0.04 - sSlide * 0.03 - mantlePose * 0.12
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - sPull * 0.04 - sSlide * 0.03 - mantlePose * 0.12
         + swordSlidePose * 0.1, // スライディング中は寝かせた刀を持ち上げる
     SWORD_VIEW_MODEL_POS.z + sPull * 0.1 + speedBack);
-    swordViewModel.rotation.set(-sPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, sSlide * 0.35 + roll);
+    swordViewModel.rotation.set(-sPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, sSlide * 0.35 + cameraFx.roll);
     // 鎖鎌もハンドガンと同じ揺れ方をさせる
     sickleViewModel.position.set(SICKLE_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03, SICKLE_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12 + sickleBodyPos.y, SICKLE_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12 + sickleBodyPos.y, SICKLE_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
     sickleViewModel.position.x += sickleBodyPos.x;
-    sickleViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + sickleBodyRot.x, -lookSwayX * 2 + sickleBodyRot.y, slidePose * 0.35 + roll + sickleBodyRot.z);
+    sickleViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5 + sickleBodyRot.x, -lookSwayX * 2 + sickleBodyRot.y, slidePose * 0.35 + cameraFx.roll + sickleBodyRot.z);
     // バトルアックスもハンドガンと同じ揺れ方をさせる。重いので揺れは少し大きめ。振っている間は揺れを弱めて振りの形を崩さない。
     // 視点を回したときの揺れは、重さで遅れて付いてきて少し行き過ぎる（ばねで追わせる）
     axeSwayVelX += ((lookSwayX * AXE_SWAY_GAIN - axeSwayX) * AXE_SWAY_STIFF - axeSwayVelX * AXE_SWAY_DAMP) * dt;
@@ -1722,16 +1248,16 @@ function updateViewModel(dt) {
     const aPull = dashPull * axeCalm;
     const aSlide = slidePose * axeCalm;
     axeViewModel.position.set(AXE_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.016 * aBob - axeSwayX * 0.5 + aSlide * 0.03, AXE_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.016 * aBob - Math.min(velocity.y, 0) * 0.002
-        + axeSwayY * 0.5 + landDip * 0.35 - aPull * 0.04 - aSlide * 0.03 - mantlePose * 0.12, AXE_VIEW_MODEL_POS.z + aPull * 0.1 + speedBack);
-    axeViewModel.rotation.set(-aPull * 0.35 + axeSwayY * 2 - mantlePose * 0.5, -axeSwayX * 2, aSlide * 0.35 + roll);
+        + axeSwayY * 0.5 + cameraFx.landDip * 0.35 - aPull * 0.04 - aSlide * 0.03 - mantlePose * 0.12, AXE_VIEW_MODEL_POS.z + aPull * 0.1 + speedBack);
+    axeViewModel.rotation.set(-aPull * 0.35 + axeSwayY * 2 - mantlePose * 0.5, -axeSwayX * 2, aSlide * 0.35 + cameraFx.roll);
     // チャクラムもハンドガンと同じ揺れ方をさせる
     chakramViewModel.position.set(CHAKRAM_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - lookSwayX * 0.5 + slidePose * 0.03, CHAKRAM_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
-        + lookSwayY * 0.5 + landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, CHAKRAM_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
-    chakramViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, slidePose * 0.35 + roll);
+        + lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, CHAKRAM_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
+    chakramViewModel.rotation.set(-dashPull * 0.35 + lookSwayY * 2 - mantlePose * 0.5, -lookSwayX * 2, slidePose * 0.35 + cameraFx.roll);
     // 高いところからの着地で、手元も画面と一緒に強く揺らす
     const ls = landShakeAmount();
     if (ls > 0) {
-        const t = shakeTime;
+        const t = cameraFx.shakeTime;
         handJoltPos.set(ls * 0.025 * Math.sin(t * 83.9 + 1.7), -ls * 0.05 * Math.abs(Math.sin(t * 95.3 + 0.9)), ls * 0.02 * Math.sin(t * 77.1 + 4.4));
         const rx = -ls * 0.25 * Math.abs(Math.sin(t * 88.7 + 2.6));
         const rz = ls * 0.18 * Math.sin(t * 101.3 + 0.2);
@@ -3418,8 +2944,8 @@ function updateStageIntro(dt) {
     camera.fov = BASE_FOV + (1 - easeOutQuart(k)) * INTRO_FOV_BONUS;
     camera.updateProjectionMatrix();
     // ゲームの時間は止めているので、柱が収まったときの揺れはここで進めて収める
-    trauma = Math.max(0, trauma - dt * 1.5);
-    shakeTime += dt;
+    cameraFx.trauma = Math.max(0, cameraFx.trauma - dt * 1.5);
+    cameraFx.shakeTime += dt;
     const arenaDone = riseT < 0 || riseT - INTRO_RISE_DELAY >= arenaRiseEnd;
     if (titleT >= 0) {
         titleT += dt;
@@ -3560,7 +3086,7 @@ else {
         if (game.hitStop > 0) {
             // ヒットストップ中は全体を止める（入力は溜めておき、揺れだけ続ける）
             game.hitStop -= realFrame;
-            shakeTime += realFrame;
+            cameraFx.shakeTime += realFrame;
         }
         else {
             game.realDt = realFrame;

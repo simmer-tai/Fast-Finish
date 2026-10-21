@@ -26,6 +26,7 @@ export const game = {
   attackPressed: false,
   hitStopTotal: 0,
   hitStopShakesDummy: true, // パリィで止めたときは敵を震わせない
+  downT: -1, // 倒れてからの実時間。-1 = 倒れていない
 };
 
 // カメラの反動（ばね）
