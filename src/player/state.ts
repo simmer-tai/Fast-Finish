@@ -48,3 +48,5 @@ export const player = {
   eyeHeight: EYE_HEIGHT,
   groundRamp: null as Ramp | null, // 今立っている坂
 };
+
+export const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');

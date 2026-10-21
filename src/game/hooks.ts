@@ -10,6 +10,7 @@ export interface GameHooks {
   applyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar?: boolean, dmgScale?: number): void;
   enemyHeld(): boolean; // いま扱っている敵を、鎖鎌で掛けているか突進の的にしているか
   inReachOf(reach: number, angle: number): boolean; // いま扱っている敵に届くか
+  dummyInReach(reach: number, angle: number): boolean; // 届く範囲でいちばん近い敵を en にし、hitDir に攻撃の向きを入れる。いなければ false
   hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3): void; // 刃先の位置から、敵の表面の当たった所を求める
   applyLunge(amount: number): void; // 攻撃の踏み込み
   grappling(): boolean; // 鎖鎌で移動している最中か
