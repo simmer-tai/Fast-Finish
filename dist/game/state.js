@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PLAYER_MAX_HP } from '../player/config.js';
 // ---- 武器や演出をまたいで共有している値 ----
 // ほかのファイルからも書き換えられるよう、1 つのオブジェクトにまとめる
 // 持ち替えは「今の武器を下げる → 入れ替える → 新しい武器を上げる」
@@ -17,6 +18,9 @@ export const game = {
     deadEye: 'off',
     deadEyeT: 0, // 今の段に入ってからの時間（実時間）
     attackHeld: false, // 左クリックを押し続けているか
+    usingPad: false, // 最後に触ったのがパッドか（マウスを触ったら外れる）
+    playerHp: PLAYER_MAX_HP,
+    parryReturnAge: Infinity, // 返した弾が当たってからの実時間
 };
 // カメラの反動（ばね）
 export const kick = new THREE.Vector3();

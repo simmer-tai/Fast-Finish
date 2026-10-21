@@ -1,5 +1,6 @@
 import type { WeaponId } from '../weapons/ids.js';
 import * as THREE from 'three';
+import { PLAYER_MAX_HP } from '../player/config.js';
 
 // ---- 武器や演出をまたいで共有している値 ----
 // ほかのファイルからも書き換えられるよう、1 つのオブジェクトにまとめる
@@ -19,6 +20,9 @@ export const game = {
   deadEye: 'off' as 'off' | 'mark' | 'fire' | 'after',
   deadEyeT: 0, // 今の段に入ってからの時間（実時間）
   attackHeld: false, // 左クリックを押し続けているか
+  usingPad: false, // 最後に触ったのがパッドか（マウスを触ったら外れる）
+  playerHp: PLAYER_MAX_HP,
+  parryReturnAge: Infinity, // 返した弾が当たってからの実時間
 };
 
 // カメラの反動（ばね）

@@ -47,3 +47,5 @@ export function createKunai(mats: WeaponMats): THREE.Group {
 // 拳で握って構えた感じ: 切っ先を上へ立て、前方と内側へ傾ける
 // 刃の平たい面（ローカル Z）はカメラの方へ向ける
 export const REST_TIP = new THREE.Vector3(-0.44, 0.8, -0.42).normalize();
+
+export const THROW_RANGE = 150; // 投げたクナイと照準の届く距離 (m)

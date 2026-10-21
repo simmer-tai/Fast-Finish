@@ -14,6 +14,8 @@ export interface GameHooks {
   hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3): void; // 刃先の位置から、敵の表面の当たった所を求める
   applyLunge(amount: number): void; // 攻撃の踏み込み
   grappling(): boolean; // 鎖鎌で移動している最中か
+  applyCameraOffset(): void; // 描画の向きに揺れと傾きを足す（クロスヘアの指す向きになる）
+  restoreCameraOffset(): void; // applyCameraOffset で足した分を戻す
 }
 export let hooks: GameHooks;
 export function initGameHooks(h: GameHooks) {

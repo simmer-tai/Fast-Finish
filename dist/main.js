@@ -27,8 +27,7 @@ import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, pla
 import { ImpactFxShader, SpeedFxShader } from './fx/postShaders.js';
 import { HEAVY_FX, fxScene, hitFxVisible, impact, initHitFx, spawnFinaleFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles, } from './fx/hitFx.js';
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
-import { REST_TIP, createKunai } from './weapons/kunai.js';
-import { createRound } from './weapons/revolver.js';
+import { REST_TIP, THROW_RANGE, createKunai } from './weapons/kunai.js';
 import { createPistol } from './weapons/pistol.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './weapons/sword.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions } from './ui/options.js';
@@ -39,23 +38,26 @@ import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, 
 import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
 import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, playerEye, playerLook, poseEnemyTumble, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js';
-import { DEG, UP, catmullRom } from './math.js';
+import { DEG, UP, catmullRom, wrapAngle } from './math.js';
 import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, DASH_TIME, EYE_HEIGHT, FOV_SPEED_MAX, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, MAX_FOV_BONUS, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_EYE_HEIGHT, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_ROLL, WALLRUN_SPEED, } from './player/config.js';
 import { dashDir, forward, lookEuler, player, position, right, velocity, wallNormal, wallTangent, wish, } from './player/state.js';
 import { RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, hasHeadroom, initMovement, moveToward, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantle, tryMantleBox, tryStartWallRun, updateMantle, } from './player/movement.js';
 import { keys, padMove, pressed } from './input.js';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, easeOutQuart } from './ease.js';
+import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js';
 import { ATTACKS, COMBO_RESET, DASH_SLASH, GROUND_COMBO, SLASH_1, SLIDE_UP, } from './weapons/kunaiAttacks.js';
 import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js';
 import { AXE_ATTACKS, AXE_COMBO, AXE_DRIVE, AXE_KESA, AXE_LAUNCH, AXE_RUSH, } from './weapons/axeAttacks.js';
 import { camera, controls, renderer, scene } from './core.js';
-import { DASH_ATTACK_WINDOW, DEADEYE_MAX, DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
-import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, attackPivot, axeRest, axeViewModel, chakramRest, chakramViewModel, gunSpin, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiMat, kunaiRest, leftFanPivots, leftKunaiRest, leftKunais, leftSickle, leftViewModel, revolver, rightSickle, sickleMats, sickleViewModel, spinPivot, sword, swordRest, swordRestQuat, swordViewModel, viewModel, weaponMats, } from './weapons/viewModels.js';
+import { DASH_ATTACK_WINDOW, DEFAULT_HIT_STOP, game, kick, kickVel } from './game/state.js';
+import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, attackPivot, axeRest, axeViewModel, chakramRest, chakramViewModel, gunTwirl, gunViewModel, heldAxeModel, kunai, kunaiMat, kunaiRest, leftFanPivots, leftKunaiRest, leftKunais, leftSickle, leftViewModel, rightSickle, sickleMats, sickleViewModel, spinPivot, sword, swordRest, swordRestQuat, swordViewModel, viewModel, weaponMats, } from './weapons/viewModels.js';
 import { KUNAI_RIBBON, Ribbon, SICKLE_RIBBON, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase, } from './fx/ribbons.js';
 import { AXE_SHOCK_HIT, applyAxePose, axePoseAt, axeState, axeTrailPose, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
 import { castHit, castThrow, castWorld, rayBox, rayRamp } from './world/raycast.js';
-import { CHARGE_ZOOM, FOCUS_DIM, FOCUS_EMPTY_FLASH, FOCUS_ZOOM, LOCK_HEIGHT, applySwordPose, chargeFocus, lockTo, startSwordAttack, startSwordTwirl, swordPoseAt, swordReady, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
+import { CHARGE_ZOOM, FOCUS_DIM, FOCUS_ZOOM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, startSwordTwirl, swordPoseAt, swordReady, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
+import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, enemyChest, findAssistTarget } from './player/aimAssist.js';
+import { BULLET_HIT, DASH_TWIRL_TIME, DEADEYE_HIT, DEADEYE_ZOOM, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, SLIDE_SPIN_SWISH, TAU, TRACER_AXIS, applyGunSpin, bulletBack, bullets, deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, reloadPosOff, reloadRotOff, startReload, startTwirl, tracerGeo, updateBullets, updateCasings, updateDeadEye, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js';
+import { PLAYER_MAX_HP } from './player/config.js';
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
 // ---- ライト ----
@@ -644,7 +646,7 @@ document.addEventListener('mousemove', (e) => {
         return;
     recentMove += (move - recentMove) * 0.3;
     if (move > 2)
-        usingPad = false; // マウスに持ち替えたらエイムアシストを切る
+        game.usingPad = false; // マウスに持ち替えたらエイムアシストを切る
     const look = LOOK_SPEED * options.mouseSens * zoomLookScale();
     turnView(e.movementX * look, e.movementY * look);
 });
@@ -660,7 +662,7 @@ window.addEventListener('keydown', (e) => {
     if (WEAPON_KEYS[e.code])
         game.wantWeapon = WEAPON_KEYS[e.code];
     if (e.code === 'KeyR' && !e.repeat)
-        reloadQueued = tossPressed = true;
+        gunState.reloadQueued = tossPressed = true;
     // 聴き比べ用: G で銃声の案を切り替え、その場で 1 発鳴らす
     // 影の見比べ: L で切り替える
     if (e.code === 'KeyL' && !e.repeat) {
@@ -707,7 +709,7 @@ document.addEventListener('mousedown', (e) => {
         game.attackHeld = true;
     }
     if (controls.isLocked && e.button === 2)
-        game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = deadEyePressed = true;
+        game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
 });
 document.addEventListener('mouseup', (e) => {
     if (e.button === 0)
@@ -836,9 +838,9 @@ function updatePad(dt) {
     if (pad.down[PAD.RT])
         attackPressed = game.attackHeld = true;
     if (pad.down[PAD.LT])
-        game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = deadEyePressed = true;
+        game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
     if (pad.down[PAD.X])
-        reloadQueued = tossPressed = true;
+        gunState.reloadQueued = tossPressed = true;
     const cycle = (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
     if (cycle)
         game.wantWeapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(game.wantWeapon) + cycle + WEAPON_ORDER.length) % WEAPON_ORDER.length];
@@ -850,7 +852,7 @@ function updatePad(dt) {
     padSprint = Math.hypot(pad.lx, pad.ly) >= PAD_SPRINT;
     const m = Math.hypot(pad.rx, pad.ry);
     if (m > 0 || padSprint || pad.lx || pad.ly || pad.down.some(Boolean))
-        usingPad = true;
+        game.usingPad = true;
     const target = findAssistTarget();
     // 敵の近くでは視点を遅くし、スティックか体を動かしている間だけ照準を胸へ寄せる（止まっていると勝手には動かさない）
     let slow = 1;
@@ -863,7 +865,7 @@ function updatePad(dt) {
             turnView(target.yaw * pull, -target.pitch * pull);
     }
     if (padAssistEl) {
-        padAssistEl.textContent = !usingPad
+        padAssistEl.textContent = !game.usingPad
             ? 'アシスト  切（マウス操作中）'
             : game.shownWeapon !== 'kunai' && game.shownWeapon !== 'handgun'
                 ? 'アシスト  切（クナイ / 銃以外）'
@@ -903,12 +905,10 @@ function updateHookHud() {
     hookShown = hookCharges;
 }
 // ---- HUD: 体力（左下の斜めのバー。削れた分は白く残り、少し遅れて減る） ----
-const PLAYER_MAX_HP = 100;
 const HP_CHIP_HOLD = 0.45; // 白い残りが減り始めるまでの時間
 const HP_CHIP_DRAIN = 75; // 白い残りが減る速さ (HP/秒)
 const HP_LOW = 30; // これ以下でバーを点滅させる
 const HP_HEAVY = 25; // これ以上のダメージは大きく揺らす
-let playerHp = PLAYER_MAX_HP;
 let hpShown = PLAYER_MAX_HP; // 表示中の量。減るときは即座に、回復は滑らかに追いつく
 let hpChip = PLAYER_MAX_HP; // 白く残っている所までの量
 let hpChipHold = 0;
@@ -936,15 +936,15 @@ function kickHudPanel(el, side, kick, duration) {
     ], { duration, easing: 'cubic-bezier(.2, .8, .3, 1)' });
 }
 function damagePlayer(amount) {
-    if (playerHp <= 0 || amount <= 0)
+    if (game.playerHp <= 0 || amount <= 0)
         return;
     if (stageRun?.running)
         stageRun.damage += amount;
-    const before = playerHp;
+    const before = game.playerHp;
     // ステージでは 0 で倒れる。訓練場（と倒しきった後）は死なず、1 で耐えて被弾の演出だけを出す
-    playerHp = Math.max(stageRun?.running ? 0 : 1, playerHp - amount);
-    hpShown = playerHp;
-    if (playerHp <= 0)
+    game.playerHp = Math.max(stageRun?.running ? 0 : 1, game.playerHp - amount);
+    hpShown = game.playerHp;
+    if (game.playerHp <= 0)
         downPlayer();
     hpChipHold = HP_CHIP_HOLD;
     // バーを揺らす（斜めの形は保ったまま）
@@ -975,7 +975,7 @@ function damagePlayer(amount) {
     // 削れた所の真ん中に斬り傷の線を走らせる
     const cut = document.createElement('div');
     cut.className = 'cut';
-    cut.style.left = `calc(${(((before + playerHp) / 2) / PLAYER_MAX_HP) * 100}% - 1px)`;
+    cut.style.left = `calc(${(((before + game.playerHp) / 2) / PLAYER_MAX_HP) * 100}% - 1px)`;
     hpBar.appendChild(cut);
     cut.animate([
         { transform: 'skewX(24deg) rotate(28deg) scaleY(0)', opacity: 1 },
@@ -993,19 +993,19 @@ function damagePlayer(amount) {
     hudImpulse(Math.cos(ang) * kick, Math.sin(ang) * kick * 0.6 + kick * 0.4, heavy ? -0.5 : -0.25);
 }
 function healPlayer(amount) {
-    if (playerHp <= 0 || amount <= 0)
+    if (game.playerHp <= 0 || amount <= 0)
         return;
-    playerHp = Math.min(PLAYER_MAX_HP, playerHp + amount);
-    hpChip = Math.max(hpChip, playerHp);
+    game.playerHp = Math.min(PLAYER_MAX_HP, game.playerHp + amount);
+    hpChip = Math.max(hpChip, game.playerHp);
 }
 // dt は実時間（スローやヒットストップ中も白い残りは同じ速さで減らす）
 function updateHpHud(dt) {
-    if (hpShown > playerHp)
-        hpShown = playerHp;
+    if (hpShown > game.playerHp)
+        hpShown = game.playerHp;
     else {
-        hpShown += (playerHp - hpShown) * Math.min(1, dt * 7);
-        if (playerHp - hpShown < 0.05)
-            hpShown = playerHp;
+        hpShown += (game.playerHp - hpShown) * Math.min(1, dt * 7);
+        if (game.playerHp - hpShown < 0.05)
+            hpShown = game.playerHp;
     }
     hpChipHold -= dt;
     if (hpChipHold <= 0 && hpChip > hpShown)
@@ -1016,8 +1016,8 @@ function updateHpHud(dt) {
     hpChipBar.style.width = `${(hpChip / PLAYER_MAX_HP) * 100}%`;
     hpCount = hpCount > hpShown ? Math.max(hpShown, hpCount - HP_COUNT_SPEED * dt) : hpShown;
     hpNum.textContent = String(Math.ceil(hpCount));
-    hpHud.classList.toggle('low', playerHp <= HP_LOW);
-    hurtLow.classList.toggle('on', playerHp <= HP_LOW);
+    hpHud.classList.toggle('low', game.playerHp <= HP_LOW);
+    hurtLow.classList.toggle('on', game.playerHp <= HP_LOW);
 }
 // ---- 倒れる ----
 // ステージで体力が尽きたら、時間を測るのをやめて操作を取り上げ、世界を白黒のスローにしたまま視点を床へ崩す。
@@ -1061,8 +1061,8 @@ function downSlowFactor() {
 function dropPlayerInput() {
     keys.clear();
     pressed.clear();
-    attackPressed = game.attackHeld = game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = deadEyePressed = false;
-    reloadQueued = tossPressed = false;
+    attackPressed = game.attackHeld = game.throwHeld = throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = false;
+    gunState.reloadQueued = tossPressed = false;
     padMove.x = padMove.y = 0;
     padSprint = false;
 }
@@ -1339,7 +1339,7 @@ function onDash() {
         playRing();
     }
     // ハンドガンは、トリガーに掛けた指を軸に縦にくるりと一周回す（装填後より速く）
-    if (gunReady() && !gunReloading && twirlT < 0)
+    if (gunReady() && !gunState.gunReloading && gunState.twirlT < 0)
         startTwirl(DASH_TWIRL_TIME);
     // 剣は、握った手を軸に縦にくるくると 2 回転させる
     if (swordReady() && !swordState.swordAttack && swordState.swordHold < 0)
@@ -1447,7 +1447,7 @@ function updateCamera(dt) {
     const speedT = THREE.MathUtils.clamp((hSpeed - WALK_SPEED) / (FOV_SPEED_MAX - WALK_SPEED), 0, 1);
     // 居合の構えの間はズームする（スロー中でも実時間の速さで寄せる）
     const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + game.fovKick - swordState.focusZoom * FOCUS_ZOOM - swordState.swordChargeBlend * CHARGE_ZOOM
-        - deadEyeBlend * DEADEYE_ZOOM;
+        - gunState.deadEyeBlend * DEADEYE_ZOOM;
     camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
     camera.updateProjectionMatrix();
     // 着地の沈み込み（ばねで戻す）
@@ -1482,6 +1482,10 @@ function applyCameraOffset() {
     shakeEuler.y += handCam.y;
     shakeEuler.z += DOWN_ROLL * downFall();
     camera.quaternion.multiply(shakeQuat.setFromEuler(shakeEuler));
+}
+// applyCameraOffset で足した揺れと傾きを戻す
+function restoreCameraOffset() {
+    camera.quaternion.copy(savedQuat);
 }
 // ---- 手元につられる視線 ----
 // 構えた武器の手元が画面の中で動くと、視線をその向きへ少しだけつられさせる。
@@ -1775,9 +1779,9 @@ function updateViewModel(dt) {
         }
     }
     // 撃った反動で手前へ跳ね上げる。装填中は装填の動き（キーフレーム）を足す
-    gunViewModel.position.z += gunRecoil * 0.1;
-    gunViewModel.position.y += gunRecoil * 0.02;
-    gunViewModel.rotation.x += gunRecoil * 0.6;
+    gunViewModel.position.z += gunState.gunRecoil * 0.1;
+    gunViewModel.position.y += gunState.gunRecoil * 0.02;
+    gunViewModel.rotation.x += gunState.gunRecoil * 0.6;
     gunViewModel.position.add(reloadPosOff);
     gunViewModel.rotation.x += reloadRotOff.x * DEG;
     gunViewModel.rotation.y += reloadRotOff.y * DEG;
@@ -1906,7 +1910,7 @@ function updateAttack(dt) {
         attackPressed = false;
         if (!kunaiReady()) {
             if (game.shownWeapon === 'handgun')
-                fireQueued = true;
+                gunState.fireQueued = true;
             else if (game.shownWeapon === 'sword')
                 swordState.swordPressed = true;
             else if (game.shownWeapon === 'sickle')
@@ -2636,7 +2640,7 @@ initEnemyEnv({
     scene,
     addTrauma,
     isHeld: enemyHeld,
-    playerHp: () => playerHp,
+    playerHp: () => game.playerHp,
     slamIntoFloor: slamEnemyIntoFloor,
     slamIntoWall: slamEnemyIntoWall,
 });
@@ -2840,7 +2844,6 @@ const THROW_ORDER = [[1], [0, 2], [1, 0, 2]]; // 本数ごとに、左手のど�
 const THROW_SPEED = 55;
 const THROW_STAGGER = 0.035; // 1 本ずつずらして放つ間隔
 const THROW_RELOAD = 0.45; // 投げ終えてから左手に新しいクナイが戻るまで
-const THROW_RANGE = 150;
 const MISS_MARGIN = 0.05; // 狙った所を過ぎてもこの時間何にも当たらなければ引き返す
 const MISS_RETURN_MAX = 0.6; // 空を狙ったときなど、遠くても最長この時間で引き返す
 const STUCK_HOLD = 0.12; // 刺さったクナイが抜けて戻り始めるまで（刺さった手応えが見える最小限）
@@ -3016,66 +3019,7 @@ function findThrowAim(out) {
     else
         out.copy(camera.position).addScaledVector(throwDir, THROW_RANGE);
 }
-// ---- エイムアシスト（パッドで、クナイと銃を構えているときだけ） ----
-// 照準の近くにいる敵の胸を探し、視点を遅くする / 寄せる / 撃った弾を向ける。
-// 効く範囲は敵の周りの半径 (m) で決めるので、近い敵ほど画面上で広く、遠い敵ほど狭くなる
-const ASSIST_RADIUS = 1.1; // 視点を遅くし、寄せ始める範囲（胸からの半径, m）
-const ASSIST_SNAP = 0.55; // 撃った弾を胸へ向ける範囲（ASSIST_RADIUS に対する割合）
-const ASSIST_SLOW = 0.3; // 胸の真上にいるときの視点の速さの倍率（範囲の端では 1）
-const ASSIST_PULL = 6; // スティックを倒しきっている間、胸とのずれを 1 秒にどれだけ詰めるか (1/s)
-const ASSIST_CHEST = 0.55; // 胸の高さ（腰の骨から首の骨までの割合）
-let usingPad = false; // 最後に触ったのがパッドか（マウスを触ったら外れる）
-const assistTarget = { point: new THREE.Vector3(), angle: 0, size: 0, yaw: 0, pitch: 0, enemy: null };
-const assistNeck = new THREE.Vector3();
-const assistDir = new THREE.Vector3();
-const assistInv = new THREE.Quaternion();
-function findAssistTarget() {
-    if (!usingPad || !controls.isLocked || (game.shownWeapon !== 'kunai' && game.shownWeapon !== 'handgun'))
-        return null;
-    let best = null;
-    let bestScore = 1;
-    assistInv.copy(camera.quaternion).invert();
-    for (const e of enemies) {
-        if (!e.alive)
-            continue;
-        e.spine.getWorldPosition(assistDir);
-        e.neck.getWorldPosition(assistNeck);
-        assistDir.lerp(assistNeck, ASSIST_CHEST);
-        const chest = assistNeck.copy(assistDir);
-        assistDir.sub(camera.position);
-        const dist = assistDir.length();
-        if (dist < 0.5 || dist > THROW_RANGE)
-            continue;
-        assistDir.divideScalar(dist);
-        const size = Math.atan2(ASSIST_RADIUS, dist); // 範囲の見かけの大きさ (rad)
-        // 照準（-Z）から見たずれ。yaw は右が +、pitch は上が +
-        assistDir.applyQuaternion(assistInv);
-        const angle = Math.acos(THREE.MathUtils.clamp(-assistDir.z, -1, 1));
-        const score = angle / size;
-        if (score >= bestScore)
-            continue;
-        // 壁の向こうの敵には効かせない
-        assistDir.subVectors(chest, camera.position).divideScalar(dist);
-        if (castWorld(camera.position, assistDir, dist) < dist - 0.3)
-            continue;
-        assistDir.applyQuaternion(assistInv);
-        bestScore = score;
-        best = assistTarget;
-        best.point.copy(chest);
-        best.enemy = e;
-        best.angle = angle;
-        best.size = size;
-        best.yaw = Math.atan2(assistDir.x, -assistDir.z);
-        best.pitch = Math.atan2(assistDir.y, Math.hypot(assistDir.x, assistDir.z));
-    }
-    return best;
-}
-// 敵の胸の位置（エイムアシストと同じ高さ）
-function enemyChest(e, out) {
-    e.spine.getWorldPosition(out);
-    e.neck.getWorldPosition(assistNeck);
-    return out.lerp(assistNeck, ASSIST_CHEST);
-}
+// ---- エイムアシスト ----（player/aimAssist.ts）
 // 照準から HOMING_CONE 以内で、いちばん照準に近い敵（壁の向こうは除く）
 const homingDir = new THREE.Vector3();
 const homingAim = new THREE.Vector3();
@@ -4973,7 +4917,7 @@ function updateHitFx(dt) {
     // ヒットストップの間は暗いまま保ち、明けてから戻す
     const after = Math.max(0, impact.age - impact.hold);
     const env = impact.age < impact.hold ? 1 : Math.max(0, 1 - after / 0.22) ** 2;
-    u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impact.power) * env, Math.max(swordState.focusBlend, deadEyeBlend) * FOCUS_DIM);
+    u.uDim.value = Math.max(Math.min(0.7, HIT_DIM * impact.power) * env, Math.max(swordState.focusBlend, gunState.deadEyeBlend) * FOCUS_DIM);
     // パリィ: 止まっている間は白黒のまま、最初の一瞬だけ白黒を反転させ、スローが明けるのに合わせて色を戻す
     // 最後の 1 体を倒したときも同じ白黒を使う
     u.uMono.value = Math.max(parryMono(), finaleMono(), downFall()); // 倒れたときも白黒にしていく
@@ -5084,662 +5028,9 @@ initGameHooks({
     dummyInReach,
     hitPointFromTip,
     applyLunge,
-    grappling: () => grapple !== null,
+    grappling: () => grapple !== null, applyCameraOffset, restoreCameraOffset,
 });
-// ---- ハンドガンの射撃 ----
-// 左クリックで 1 発ずつ撃つ。弾は銃口から照準の先へまっすぐ飛ぶ速い弾で、光の尾（曳光）を引く
-const GUN_AMMO = 6;
-const GUN_FIRE_INTERVAL = 0.26; // 連射の最短間隔。一発ごとの重さが伝わるよう、少し間を空ける
-const BULLET_SPEED = 220; // m/s
-const BULLET_RANGE = 250;
-const TRACER_LEN = 3; // 光の尾の最大の長さ (m)
-const TRACER_WIDTH = 0.012;
-const MUZZLE_FLASH_LIFE = 0.06;
-const GUN_RECOIL_HOLD = 0.035; // 跳ね上がった頂点で一瞬止める時間。重い一撃の「溜め」になる
-const BULLET_HIT = { kick: [-0.8, 0, 0], knock: 80, hitStop: 0.025, fx: 0.55 };
-let gunAmmo = GUN_AMMO;
-let gunCooldown = 0;
-let gunRecoil = 0; // 撃った瞬間に 1 にして、頂点で一瞬止めてから重たく戻す
-let gunRecoilHold = 0;
-let fireQueued = false;
-let reloadQueued = false;
-let cylinderTarget = 0;
-let cylinderSpin = 0; // 装填の最後に指で弾いて空回しする速さ (rad/s)
-let muzzleFlashAge = Infinity;
-const chamberLive = Array(6).fill(true); // 薬室ごとに、まだ撃っていない弾が入っているか
-const gunMuzzle = revolver.userData.muzzle;
-const gunCylinder = revolver.userData.cylinder;
-const gunCrane = revolver.userData.crane;
-const gunEjector = revolver.userData.ejectorRod;
-const chamberRounds = revolver.userData.chamberRounds;
-const speedLoader = revolver.userData.loader;
-const loaderRounds = revolver.userData.loaderRounds;
-const CYL_REAR = revolver.userData.cylLen / 2;
-const EJECTOR_Z = gunEjector.position.z;
-const CHAMBER_STEP = Math.PI / 3;
-const gunReady = () => game.shownWeapon === 'handgun' && game.wantWeapon === 'handgun' && game.holster === 0;
-// マズルフラッシュ: 銃口の正面に丸い光、銃身の向きに沿って前へ伸びる十字の光
-function makeFlashTexture() {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255,255,235,1)');
-    grad.addColorStop(0.25, 'rgba(255,215,130,0.9)');
-    grad.addColorStop(0.6, 'rgba(255,150,50,0.35)');
-    grad.addColorStop(1, 'rgba(255,110,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(c);
-}
-const flashMat = new THREE.MeshBasicMaterial({
-    map: makeFlashTexture(),
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-});
-const muzzleFlash = new THREE.Group();
-{
-    muzzleFlash.add(new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.11), flashMat));
-    for (const r of [0, Math.PI / 2]) {
-        const long = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.2), flashMat);
-        long.rotation.set(-Math.PI / 2, r, 0, 'ZXY'); // 長い向きを銃身（-Z）に合わせる
-        long.position.z = -0.08;
-        muzzleFlash.add(long);
-    }
-}
-muzzleFlash.visible = false;
-gunMuzzle.add(muzzleFlash);
-const bullets = [];
-const tracerGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5); // 原点から +Z へ伸びる
-const tracerMat = new THREE.MeshBasicMaterial({
-    color: 0xffe0a0,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-});
-const TRACER_AXIS = new THREE.Vector3(0, 0, 1);
-const bulletFrom = new THREE.Vector3();
-const bulletAim = new THREE.Vector3();
-const bulletBack = new THREE.Vector3();
-// 照準の先で最初に当たる所（なければ射程の端）を out に入れ、当たる敵を返す。
-// パッドでは照準のすぐ近くに敵がいれば胸を狙う
-function findGunAim(out) {
-    const target = findAssistTarget();
-    if (target && target.angle < target.size * ASSIST_SNAP) {
-        out.copy(target.point);
-        return target.enemy;
-    }
-    camera.getWorldDirection(throwDir);
-    if (castThrow(camera.position, throwDir, BULLET_RANGE)) {
-        out.copy(castHit.point);
-        return castHit.enemy;
-    }
-    out.copy(camera.position).addScaledVector(throwDir, BULLET_RANGE);
-    return null;
-}
-// at を渡すとそこへ向けて撃つ（デッドアイ。target はその敵）。省くと照準の先へ
-function fireGun(at, target) {
-    // 回している途中でも、撃てば即座に構え直す
-    if (twirlT >= 0)
-        endTwirl(false);
-    endSlideSpin();
-    slideSpinHold = SLIDE_SPIN_HOLD;
-    gunAmmo--;
-    gunCooldown = GUN_FIRE_INTERVAL;
-    // 画面のクロスヘアは揺れと反動を足した向きを指しているので、狙いも銃口もその向きで求める
-    applyCameraOffset();
-    camera.updateMatrixWorld(true);
-    bulletFrom.setFromMatrixPosition(gunMuzzle.matrixWorld);
-    let aimEnemy = target ?? null;
-    if (at)
-        bulletAim.copy(at);
-    else
-        aimEnemy = findGunAim(bulletAim);
-    camera.quaternion.copy(savedQuat);
-    camera.updateMatrixWorld(true);
-    const aimDist = bulletFrom.distanceTo(bulletAim);
-    const dir = bulletAim.sub(bulletFrom).normalize().clone();
-    const mesh = new THREE.Mesh(tracerGeo, tracerMat);
-    mesh.frustumCulled = false;
-    scene.add(mesh);
-    bullets.push({
-        pos: bulletFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, deadEye: !!at,
-        aimEnemy: aimEnemy ?? undefined, aimDist,
-    });
-    // 反動: 銃を跳ね上げ、視点も少し上へ蹴る
-    gunRecoil = 1;
-    gunRecoilHold = GUN_RECOIL_HOLD;
-    kickVel.x += 3.6 * DEG * 22;
-    kickVel.y += (Math.random() - 0.5) * 0.8 * DEG * 22;
-    addTrauma(0.13);
-    game.fovKick = Math.max(game.fovKick, 3);
-    muzzleFlashAge = 0;
-    muzzleFlash.rotation.z = Math.random() * Math.PI;
-    muzzleFlash.scale.setScalar(1.1 + Math.random() * 0.4);
-    // 銃身の真後ろ（いちばん上）にある薬室を撃ったことにして、次の薬室へ回す
-    const top = (((-Math.round(cylinderTarget / CHAMBER_STEP)) % 6) + 6) % 6;
-    chamberLive[top] = false;
-    cylinderTarget += CHAMBER_STEP;
-    sfx.playGunshot();
-}
-const RELOAD_KEYS = [
-    { t: 0, pos: [0, 0, 0], rot: [0, 0, 0] },
-    { t: 0.12, pos: [-0.03, 0.01, 0.01], rot: [10, 8, 42] }, // 傾けながら振り出す
-    { t: 0.24, pos: [-0.04, 0.015, 0], rot: [18, 10, 52] },
-    { t: 0.36, pos: [-0.05, 0.045, 0.02], rot: [72, 10, 22] }, // 銃口を上へ
-    { t: 0.5, pos: [-0.05, 0.05, 0.02], rot: [76, 10, 20] },
-    { t: 0.64, pos: [-0.06, -0.02, -0.01], rot: [-42, 15, 34] }, // 銃口を下へ
-    { t: 0.84, pos: [-0.06, -0.026, -0.01], rot: [-48, 15, 34] },
-    { t: 0.88, pos: [-0.06, -0.035, -0.01], rot: [-52, 15, 34] }, // 差し込んだ勢いで沈む
-    { t: 1.0, pos: [-0.045, 0, 0], rot: [-5, 10, 46] },
-    { t: 1.1, pos: [-0.015, 0.012, 0], rot: [6, 3, -8] }, // スナップで閉じる
-    { t: 1.32, pos: [0, 0, 0], rot: [0, 0, 0] },
-].map((k) => ({
-    t: k.t,
-    pos: new THREE.Vector3(...k.pos),
-    rot: new THREE.Vector3(...k.rot),
-    ease: k.ease ?? easeInOutCubic,
-}));
-const GUN_RELOAD_TIME = RELOAD_KEYS[RELOAD_KEYS.length - 1].t;
-const CRANE_OPEN = 105 * DEG;
-// 装填の途中で一度だけ起こす出来事（時間順）
-const RELOAD_EVENTS = [
-    { at: 0.13, fn: onCraneOpen },
-    { at: 0.42, fn: ejectCasings },
-    { at: 0.84, fn: seatSpeedLoader },
-    { at: 0.88, fn: sfx.playLoaderRelease }, // つまみをひねって弾を放す
-    { at: 0.95, fn: spinCylinder },
-    { at: 1.06, fn: onCraneClose },
-    { at: 1.12, fn: startTwirl }, // 閉じたスナップの勢いのまま、トリガーを軸に縦に一回転
-];
-// ---- 装填後のガンスピン ----
-// 銃口を下へ振り出すように素早く回し始め、一周したところで少し行き過ぎてから握りに収める
-const TWIRL_TIME = 0.5;
-const DASH_TWIRL_TIME = 0.38;
-let twirlT = -1; // 回している間の経過時間。負なら回していない
-let twirlDuration = TWIRL_TIME;
-function startTwirl(duration = TWIRL_TIME) {
-    twirlT = 0;
-    twirlDuration = duration;
-    // 速く回すほど風切り音も短く高く
-    const k = TWIRL_TIME / duration;
-    playSwish({ at: 0, dur: 0.32 / k, f0: 500 * k, f1: 1700 * k, gain: 0.12 }, 'gun');
-}
-function updateTwirl(dt) {
-    if (twirlT < 0)
-        return;
-    twirlT += dt;
-    const u = Math.min(1, twirlT / twirlDuration);
-    twirlAngle = -Math.PI * 2 * easeOutBack(u);
-    // 回している間は銃を少し持ち上げて前へ出し、指先で回している感じを出す
-    const lift = Math.sin(u * Math.PI);
-    gunSpin.position.set(0, lift * 0.015, -lift * 0.01);
-    if (u >= 1)
-        endTwirl(true);
-}
-// ---- スライディング中のガンスピン ----
-// 滑っている間はトリガーに掛けた指を軸に水平にくるくる回し続け、滑り終えたら勢いのまま
-// 次の一周の所まで回って、少し行き過ぎてから握りに収める
-const SLIDE_SPIN_SPEED = 17; // rad/s（約 2.7 回転/秒）
-const SLIDE_SPIN_HOLD = 0.5; // 撃った後、この時間は回し始めない（撃ちながら滑れるように）
-const SLIDE_SPIN_SWISH = { at: 0, dur: 0.12, f0: 700, f1: 1500, gain: 0.05 };
-const TAU = Math.PI * 2;
-let slideSpin = 0; // 回した角度
-let slideSpinVel = 0;
-let slideSpinHold = 0;
-let slideSpinTarget = NaN; // 回し終えて止める角度（滑っている間は未定）
-let twirlAngle = 0; // 装填後の縦回転の角度
-// 回すときは銃を横倒しに寝かせる（左の側面が上、グリップが画面の内側）。
-// 寝かせるとトリガーに掛けた指が縦になるので、水平の回転がそのまま指を軸にした回転になる
-const SLIDE_LAY_ANGLE = -90 * DEG;
-let slideLay = 0; // 0 = 構え, 1 = 寝かせきった
-const gunSpinQuat = new THREE.Quaternion();
-const gunSpinTmp = new THREE.Quaternion();
-const gunSpinEuler = new THREE.Euler();
-function applyGunSpin(dt) {
-    const laying = slideSpinVel !== 0 && Number.isNaN(slideSpinTarget); // 回している間は寝かせ、収めながら起こす
-    slideLay += ((laying ? 1 : 0) - slideLay) * Math.min(1, dt * (laying ? 16 : 10));
-    // 水平の回転 → 寝かせ → 縦回転 の順に重ねる
-    gunSpinQuat.setFromEuler(gunSpinEuler.set(0, slideSpin, 0));
-    gunSpinQuat.multiply(gunSpinTmp.setFromEuler(gunSpinEuler.set(0, 0, SLIDE_LAY_ANGLE * slideLay)));
-    gunSpinQuat.multiply(gunSpinTmp.setFromEuler(gunSpinEuler.set(twirlAngle, 0, 0)));
-    gunSpin.quaternion.copy(gunSpinQuat);
-}
-function updateSlideSpin(dt) {
-    slideSpinHold = Math.max(0, slideSpinHold - dt);
-    const spinning = player.sliding && gunReady() && !gunReloading && twirlT < 0 && slideSpinHold <= 0;
-    if (spinning) {
-        slideSpinVel += (SLIDE_SPIN_SPEED - slideSpinVel) * Math.min(1, dt * 12);
-        slideSpinTarget = NaN;
-    }
-    else if (slideSpin !== 0 || slideSpinVel !== 0) {
-        // 勢いで届く先の一周の所へ、ばねで引き寄せる（少し行き過ぎて戻る）。
-        // 行き過ぎたときに次の一周を狙い直さないよう、止める所は回し終えた瞬間に決める
-        if (Number.isNaN(slideSpinTarget))
-            slideSpinTarget = Math.ceil((slideSpin + slideSpinVel * 0.12) / TAU) * TAU;
-        const target = slideSpinTarget;
-        slideSpinVel += ((target - slideSpin) * 500 - slideSpinVel * 28) * dt;
-        if (Math.abs(target - slideSpin) < 0.005 && Math.abs(slideSpinVel) < 0.2) {
-            endSlideSpin();
-            playRing(1.3, 0.35, 0.04); // 握りに収まった「パシッ」
-            return;
-        }
-    }
-    else {
-        return;
-    }
-    const prev = slideSpin;
-    slideSpin += slideSpinVel * dt;
-    // 半周ごとに小さな風切り音
-    if (spinning && Math.floor(slideSpin / Math.PI) > Math.floor(prev / Math.PI))
-        playSwish(SLIDE_SPIN_SWISH, 'gun');
-}
-function endSlideSpin() {
-    slideSpin = 0;
-    slideSpinVel = 0;
-    slideSpinTarget = NaN;
-    slideLay = 0; // 撃ったときは寝かせた銃もすぐ起こす
-}
-function endTwirl(caught) {
-    twirlT = -1;
-    twirlAngle = 0;
-    gunSpin.position.set(0, 0, 0);
-    if (caught) {
-        playRing(1.3, 0.35, 0.04); // 握りに収まった「パシッ」
-        kickVel.x -= 0.6 * DEG * 22;
-    }
-}
-let gunReloading = false;
-let gunReloadT = 0;
-let reloadEvent = 0;
-const reloadPosOff = new THREE.Vector3();
-const reloadRotOff = new THREE.Vector3();
-const ramp = (t, a, b, ease = easeInOutCubic) => ease(THREE.MathUtils.clamp((t - a) / (b - a), 0, 1));
-function evalReloadPose(t) {
-    const keys = RELOAD_KEYS;
-    let i = 0;
-    while (i < keys.length - 2 && t >= keys[i + 1].t)
-        i++;
-    const k0 = keys[i];
-    const k1 = keys[i + 1];
-    const e = k0.ease(THREE.MathUtils.clamp((t - k0.t) / (k1.t - k0.t), 0, 1));
-    const kPrev = keys[Math.max(0, i - 1)];
-    const kNext = keys[Math.min(keys.length - 1, i + 2)];
-    catmullRom(kPrev.pos, k0.pos, k1.pos, kNext.pos, e, reloadPosOff);
-    catmullRom(kPrev.rot, k0.rot, k1.rot, kNext.rot, e, reloadRotOff);
-}
-// 装填の時間 t に合わせて、クレーン・エジェクター・スピードローダーを動かす
-function poseReloadParts(t) {
-    const swing = ramp(t, 0.1, 0.22, easeOutBack) - ramp(t, 1.0, 1.07, easeInQuad);
-    gunCrane.rotation.z = swing * CRANE_OPEN;
-    const eject = ramp(t, 0.38, 0.42, easeOutCubic) - ramp(t, 0.46, 0.58);
-    gunEjector.position.z = EJECTOR_Z + eject * 0.022;
-    for (const r of chamberRounds)
-        r.position.z = CYL_REAR + eject * 0.022;
-    const inT = ramp(t, 0.6, 0.84, easeOutCubic);
-    const outT = ramp(t, 0.9, 1.04, easeInQuad);
-    speedLoader.visible = t > 0.6 && t < 1.04;
-    speedLoader.position.z = CYL_REAR + (1 - inT) * 0.07 + outT * 0.12;
-    speedLoader.position.x = gunCylinder.position.x + (1 - inT) * 0.015;
-    speedLoader.rotation.z = gunCylinder.rotation.z + ramp(t, 0.86, 0.9) * 0.5;
-}
-function startReload() {
-    gunReloading = true;
-    gunReloadT = 0;
-    reloadEvent = 0;
-    fireQueued = false;
-    for (const r of loaderRounds)
-        r.visible = true;
-}
-function endReload() {
-    gunReloading = false;
-    reloadPosOff.set(0, 0, 0);
-    reloadRotOff.set(0, 0, 0);
-    poseReloadParts(0);
-    speedLoader.visible = false;
-    if (cylinderSpin > 0) {
-        cylinderSpin = 0;
-        cylinderTarget = Math.ceil(gunCylinder.rotation.z / CHAMBER_STEP) * CHAMBER_STEP;
-    }
-}
-function onCraneOpen() {
-    sfx.playCraneOpen();
-    kickVel.z += 1.2 * DEG * 22;
-}
-// エジェクターロッドで押し出した薬莢を、今の位置と向きのまま世界へ放り出す
-const casingPos = new THREE.Vector3();
-const casingQuat = new THREE.Quaternion();
-const casingScale = new THREE.Vector3();
-const gunBack = new THREE.Vector3();
-function ejectCasings() {
-    revolver.updateWorldMatrix(true, true);
-    gunBack.set(0, 0, 1).transformDirection(revolver.matrixWorld); // 銃の後ろ向き（今は真下に近い）
-    for (const [i, r] of chamberRounds.entries()) {
-        r.matrixWorld.decompose(casingPos, casingQuat, casingScale);
-        const vel = gunBack.clone().multiplyScalar(1.2 + Math.random() * 0.8).add(velocity);
-        vel.x += (Math.random() - 0.5) * 0.6;
-        vel.z += (Math.random() - 0.5) * 0.6;
-        spawnCasing(chamberLive[i], casingPos, casingQuat, vel);
-        r.visible = false;
-    }
-    gunAmmo = 0;
-    sfx.playEject();
-    kickVel.x += 0.8 * DEG * 22;
-}
-function seatSpeedLoader() {
-    for (const [i, r] of chamberRounds.entries()) {
-        r.visible = true;
-        chamberLive[i] = true;
-    }
-    for (const r of loaderRounds)
-        r.visible = false;
-    gunAmmo = GUN_AMMO;
-    sfx.playSeat();
-    kickVel.x -= 1 * DEG * 22;
-}
-// 指で弾いてシリンダーを空回しする（ラチェットのカリカリ音つき）
-function spinCylinder() {
-    cylinderSpin = 32;
-    sfx.playCylinderSpin();
-}
-function onCraneClose() {
-    // 閉じた瞬間に空回しを止め、次の薬室の位置にぴたりと合わせる
-    cylinderSpin = 0;
-    cylinderTarget = Math.ceil(gunCylinder.rotation.z / CHAMBER_STEP) * CHAMBER_STEP;
-    sfx.playCraneClose();
-    kickVel.z -= 2 * DEG * 22;
-    addTrauma(0.04);
-}
-// ---- デッドアイ ----
-const DEADEYE_RANGE = 60;
-const DEADEYE_RESTACK = 0.22; // 同じ敵に照準を留めたとき、次の印を重ねるまで（実時間）
-const DEADEYE_FULL_DELAY = 0.15; // 弾の数だけ付けたら、この間をおいて撃ち始める（実時間）
-const DEADEYE_SHOT_GAP = 0.09; // 撃つ間隔（実時間）。間に次の印へ視点を振る
-const DEADEYE_AFTER = 0.3; // 撃ち終えてからスローを解くまで（実時間）
-const DEADEYE_ZOOM = 8; // 印を付けている間に狭める視野（度）
-const DEADEYE_TURN = 30; // 次の印へ視点を寄せる速さ (1/s)
-const DEADEYE_STACK_OFFSET = 9; // 同じ敵に重ねた印を、画面上でずらす量 (px)
-const DEADEYE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1 };
-let deadEyePressed = false; // 右クリックを押した瞬間
-let deadEyeFullT = 0;
-let deadEyeBlend = 0; // 画面を暗くし、視野を狭める効き (0〜1)
-let deadEyeOver = null; // 照準が今乗っている敵
-let deadEyeDwell = 0;
-const deadEyeMarks = [];
-const deadEyeLook = new THREE.Vector3();
-const deadEyeAt = new THREE.Vector3();
-const deadEyeScreen = new THREE.Vector3();
-function startDeadEye() {
-    game.deadEye = 'mark';
-    game.deadEyeT = deadEyeFullT = deadEyeDwell = 0;
-    deadEyeOver = null;
-    if (twirlT >= 0)
-        endTwirl(false);
-    endSlideSpin();
-    sfx.playDeadEyeStart();
-}
-function endDeadEye() {
-    game.deadEye = 'off';
-    for (const m of deadEyeMarks)
-        m.el.remove();
-    deadEyeMarks.length = 0;
-}
-function addDeadEyeMark(e, at) {
-    e.root.updateMatrixWorld();
-    const el = document.createElement('div');
-    el.className = 'deadeye-mark';
-    el.innerHTML =
-        '<svg viewBox="0 0 20 20"><path class="br" d="M-9 0 V-9 H0 M20 -9 H29 V0 M29 20 V29 H20 M0 29 H-9 V20" />' +
-            '<path class="x" d="M4 4 L16 16 M16 4 L4 16" /></svg>';
-    document.body.appendChild(el);
-    // ずらし量は付けた時に決めておく（先の印を撃って消しても、残りの印が跳ばないように）
-    const stack = deadEyeMarks.filter((m) => !m.done && m.enemy === e).length;
-    deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false, stack });
-    sfx.playDeadEyeMark(deadEyeMarks.length);
-}
-const markWorld = (m, out) => m.enemy.root.localToWorld(out.copy(m.local));
-// 照準の先の敵に印を付ける。パッドでは照準のすぐ近くの敵の胸にも付ける
-function markUnderCrosshair() {
-    camera.getWorldDirection(deadEyeLook);
-    let e = null;
-    if (castThrow(camera.position, deadEyeLook, DEADEYE_RANGE) && castHit.enemy) {
-        e = castHit.enemy;
-        deadEyeAt.copy(castHit.point);
-    }
-    else {
-        const t = findAssistTarget();
-        if (t && t.angle < t.size * ASSIST_SNAP) {
-            e = t.enemy;
-            deadEyeAt.copy(t.point);
-        }
-    }
-    if (e !== deadEyeOver) {
-        deadEyeOver = e;
-        deadEyeDwell = 0;
-        if (e)
-            addDeadEyeMark(e, deadEyeAt);
-    }
-    else if (e) {
-        deadEyeDwell += game.realDt;
-        if (deadEyeDwell >= DEADEYE_RESTACK) {
-            deadEyeDwell = 0;
-            addDeadEyeMark(e, deadEyeAt);
-        }
-    }
-}
-// 視点を at へ寄せる（居合の突進と同じやり方）
-function turnViewTo(at, k) {
-    lockTo.subVectors(at, camera.position);
-    lookEuler.setFromQuaternion(camera.quaternion);
-    const yaw = Math.atan2(-lockTo.x, -lockTo.z);
-    lookEuler.y += wrapAngle(yaw - lookEuler.y) * k;
-    lookEuler.x += (Math.atan2(lockTo.y, Math.hypot(lockTo.x, lockTo.z)) - lookEuler.x) * k;
-    lookEuler.z = 0;
-    camera.quaternion.setFromEuler(lookEuler);
-}
-// 実時間で進める。updateGun の頭で呼ぶ（クリックを普段の射撃より先に拾う）
-function updateDeadEye() {
-    const pressed = deadEyePressed;
-    deadEyePressed = false;
-    if (game.deadEye !== 'off' && (!gunReady() || !controls.isLocked || playerHp <= 0))
-        endDeadEye();
-    if (game.deadEye === 'off') {
-        if (pressed && gunReady() && !gunReloading && controls.isLocked) {
-            if (swordState.focusCharge >= 1 && gunAmmo > 0)
-                startDeadEye();
-            else {
-                swordState.focusEmptyFlash = FOCUS_EMPTY_FLASH;
-                playRing(0.5, 0.25, 0.04); // 溜まっていない鈍い「カッ」
-            }
-        }
-    }
-    else if (game.deadEye === 'mark') {
-        game.deadEyeT += game.realDt;
-        const left = deadEyeMarks.length < gunAmmo;
-        if (left)
-            markUnderCrosshair();
-        else
-            deadEyeFullT += game.realDt;
-        if (fireQueued || !game.throwHeld || game.deadEyeT >= DEADEYE_MAX || deadEyeFullT >= DEADEYE_FULL_DELAY) {
-            if (deadEyeMarks.length === 0)
-                endDeadEye(); // 1 つも付けずに離したら、ゲージは減らさない
-            else {
-                game.deadEye = 'fire';
-                game.deadEyeT = DEADEYE_SHOT_GAP * 0.5; // 最初の 1 発は少し早く
-                swordState.focusCharge = 0;
-                sfx.playDeadEyeFire();
-            }
-        }
-    }
-    else if (game.deadEye === 'fire') {
-        // 先の弾で倒した敵に残った印は飛ばす
-        const m = deadEyeMarks.find((d) => !d.done && d.enemy.alive);
-        if (!m) {
-            game.deadEye = 'after';
-            game.deadEyeT = 0;
-        }
-        else {
-            markWorld(m, deadEyeAt);
-            turnViewTo(deadEyeAt, 1 - Math.exp(-game.realDt * DEADEYE_TURN));
-            game.deadEyeT += game.realDt;
-            if (game.deadEyeT >= DEADEYE_SHOT_GAP && gunAmmo > 0) {
-                game.deadEyeT = 0;
-                m.done = true;
-                m.el.remove();
-                fireGun(deadEyeAt, m.enemy);
-            }
-        }
-    }
-    else {
-        game.deadEyeT += game.realDt;
-        if (game.deadEyeT >= DEADEYE_AFTER)
-            endDeadEye();
-    }
-    // 印を付けている間と撃っている間は、普段の射撃と装填を受け付けない
-    if (game.deadEye !== 'off')
-        fireQueued = reloadQueued = false;
-    const on = game.deadEye === 'mark' || game.deadEye === 'fire';
-    deadEyeBlend += ((on ? 1 : 0) - deadEyeBlend) * Math.min(1, game.realDt * (on ? 8 : 6));
-}
-// 印を敵の体に重ねる。同じ敵に重ねた印は少しずつずらす。
-// 揺れと反動を足したカメラで描くので、applyCameraOffset の後に呼ぶ（でないと撃つたびに印が敵からずれる）
-function placeDeadEyeMarks() {
-    camera.updateMatrixWorld();
-    for (const m of deadEyeMarks) {
-        if (m.done)
-            continue;
-        if (!m.enemy.alive) {
-            m.done = true;
-            m.el.remove();
-            continue;
-        }
-        deadEyeScreen.copy(markWorld(m, deadEyeAt)).project(camera);
-        m.el.style.display = deadEyeScreen.z > 1 ? 'none' : '';
-        const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth + m.stack * DEADEYE_STACK_OFFSET;
-        const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight + m.stack * DEADEYE_STACK_OFFSET;
-        m.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-    }
-}
-// ---- 落ちた薬莢 ----
-const CASING_MAX = 48;
-const CASING_LIFE = 8;
-const CASING_GRAVITY = 15;
-const CASING_RADIUS = 0.005;
-const casings = [];
-function spawnCasing(live, at, quat, vel) {
-    const mesh = createRound(weaponMats, live);
-    mesh.position.copy(at);
-    mesh.quaternion.copy(quat);
-    scene.add(mesh);
-    const spin = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(30);
-    casings.push({ mesh, vel, spin, age: 0, bounces: 0 });
-    if (casings.length > CASING_MAX)
-        casings.shift().mesh.removeFromParent();
-}
-const casingEuler = new THREE.Euler();
-const casingRot = new THREE.Quaternion();
-function updateCasings(dt) {
-    for (let i = casings.length - 1; i >= 0; i--) {
-        const c = casings[i];
-        c.age += dt;
-        if (c.age > CASING_LIFE) {
-            c.mesh.removeFromParent();
-            casings.splice(i, 1);
-            continue;
-        }
-        if (c.bounces >= 4 && c.vel.lengthSq() < 0.01)
-            continue; // 転がり終えたら止める
-        c.vel.y -= CASING_GRAVITY * dt;
-        c.mesh.position.addScaledVector(c.vel, dt);
-        c.mesh.quaternion.premultiply(casingRot.setFromEuler(casingEuler.set(c.spin.x * dt, c.spin.y * dt, c.spin.z * dt)));
-        const p = c.mesh.position;
-        const floor = floorAt(p.x, p.z, p.y) + CASING_RADIUS;
-        if (p.y < floor) {
-            p.y = floor;
-            const impact = -c.vel.y;
-            c.vel.y = impact * 0.35;
-            c.vel.x *= 0.6;
-            c.vel.z *= 0.6;
-            c.spin.multiplyScalar(0.6);
-            if (c.bounces < 3 && impact > 0.8) {
-                // 跳ねるたびに小さく「チン」。遠いほど小さく
-                const near = THREE.MathUtils.clamp(2 / Math.max(p.distanceTo(camera.position), 0.5), 0, 1);
-                sfx.playCasing(near * Math.min(1, impact / 3));
-            }
-            c.bounces++;
-            if (c.bounces >= 4) {
-                c.vel.set(0, 0, 0);
-                // 最後は横倒しに寝かせる
-                c.mesh.quaternion.setFromEuler(casingEuler.set(Math.PI / 2, Math.random() * Math.PI * 2, 0, 'YXZ'));
-            }
-        }
-    }
-}
-function updateBullets(dt) {
-    for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        const step = (b.parried ? PARRY_RETURN_SPEED : BULLET_SPEED) * dt;
-        const maxTail = b.parried ? PARRY_TRACER_LEN : TRACER_LEN;
-        if (b.hit) {
-            // 当たった後は、頭を当たった所に止めたまま尾だけを縮めて消す
-            b.tail -= step;
-        }
-        else if (b.traveled >= BULLET_RANGE) {
-            b.tail -= step;
-            b.pos.addScaledVector(b.dir, step);
-        }
-        else if (castThrow(b.pos, b.dir, step)) {
-            b.hit = true;
-            const moved = b.pos.distanceTo(castHit.point);
-            b.tail = Math.min(maxTail, b.tail + moved);
-            b.pos.copy(castHit.point);
-            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye);
-        }
-        else if (b.aimEnemy?.alive && b.traveled + step >= b.aimDist) {
-            // 狙った所まで来た: クロスヘアが捉えていた敵に当てる
-            b.hit = true;
-            const moved = b.aimDist - b.traveled;
-            b.tail = Math.min(maxTail, b.tail + moved);
-            b.pos.addScaledVector(b.dir, moved);
-            onBulletHit(b.pos.clone(), b.dir, b.aimEnemy, b.parried, b.deadEye);
-        }
-        else {
-            b.pos.addScaledVector(b.dir, step);
-            b.traveled += step;
-            b.tail = Math.min(maxTail, b.tail + step);
-        }
-        if (b.tail <= 0) {
-            b.mesh.removeFromParent();
-            bullets.splice(i, 1);
-            continue;
-        }
-        // 尾は頭から後ろへ伸ばす
-        b.mesh.position.copy(b.pos);
-        b.mesh.quaternion.setFromUnitVectors(TRACER_AXIS, bulletBack.copy(b.dir).negate());
-        const width = b.parried ? PARRY_TRACER_WIDTH : TRACER_WIDTH;
-        b.mesh.scale.set(width, width, b.tail);
-    }
-}
-function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false) {
-    if (onDummy) {
-        setEn(onDummy);
-        hitDir.set(dir.x, 0, dir.z);
-        if (hitDir.lengthSq() < 1e-6)
-            hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
-        hitDir.normalize();
-        applyDummyHit(parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT, at, 'bullet');
-        if (parried)
-            parryReturnAge = 0;
-    }
-    else {
-        // 壁や地面: 火花を散らして小さく「チュン」
-        spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
-        sfx.playRicochet();
-    }
-}
+// ---- ハンドガン ----（weapons/handgunCombat.ts）
 // ---- 敵の射撃 ----
 // 敵は体ごとプレイヤーの方へゆっくり向き直り、追いきれない分を銃と両腕で振って狙う。
 // 狙いは少し遅れてついてくるので、動き続けていれば外れる。銃口が狙いに収まったら一定の間隔で撃つ。
@@ -5786,7 +5077,6 @@ const enemyOnBody = new THREE.Vector3();
 const enemyPath = new THREE.Line3();
 const enemyBody = new THREE.Line3();
 const enemyPan = new THREE.Vector3();
-const wrapAngle = (a) => THREE.MathUtils.euclideanModulo(a + Math.PI, Math.PI * 2) - Math.PI;
 // 狙う所: プレイヤーの胸
 function aimTarget(out) {
     return out.set(position.x, position.y + player.eyeHeight - 0.35, position.z);
@@ -5810,7 +5100,7 @@ function updateEnemyFire(dt) {
     en.muzzleFx.visible = en.flashAge < MUZZLE_FLASH_LIFE;
     en.cooldown -= dt;
     // 撃つ少し前から腰を落として構える。構えきるまでは撃たない（見てからかわせる合図）
-    const canAim = en.alive && playerHp > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
+    const canAim = en.alive && game.playerHp > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
         && en.dodgeT <= 0;
     const braceWant = canAim && en.cooldown < ENEMY_BRACE_TIME ? 1 : 0;
     en.brace += (braceWant - en.brace) * Math.min(1, dt * (braceWant > en.brace ? ENEMY_BRACE_RATE : ENEMY_BRACE_RATE * 0.5));
@@ -5869,13 +5159,13 @@ function updateEnemyBullets(dt) {
             enemyPath.set(b.pos, enemyNext);
             enemyBody.start.set(position.x, position.y + 0.15, position.z);
             enemyBody.end.set(position.x, position.y + player.eyeHeight + 0.05, position.z);
-            if (playerHp > 0 && tryParry(b)) {
+            if (game.playerHp > 0 && tryParry(b)) {
                 b.mesh.removeFromParent();
                 enemyBullets.splice(i, 1);
                 continue;
             }
             closestSegmentPoints(enemyPath, enemyBody, enemyOnPath, enemyOnBody);
-            if (playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS) {
+            if (game.playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS) {
                 b.hit = true;
                 b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
                 b.pos.copy(enemyOnPath);
@@ -5922,11 +5212,6 @@ const PARRY_SLOW_SCALE = 0.3;
 const PARRY_SLOW_HOLD = 0.25;
 const PARRY_SLOW_RELEASE = 0.35;
 const PARRY_FX_FADE = PARRY_SLOW_HOLD + PARRY_SLOW_RELEASE; // 色はスローが明けるのに合わせて戻す
-// 跳ね返した弾: 自分の一撃だと分かるよう、遅く太く白い光の尾で飛ばす
-const PARRY_RETURN_SPEED = 60; // m/s（スローの間は目で追える）
-const PARRY_TRACER_LEN = 4;
-const PARRY_TRACER_WIDTH = 0.05;
-const PARRY_RETURN_HIT = { kick: [-1.6, 0, 0], knock: 420, hitStop: 0.12, fx: 1.6 };
 const PARRY_RETURN_MONO = 0.07; // 返した弾が当たった瞬間も、ごく短く白黒にする
 const PARRY_RETURN_MONO_FADE = 0.15;
 const parryTracerMat = new THREE.MeshBasicMaterial({
@@ -5937,11 +5222,10 @@ const parryTracerMat = new THREE.MeshBasicMaterial({
     depthWrite: false,
 });
 let parryFxAge = Infinity; // 弾いてからの実時間
-let parryReturnAge = Infinity; // 返した弾が当たってからの実時間
 // 実時間を進め、ゲームの時間に掛ける速さを返す（止まっている間はヒットストップが止めるので 1）
 function parrySlowFactor(realDt) {
     parryFxAge += game.realDt;
-    parryReturnAge += game.realDt;
+    game.parryReturnAge += game.realDt;
     const t = parryFxAge - PARRY_HIT_STOP;
     if (t < 0)
         return 1;
@@ -5951,8 +5235,8 @@ function parrySlowFactor(realDt) {
 function parryMono() {
     const after = Math.max(0, parryFxAge - PARRY_HIT_STOP);
     const main = parryFxAge < PARRY_HIT_STOP ? 1 : Math.max(0, 1 - after / PARRY_FX_FADE) ** 2;
-    const rAfter = Math.max(0, parryReturnAge - PARRY_RETURN_MONO);
-    const ret = parryReturnAge < PARRY_RETURN_MONO ? 1 : Math.max(0, 1 - rAfter / PARRY_RETURN_MONO_FADE);
+    const rAfter = Math.max(0, game.parryReturnAge - PARRY_RETURN_MONO);
+    const ret = game.parryReturnAge < PARRY_RETURN_MONO ? 1 : Math.max(0, 1 - rAfter / PARRY_RETURN_MONO_FADE);
     return Math.max(main, ret);
 }
 const PARRY_SPREAD = 1.5 * DEG;
@@ -6087,81 +5371,81 @@ function updateWeaponHud() {
 }
 // ---- 右の操作一覧 ----（ui/controlsHud.ts）
 function updateGun(dt) {
-    gunCooldown = Math.max(0, gunCooldown - dt);
+    gunState.gunCooldown = Math.max(0, gunState.gunCooldown - dt);
     updateDeadEye();
     // 頂点で一瞬止めたあと、腕で反動を押し戻すように重たく戻す
-    if (gunRecoilHold > 0)
-        gunRecoilHold -= dt;
+    if (gunState.gunRecoilHold > 0)
+        gunState.gunRecoilHold -= dt;
     else
-        gunRecoil += -gunRecoil * Math.min(1, dt * 8);
+        gunState.gunRecoil += -gunState.gunRecoil * Math.min(1, dt * 8);
     if (!gunReady()) {
         // 持ち替えたら装填は最初からやり直す（薬莢を落とした後なら弾は空のまま）
-        if (gunReloading)
+        if (gunState.gunReloading)
             endReload();
-        if (twirlT >= 0)
+        if (gunState.twirlT >= 0)
             endTwirl(false);
         endSlideSpin();
-        fireQueued = false;
-        reloadQueued = false;
+        gunState.fireQueued = false;
+        gunState.reloadQueued = false;
     }
-    if (reloadQueued) {
-        reloadQueued = false;
-        if (!gunReloading && gunAmmo < GUN_AMMO)
+    if (gunState.reloadQueued) {
+        gunState.reloadQueued = false;
+        if (!gunState.gunReloading && gunState.gunAmmo < GUN_AMMO)
             startReload();
     }
-    if (gunReloading) {
+    if (gunState.gunReloading) {
         // 装填中のクリックは溜めない（終わった瞬間に勝手に撃たないように）
-        fireQueued = false;
-        const prevT = gunReloadT;
-        gunReloadT += dt;
-        while (reloadEvent < RELOAD_EVENTS.length && gunReloadT >= RELOAD_EVENTS[reloadEvent].at) {
-            RELOAD_EVENTS[reloadEvent++].fn();
+        gunState.fireQueued = false;
+        const prevT = gunState.gunReloadT;
+        gunState.gunReloadT += dt;
+        while (gunState.reloadEvent < RELOAD_EVENTS.length && gunState.gunReloadT >= RELOAD_EVENTS[gunState.reloadEvent].at) {
+            RELOAD_EVENTS[gunState.reloadEvent++].fn();
         }
-        if (prevT < GUN_RELOAD_TIME && gunReloadT >= GUN_RELOAD_TIME) {
+        if (prevT < GUN_RELOAD_TIME && gunState.gunReloadT >= GUN_RELOAD_TIME) {
             endReload();
         }
         else {
-            evalReloadPose(gunReloadT);
-            poseReloadParts(gunReloadT);
+            evalReloadPose(gunState.gunReloadT);
+            poseReloadParts(gunState.gunReloadT);
         }
     }
-    else if (fireQueued && gunCooldown <= 0) {
-        fireQueued = false;
-        if (gunAmmo > 0)
+    else if (gunState.fireQueued && gunState.gunCooldown <= 0) {
+        gunState.fireQueued = false;
+        if (gunState.gunAmmo > 0)
             fireGun();
         else
             startReload();
     }
     // 撃ち尽くしたら、反動が収まったところで自動で装填する
-    if (gunReady() && !gunReloading && gunAmmo === 0 && gunCooldown <= 0)
+    if (gunReady() && !gunState.gunReloading && gunState.gunAmmo === 0 && gunState.gunCooldown <= 0)
         startReload();
     // シリンダーは撃つたびに次の薬室へ素早く回す。弾いたときは惰性で回り続ける
-    if (cylinderSpin > 0) {
-        gunCylinder.rotation.z += cylinderSpin * dt;
-        cylinderSpin *= Math.exp(-2 * dt);
-        cylinderTarget = gunCylinder.rotation.z;
+    if (gunState.cylinderSpin > 0) {
+        gunCylinder.rotation.z += gunState.cylinderSpin * dt;
+        gunState.cylinderSpin *= Math.exp(-2 * dt);
+        gunState.cylinderTarget = gunCylinder.rotation.z;
     }
     else {
         // 一発ごとに次の薬室へ回る動きが目で追えるよう、少しゆっくり寄せる
-        gunCylinder.rotation.z += (cylinderTarget - gunCylinder.rotation.z) * Math.min(1, dt * 14);
+        gunCylinder.rotation.z += (gunState.cylinderTarget - gunCylinder.rotation.z) * Math.min(1, dt * 14);
     }
     updateTwirl(dt);
     updateSlideSpin(dt);
     applyGunSpin(dt);
     updateCasings(dt);
-    muzzleFlashAge += dt;
-    muzzleFlash.visible = muzzleFlashAge < MUZZLE_FLASH_LIFE;
+    gunState.muzzleFlashAge += dt;
+    muzzleFlash.visible = gunState.muzzleFlashAge < MUZZLE_FLASH_LIFE;
     updateBullets(dt);
     ammoHud.classList.toggle('hidden', game.shownWeapon !== 'handgun');
-    ammoHud.classList.toggle('reloading', gunReloading);
+    ammoHud.classList.toggle('reloading', gunState.gunReloading);
     // 印を付けた分の弾は、撃つ順に右から光らせる
     const marked = game.deadEye === 'mark' ? deadEyeMarks.length : deadEyeMarks.filter((m) => !m.done).length;
     ammoPips.forEach((p, i) => {
-        p.classList.toggle('spent', i >= gunAmmo);
-        p.classList.toggle('marked', i < gunAmmo && i >= gunAmmo - marked);
+        p.classList.toggle('spent', i >= gunState.gunAmmo);
+        p.classList.toggle('marked', i < gunState.gunAmmo && i >= gunState.gunAmmo - marked);
     });
     updateWeaponHud();
-    updateControlsHud(game.shownWeapon, usingPad);
+    updateControlsHud(game.shownWeapon, game.usingPad);
 }
 // ---- ポストエフェクト ----（シェーダーは fx/postShaders.ts）
 // 周辺ブラー・ビネット・集中線: これより速いと効果が出始め、SPEED_FX_FULL で最大になる
@@ -6369,7 +5653,7 @@ function runStageDebug(params) {
         for (let i = 0; i * step < num('sim', 0); i++) {
             update(step);
             if (i % 60 === 0)
-                log.push(`${r(i * step)}s hp=${playerHp} ` + enemies.map((e) => `(${r(e.root.position.x)},${r(e.root.position.y)},${r(e.root.position.z)}${e.moving ? ' walk' : ''})`).join(' '));
+                log.push(`${r(i * step)}s hp=${game.playerHp} ` + enemies.map((e) => `(${r(e.root.position.x)},${r(e.root.position.y)},${r(e.root.position.z)}${e.moving ? ' walk' : ''})`).join(' '));
             if (placed && i % 6 === 0)
                 playerLog.push(`${r(i * step)}s (${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)}) v=(${r(velocity.x)},${r(velocity.y)},${r(velocity.z)})${player.onGround ? ' ground' : ''}${player.groundRamp ? ' ramp' : ''}`);
         }

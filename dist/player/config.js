@@ -49,3 +49,4 @@ export const WALLRUN_ROLL = 0.12; // 壁と反対側へ頭を傾ける量 (rad)
 export const BASE_FOV = 75;
 export const MAX_FOV_BONUS = 22; // 速度による最大の視野拡大
 export const FOV_SPEED_MAX = 32; // この速さで視野拡大が最大になる
+export const PLAYER_MAX_HP = 100;
