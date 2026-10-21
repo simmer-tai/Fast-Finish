@@ -1,0 +1,20 @@
+import type * as THREE from 'three';
+import type { HitKind } from '../audio.js';
+import type { HitDef } from '../weapons/kunaiAttacks.js';
+
+// ---- 武器の処理が本体へ頼むこと ----
+// 当たりの処理（ダメージ・スコア・演出）やカメラ演出は main.ts にあるので、武器のファイルからはこれを通して呼ぶ
+export interface GameHooks {
+  addTrauma(amount: number): void; // 画面を揺らす
+  // 当たりの反応と演出。hitDir（攻撃した側から敵の奥への水平の向き）は呼ぶ前に入れておく
+  applyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar?: boolean, dmgScale?: number): void;
+  enemyHeld(): boolean; // いま扱っている敵を、鎖鎌で掛けているか突進の的にしているか
+  inReachOf(reach: number, angle: number): boolean; // いま扱っている敵に届くか
+  hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3): void; // 刃先の位置から、敵の表面の当たった所を求める
+  applyLunge(amount: number): void; // 攻撃の踏み込み
+  grappling(): boolean; // 鎖鎌で移動している最中か
+}
+export let hooks: GameHooks;
+export function initGameHooks(h: GameHooks) {
+  hooks = h;
+}

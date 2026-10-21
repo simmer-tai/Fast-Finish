@@ -12,3 +12,5 @@ export const DEFAULT_KNOCK = 220;
 export const ENEMY_HIT_RECOVER = 0.6; // 攻撃を受けてから、少なくともこの時間は撃たない
 export const AXE_LAUNCH_ENEMY_SPEED = 12; // 敵を打ち上げる速さ (m/s)。自分より少し高く上げて、叩きつけで捉えやすくする
 export const WALL_SLAM_BOUNCE = 1.5; // 壁から跳ね返る速さ (m/s)
+export const hitLook = new THREE.Vector3();
+export const hitPoint = new THREE.Vector3();

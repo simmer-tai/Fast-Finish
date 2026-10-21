@@ -1,4 +1,5 @@
 import type { WeaponId } from '../weapons/ids.js';
+import * as THREE from 'three';
 
 // ---- 武器や演出をまたいで共有している値 ----
 // ほかのファイルからも書き換えられるよう、1 つのオブジェクトにまとめる
@@ -14,3 +15,13 @@ export const game = {
   hitStop: 0, // 残りの停止時間。この間はゲームの時間を進めない
   trailNow: 0,
 };
+
+// カメラの反動（ばね）
+export const kick = new THREE.Vector3();
+export const kickVel = new THREE.Vector3();
+
+export const DEFAULT_HIT_STOP = 0.06;
+
+export const DASH_ATTACK_WINDOW = 0.3; // ダッシュ後この時間内ならダッシュ斬りになる
+
+export const SWING_SAMPLE = 1 / 120; // 刃の動く向きを、この時間だけ前後のポーズの差から求める
