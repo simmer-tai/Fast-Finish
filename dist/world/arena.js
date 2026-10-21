@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../random.js';
+import { PLAYER_RADIUS } from '../player/config.js';
 import { STRUCT_GRID, TERRAIN_GRID, addBoxes, blocks, gridMaterial } from './blocks.js';
 import { addRiser, riseLines, withRiseBuild } from './rise.js';
 // ---- アリーナ（訓練場） ----
@@ -139,3 +140,6 @@ export const arenaRoot = new THREE.Group();
         arenaRoot.add(mesh);
     }
 }
+export const ARENA_LIMIT = ARENA_HALF - PLAYER_RADIUS; // 境界線の外へ出ないための見えない柵
+// プレイヤーが動ける範囲（見えない柵）。ステージへ入るときに、そのステージの範囲に差し替える
+export const playBounds = { minX: -ARENA_LIMIT, maxX: ARENA_LIMIT, minZ: -ARENA_LIMIT, maxZ: ARENA_LIMIT };

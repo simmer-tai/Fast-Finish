@@ -185,3 +185,17 @@ export function addRamps(list: StageRamp[], mat: THREE.Material, parent: THREE.O
   parent.add(mesh);
   return mesh;
 }
+
+// 足元の高さ: 箱の上に落ちたら箱の上面、それ以外は地面
+export function floorAt(x: number, z: number, y: number) {
+  let floor = 0;
+  for (const b of blocks) {
+    if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && y >= b.h - 0.1) floor = Math.max(floor, b.h);
+  }
+  for (const r of ramps) {
+    if (x < r.minX || x > r.maxX || z < r.minZ || z > r.maxZ) continue;
+    const top = rampTop(r, x, z);
+    if (y >= top - 0.1) floor = Math.max(floor, top);
+  }
+  return floor;
+}

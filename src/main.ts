@@ -50,6 +50,19 @@ import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_PO
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
+import { env, initEnemyEnv } from './enemy/env.js';
+import {
+  DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, setEn, type Enemy,
+} from './enemy/state.js';
+import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
+import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
+import {
+  AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, knockEnemy, launchEnemy, playerEye, playerLook,
+  poseEnemyTumble, spikeEnemy, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble,
+} from './enemy/motion.js';
+import { DEG, UP } from './math.js';
+import { floorAt } from './world/blocks.js';
+import { playBounds } from './world/arena.js';
 import {
   AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED,
   DASH_TIME, EYE_HEIGHT, FOV_SPEED_MAX, GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED,
@@ -150,9 +163,6 @@ withGroundReveal(grid10Mat);
 scene.add(grid10);
 
 // ---- アリーナ ----（訓練場の配置は world/arena.ts、箱と坂は world/blocks.ts、せり上がりは world/rise.ts）
-const ARENA_LIMIT = ARENA_HALF - PLAYER_RADIUS; // 境界線の外へ出ないための見えない柵
-// プレイヤーが動ける範囲（見えない柵）。ステージへ入るときに、そのステージの範囲に差し替える
-const playBounds = { minX: -ARENA_LIMIT, maxX: ARENA_LIMIT, minZ: -ARENA_LIMIT, maxZ: ARENA_LIMIT };
 scene.add(arenaRoot);
 
 // ---- 武器: クナイ ----（モデルとマテリアルは weapons/ 以下）
@@ -2049,7 +2059,6 @@ interface AttackDef {
   slash?: number; // 斬撃の線の画面上の角度（度、水平が 0）。突きのように線にならない攻撃は省く
 }
 
-const DEG = Math.PI / 180;
 function makeAttack(def: Omit<AttackDef, 'keys' | 'duration'> & { keys: KeyDef[] }): AttackDef {
   const keys = def.keys.map((k): PoseKey => ({
     t: k.t,
@@ -2415,7 +2424,6 @@ function updateAttack(dt: number) {
 // ---- 被弾の演出 ----
 const HIT_REACH = 2.2; // 敵の中心までこの距離なら当たる
 const HIT_ANGLE = 60 * DEG; // 視線からこの角度以内なら当たる
-const DEFAULT_KNOCK = 220;
 const DEFAULT_HIT_STOP = 0.06;
 let hitStop = 0; // 残りの停止時間。この間はゲームの時間を進めない
 const FLASH_HOLD = 0.05; // 真っ白のまま保つ時間
@@ -2436,12 +2444,8 @@ const FINALE_SLOW_HOLD = 1.5;
 const FINALE_SLOW_RELEASE = 0.9;
 const FINALE_INVERT_TIME = 0.08; // 白黒を反転させておく実時間
 let finale = false; // 最後の 1 体を倒したあと
-const RESPAWN_TIME = 2.2; // 倒されてから起き上がり始めるまで
-const RESPAWN_RISE_TIME = 0.3;
 let killSlowTime = Infinity; // 倒してからの実時間
-const hitDir = new THREE.Vector3();
 const hitLook = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
 
 function tryHitDummy(def: AttackDef) {
   if (!dummyInReach(HIT_REACH, HIT_ANGLE)) return;
@@ -2454,7 +2458,7 @@ function dummyInReach(reach: number, angle: number): boolean {
   let best: Enemy | null = null;
   let bestDist = Infinity;
   for (const e of enemies) {
-    en = e;
+    setEn(e);
     if (!inReachOf(reach, angle)) continue;
     const d = Math.hypot(e.root.position.x - position.x, e.root.position.z - position.z);
     if (d < bestDist) {
@@ -2463,7 +2467,7 @@ function dummyInReach(reach: number, angle: number): boolean {
     }
   }
   if (!best) return false;
-  en = best;
+  setEn(best);
   return inReachOf(reach, angle); // hitDir を選んだ敵への向きで入れ直す
 }
 // en が攻撃の届く範囲にいるか。いれば hitDir に攻撃の向きを入れる
@@ -2578,7 +2582,7 @@ function startleAllies() {
     e.cooldown = Math.max(e.cooldown, rand(0.35, 0.6));
     if (!e.moving && e.dodgeT <= 0) e.waitT = Math.min(e.waitT, rand(0.15, 0.4));
   }
-  en = dead;
+  setEn(dead);
 }
 
 // 倒したご褒美: ダッシュを満タンにし、鎖鎌の引き寄せを 1 回分戻し、少し回復し、今の進む向きへ勢いを足す（止まらずに次へ向かえるように）
@@ -2870,7 +2874,7 @@ const finishCorner = new THREE.Vector3();
 // カメラの揺れを足した後、描画の直前に呼ぶ（印が敵からずれないように）
 function updateFinishMark() {
   for (const e of enemies) {
-    en = e;
+    setEn(e);
     updateFinishMarkOf();
   }
   updateThreatMarks();
@@ -2976,7 +2980,7 @@ let shakeEnemy: Enemy | null = null; // 震わせる敵（最後に当てた敵�
 function updateDummyShake() {
   for (const e of enemies) poseEnemyTumble(e);
   if (hitStop <= 0 || !hitStopShakesDummy || !shakeEnemy) return;
-  en = shakeEnemy;
+  setEn(shakeEnemy);
   // 左右へ交互に振り、止まりきる前に弱めていく
   const k = DUMMY_SHAKE * Math.min(1, hitStop / Math.max(hitStopTotal, 1e-3));
   shakeSide = -shakeSide;
@@ -3053,371 +3057,18 @@ function hitPointFromTip(tip: THREE.Vector3, out: THREE.Vector3) {
 
 // ---- 切り跡 ----（fx/scars.ts）
 
-// ---- 当たったときのよろめき ----
-// 腰の位置、上体の反りとひねり、首、銃を構えた腕をそれぞれ別のばねで動かす。
-// 首は背骨の動きに遅れてついてくるので、打たれた瞬間は頭が残り、上体が止まるときにしなって行き過ぎる。
-// 腰が大きく流れたら片足を踏み出して支え、揺れが収まったら元の立ち位置へ踏み戻る。脚は 2 関節の IK で足を地面に置く
-type Spring = { x: THREE.Vector3; v: THREE.Vector3; k: number; d: number };
-const spring = (k: number, d: number): Spring => ({ x: new THREE.Vector3(), v: new THREE.Vector3(), k, d });
-function stepSpring(s: Spring, dt: number) {
-  s.v.multiplyScalar(Math.max(0, 1 - s.d * dt)).addScaledVector(s.x, -s.k * dt);
-  s.x.addScaledVector(s.v, dt);
-}
-// 行き過ぎた分を戻し、さらに外へ向かう速さも捨てる
-function clampSpring(s: Spring, max: number) {
-  const len = s.x.length();
-  if (len <= max) return;
-  s.x.multiplyScalar(max / len);
-  const out = s.v.dot(s.x) / max;
-  if (out > 0) s.v.addScaledVector(s.x, -out / max);
-}
+// ---- 敵 ----
+// 状態は enemy/state.ts、よろめきと表情は enemy/stagger.ts、砕けた体は enemy/debris.ts、
+// 打ち上げ・吹き飛び・移動・横っ飛び・足取りは enemy/motion.ts。作る・消す・毎フレーム回すのはここ
+initEnemyEnv({
+  scene,
+  addTrauma,
+  isHeld: enemyHeld,
+  playerHp: () => playerHp,
+  slamIntoFloor: slamEnemyIntoFloor,
+  slamIntoWall: slamEnemyIntoWall,
+});
 
-// 量はどれも knock = DEFAULT_KNOCK のときのもの
-const STAGGER_PUSH = 1.1; // 腰を押し流す速さ (m/s)。低い所に当たるほど強い
-const STAGGER_SINK = 0.45; // 膝が沈む速さ (m/s)
-const STAGGER_LEAN = 2.6; // 上体が奥へ反る角速度 (rad/s)
-const STAGGER_LEAN_HIGH = 3.2; // 胸から頭に当たったときに足す反り
-const STAGGER_TWIST = 10; // 中心からずれた所に当たったときのひねり（中心からの距離 1m あたり, rad/s）
-const STAGGER_HEAD = 8; // 頭に当たったときに首を弾く角速度
-const STAGGER_GUN = 4.5; // 銃口が跳ね上がる角速度
-const STAGGER_SWING = 0.5; // 斬ったときに刃の動いた向きへ流す割合
-const HEAD_LAG = 0.8; // 背骨の角速度が急に変わった分のうち、首が逆へ残す割合
-const MAX_LEAN = 40 * DEG;
-const MAX_TWIST = 35 * DEG;
-const MAX_HEAD = 35 * DEG;
-const MAX_SHIFT = 0.32;
-const PELVIS_LEAN = 0.2; // 上体の傾きとひねりのうち腰が受け持つ割合（残りは背骨）
-const PELVIS_TWIST = 0.3;
-
-const staggerPush = new THREE.Vector3();
-const staggerAxis = new THREE.Vector3();
-const staggerTmp = new THREE.Vector3();
-// dummy はプレイヤーの方へ向きを変えるので、ワールドの向きを体の座標へ直してから揺らす。hitDir は呼ぶ前に入れておく
-const dummyInvQ = new THREE.Quaternion();
-function staggerDummy(knock: number, at: THREE.Vector3, swing?: THREE.Vector3) {
-  const p = knock / DEFAULT_KNOCK;
-  staggerPush.copy(hitDir);
-  if (swing) {
-    staggerTmp.set(swing.x, 0, swing.z);
-    if (staggerTmp.lengthSq() > 1e-6) staggerPush.addScaledVector(staggerTmp.normalize(), STAGGER_SWING);
-  }
-  staggerPush.y = 0;
-  dummyInvQ.copy(en.root.quaternion).invert();
-  staggerPush.applyQuaternion(dummyInvQ).normalize();
-  const h = at.y - en.root.position.y;
-  const high = THREE.MathUtils.clamp((h - 0.93) / 0.8, 0, 1); // 腰で 0、頭で 1
-
-  addImpulse(en.pelvisSpring, staggerPush, p * STAGGER_PUSH * (1.2 - 0.6 * high));
-  en.pelvisSpring.v.y -= p * STAGGER_SINK;
-  staggerAxis.crossVectors(UP, staggerPush); // この軸で回すと頭が押された向きへ倒れる
-  addImpulse(en.leanSpring, staggerAxis, p * (STAGGER_LEAN + STAGGER_LEAN_HIGH * high));
-  // 当たった所が中心からずれているほど、押された側が奥へ回る
-  staggerTmp.subVectors(at, en.root.position).applyQuaternion(dummyInvQ);
-  en.twistSpring.v.y += (staggerTmp.z * staggerPush.x - staggerTmp.x * staggerPush.z) * p * STAGGER_TWIST;
-  if (h > 1.55) addImpulse(en.headSpring, staggerAxis, p * STAGGER_HEAD);
-  en.gunSpring.v.x -= p * STAGGER_GUN;
-}
-// 戻ろうとしている向きの速さは打ち消してから足す（続けて当てたときに押し返しで弱まらないように）
-function addImpulse(s: Spring, dir: THREE.Vector3, amount: number) {
-  const back = s.v.dot(dir);
-  if (back < 0) s.v.addScaledVector(dir, -back);
-  s.v.addScaledVector(dir, amount);
-}
-
-// 足: 踏み出している間は from から to へ弧を描いて動く（t = 1 で着地している）
-type DummyFoot = { rest: THREE.Vector3; pos: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; side: number };
-const STEP_TIME = 0.16;
-const STEP_LIFT = 0.07; // 足を上げる高さ（0.15m 以上踏み出すとき）
-const STEP_START = 0.13; // 足が腰の真下からこれだけずれたら踏み出して支える（剣や締めの技で踏み出す）
-const STEP_SETTLE = 0.035; // 揺れが収まった後は、これだけずれていれば立ち位置へ踏み戻る
-const STEP_SETTLED_SPEED = 0.15; // 腰がこの速さ (m/s) より遅ければ収まったとみなす
-const STEP_LEAD = 0.12; // 腰の流れる先を読んで踏み出す時間 (s)
-const STEP_MAX = 0.4; // 立ち位置からこれより遠くへは踏み出さない
-const STEP_INNER = 0.04; // 足を体の中心線のこれより内側へは寄せない（脚が交差しないように）
-const stepIdeal = new THREE.Vector3();
-function updateDummySteps(dt: number) {
-  if (en.walk > 0.01) return walkFeet(); // 歩いている間は歩きの足に任せる
-  let stepping = false;
-  for (const f of en.footState) {
-    if (f.t >= 1) continue;
-    f.t = Math.min(1, f.t + dt / STEP_TIME);
-    f.pos.lerpVectors(f.from, f.to, f.t * f.t * (3 - 2 * f.t));
-    f.pos.y = DUMMY_ANKLE_Y + Math.sin(Math.PI * f.t) * STEP_LIFT * Math.min(1, f.from.distanceTo(f.to) / 0.15);
-    if (f.t < 1) stepping = true;
-  }
-  if (stepping) return; // 片足ずつ踏む
-
-  const v = en.pelvisSpring.v;
-  const settled = Math.hypot(v.x, v.z) < STEP_SETTLED_SPEED;
-  const lead = settled ? 0 : STEP_LEAD;
-  let best: DummyFoot | undefined;
-  let bestErr = settled ? STEP_SETTLE : STEP_START;
-  for (const f of en.footState) {
-    const err = Math.hypot(
-      f.rest.x + en.pelvisSpring.x.x + v.x * lead - f.pos.x,
-      f.rest.z + en.pelvisSpring.x.z + v.z * lead - f.pos.z,
-    );
-    if (err > bestErr) {
-      bestErr = err;
-      best = f;
-    }
-  }
-  if (!best) return;
-  stepIdeal.set(en.pelvisSpring.x.x + v.x * lead, 0, en.pelvisSpring.x.z + v.z * lead);
-  if (stepIdeal.length() > STEP_MAX) stepIdeal.setLength(STEP_MAX);
-  best.from.copy(best.pos);
-  best.to.copy(best.rest).add(stepIdeal);
-  best.to.x = best.side > 0 ? Math.max(best.to.x, STEP_INNER) : Math.min(best.to.x, -STEP_INNER);
-  best.t = 0;
-}
-
-// 脚の 2 関節 IK: 腰の動きに合わせて、膝を前へ曲げて足を地面の決まった所に置く。
-// 足が届かないときは腰を下げる（踏み出したときに腰が沈む）
-const LEG_REACH = (DUMMY_THIGH + DUMMY_SHIN) * 0.995;
-const LEG_DOWN = new THREE.Vector3(0, -1, 0);
-const LEG_FWD = new THREE.Vector3(0, 0, 1);
-const legHip = new THREE.Vector3();
-const legAnkle = new THREE.Vector3();
-const legTo = new THREE.Vector3();
-const legBend = new THREE.Vector3();
-const legKnee = new THREE.Vector3();
-const legDir = new THREE.Vector3();
-const legThighQ = new THREE.Quaternion();
-const legShinQ = new THREE.Quaternion();
-const pelvisInv = new THREE.Matrix4();
-const legFoot = [new THREE.Vector3(), new THREE.Vector3()];
-function solveDummyLegs() {
-  en.pelvis.updateMatrix();
-  let drop = 0;
-  for (let i = 0; i < 2; i++) {
-    const f = legFoot[i].copy(en.footState[i].pos).addScaledVector(AIR_TUCK[i], en.airPose);
-    legHip.copy(en.thighs[i].position).applyMatrix4(en.pelvis.matrix);
-    const h = Math.hypot(legHip.x - f.x, legHip.z - f.z);
-    drop = Math.max(drop, legHip.y - f.y - Math.sqrt(Math.max(0, LEG_REACH ** 2 - h * h)));
-  }
-  if (drop > 0) {
-    en.pelvis.position.y -= drop;
-    en.pelvis.updateMatrix();
-  }
-  // 腰の座標で解く
-  pelvisInv.copy(en.pelvis.matrix).invert();
-  for (let i = 0; i < 2; i++) {
-    const hip = en.thighs[i].position;
-    legAnkle.copy(legFoot[i]).applyMatrix4(pelvisInv);
-    legTo.subVectors(legAnkle, hip);
-    const d = Math.min(legTo.length(), DUMMY_THIGH + DUMMY_SHIN - 1e-4);
-    legTo.normalize();
-    const cosA = (DUMMY_THIGH ** 2 + d * d - DUMMY_SHIN ** 2) / (2 * DUMMY_THIGH * d);
-    const a = Math.acos(THREE.MathUtils.clamp(cosA, -1, 1));
-    legBend.copy(LEG_FWD).addScaledVector(legTo, -LEG_FWD.dot(legTo)).normalize();
-    legKnee.copy(hip).addScaledVector(legTo, Math.cos(a) * DUMMY_THIGH).addScaledVector(legBend, Math.sin(a) * DUMMY_THIGH);
-    legThighQ.setFromUnitVectors(LEG_DOWN, legDir.subVectors(legKnee, hip).normalize());
-    legShinQ.setFromUnitVectors(LEG_DOWN, legDir.subVectors(legAnkle, legKnee).normalize());
-    en.thighs[i].quaternion.copy(legThighQ);
-    en.shins[i].quaternion.copy(legThighQ).invert().multiply(legShinQ);
-    // 足の裏は地面に平らなまま
-    en.feet[i].quaternion.copy(en.pelvis.quaternion).multiply(legShinQ).invert();
-  }
-}
-
-const STAGGER_SUBSTEP = 1 / 120;
-const staggerQ = new THREE.Quaternion();
-function updateDummyStagger(dt: number) {
-  // 首は背骨が急に動いた分だけ逆へ残る（慣性）
-  staggerTmp.subVectors(en.leanSpring.v, en.prevLeanVel);
-  en.headSpring.v.addScaledVector(staggerTmp, -HEAD_LAG);
-  en.headSpring.v.y -= (en.twistSpring.v.y - en.prevTwistVel) * HEAD_LAG * 0.6;
-
-  const n = Math.max(1, Math.ceil(dt / STAGGER_SUBSTEP));
-  for (let i = 0; i < n; i++) for (const s of en.springs) stepSpring(s, dt / n);
-  clampSpring(en.leanSpring, MAX_LEAN);
-  clampSpring(en.headSpring, MAX_HEAD);
-  en.twistSpring.x.y = THREE.MathUtils.clamp(en.twistSpring.x.y, -MAX_TWIST, MAX_TWIST);
-  const shift = Math.hypot(en.pelvisSpring.x.x, en.pelvisSpring.x.z);
-  if (shift > MAX_SHIFT) {
-    en.pelvisSpring.x.x *= MAX_SHIFT / shift;
-    en.pelvisSpring.x.z *= MAX_SHIFT / shift;
-  }
-  en.pelvisSpring.x.y = THREE.MathUtils.clamp(en.pelvisSpring.x.y, -0.15, 0.03);
-  en.prevLeanVel.copy(en.leanSpring.v);
-  en.prevTwistVel = en.twistSpring.v.y;
-
-  updateDummySteps(dt);
-  applyDummyPose();
-}
-
-function setFromRotVec(q: THREE.Quaternion, v: THREE.Vector3, scale: number) {
-  const a = v.length() * scale;
-  return a < 1e-6 ? q.identity() : q.setFromAxisAngle(staggerTmp.copy(v).normalize(), a);
-}
-// ---- 体の表情 ----
-// よろめきのばねに、次の姿勢を上乗せする。上乗せした傾きとひねりは銃の向きで打ち消し、狙いは保つ。
-// - 立っている間: ゆっくり息をして、重心を左右へ移す（構えている間は止める）
-// - 歩いている間: 腰を左右へ揺らし、肩を足と逆へひねる。速さの変わり目では進む向きへ上体を傾ける
-// - 撃つ前: 腰を落とし、上体を前へ寄せ、頬を銃に付けるように首を下げる（撃つ合図になる）
-const IDLE_SWAY = 0.014; // 重心を左右へ移す幅 (m)
-const IDLE_SWAY_RATE = 1.9; // rad/s
-const IDLE_BREATH = 0.018; // 息で上体が前後する角度 (rad)
-const IDLE_BREATH_RATE = 2.3;
-const WALK_HIP_SWAY = 0.022; // 歩くときに腰が左右へ振れる幅 (m)
-const WALK_SHOULDER_TWIST = 0.09; // 歩くときに肩をひねる角度 (rad)
-const BRACE_DROP = 0.045; // 構えで腰を落とす量 (m)
-const BRACE_LEAN = 0.09; // 構えで上体を前へ寄せる角度 (rad)
-const BRACE_NECK = 0.1;
-const STUMBLE_DROP = 0.12; // 吹き飛ばされて踏ん張るときに腰を落とす量 (m)
-const STUMBLE_ARM_UP = 0.7; // 踏ん張っている間に腕が跳ね上がる角度 (rad)
-const STUMBLE_ARM_SWAY = 0.35; // 腕が左右へ振れる角度 (rad)
-const poseLeanTmp = new THREE.Vector3();
-const poseNeckTmp = new THREE.Vector3();
-function applyDummyPose() {
-  const still = (1 - en.walk) * (1 - en.brace * 0.8);
-  const sway = Math.sin(en.idleT * IDLE_SWAY_RATE);
-  const stride = Math.sin(en.walkPhase) * en.walk;
-  en.pelvis.position.copy(en.pelvis.userData.origin).add(en.pelvisSpring.x);
-  en.pelvis.position.y -= Math.abs(Math.sin(en.walkPhase)) * ENEMY_WALK_BOB * en.walk + BRACE_DROP * en.brace + STUMBLE_DROP * en.stumble;
-  en.pelvis.position.x += sway * IDLE_SWAY * still + en.walkDir.z * stride * WALK_HIP_SWAY;
-  en.pelvis.position.z -= en.walkDir.x * stride * WALK_HIP_SWAY;
-  // 上乗せする傾き（重心を移した側と逆へ上体をわずかに戻す）
-  poseLeanTmp.copy(en.poseLean);
-  poseLeanTmp.x += Math.sin(en.idleT * IDLE_BREATH_RATE) * IDLE_BREATH * still + BRACE_LEAN * en.brace;
-  poseLeanTmp.z += sway * IDLE_SWAY * 1.5 * still;
-  const twist = -stride * WALK_SHOULDER_TWIST;
-  setFromRotVec(en.pelvis.quaternion, staggerTmp.copy(en.leanSpring.x).add(poseLeanTmp), PELVIS_LEAN);
-  en.pelvis.quaternion.multiply(staggerQ.setFromAxisAngle(UP, en.twistSpring.x.y * PELVIS_TWIST));
-  setFromRotVec(en.spine.quaternion, staggerTmp.copy(en.leanSpring.x).add(poseLeanTmp), 1 - PELVIS_LEAN);
-  en.spine.quaternion.multiply(staggerQ.setFromAxisAngle(UP, en.twistSpring.x.y * (1 - PELVIS_TWIST) + twist));
-  poseNeckTmp.copy(en.headSpring.x);
-  poseNeckTmp.x += BRACE_NECK * en.brace - poseLeanTmp.x * 0.5; // 頭は上体ほどは傾けない
-  poseNeckTmp.y -= twist;
-  setFromRotVec(en.neck.quaternion, poseNeckTmp, 1);
-  // 体の向きで追いきれない分は、銃と両腕を肩ごと振って狙う（負の x で銃口が上がる）。上乗せした傾きとひねりはここで打ち消す。
-  // 踏ん張っている間は狙いを保てず、腕が跳ね上がって振れる
-  const keep = 1 - en.stumble;
-  const flail = Math.sin(en.walkPhase * 0.5 + 1) * STUMBLE_ARM_SWAY * en.stumble;
-  en.gunRig.rotation.set(
-    en.gunSpring.x.x - en.aimPitch * keep - poseLeanTmp.x * keep - STUMBLE_ARM_UP * en.stumble,
-    en.aimYaw * keep - twist + flail,
-    -poseLeanTmp.z * keep + flail * 0.5,
-    'YXZ',
-  );
-  solveDummyLegs();
-}
-
-function resetDummyStagger() {
-  for (const s of en.springs) {
-    s.x.set(0, 0, 0);
-    s.v.set(0, 0, 0);
-  }
-  en.prevLeanVel.set(0, 0, 0);
-  en.prevTwistVel = 0;
-  en.poseLean.set(0, 0, 0);
-  en.prevVel.set(0, 0, 0);
-  en.brace = 0;
-  en.dodgeT = 0;
-  en.aimedAt = 0;
-  en.stumble = 0;
-  en.stumbling = false;
-  for (const f of en.footState) {
-    f.pos.copy(f.rest);
-    f.t = 1;
-  }
-  applyDummyPose();
-}
-
-function isOnDummy(o: THREE.Object3D) {
-  for (let p = o.parent; p; p = p.parent) if (p === en.root) return true;
-  return false;
-}
-
-// ---- 倒したときにバラバラになる体 ----
-// 骨ごと（頭・胸・腰・上腕・前腕・太もも・すね・足）と銃を 1 つの塊にして、倒した瞬間の姿勢のまま写し取って飛ばす。
-// 部品のジオメトリとマテリアルは本体と共有する（とどめの白い光りもそのまま乗る）
-const DEBRIS_GRAVITY = 18;
-const DEBRIS_BOUNCE = 0.3;
-const DEBRIS_SHRINK = 0.4; // 起き上がる前のこの時間で縮んで消える
-interface Debris { obj: THREE.Group; vel: THREE.Vector3; axis: THREE.Vector3; spin: number; radius: number }
-const debrisBox = new THREE.Box3();
-const debrisSize = new THREE.Vector3();
-const debrisInv = new THREE.Matrix4();
-const debrisRot = new THREE.Quaternion();
-
-// ---- 敵 1 体分の状態 ----
-// 体の部品・よろめきのばね・足・体力・切り跡・破片・銃口を 1 体ずつ持つ。敵を扱う関数は「いま扱っている敵」en に対して働く。
-// 毎フレーム全員について en を切り替えて進め、攻撃が当たったときは当たった敵を en にしてから当たりを処理する
-interface Enemy extends EnemyBody {
-  gun: THREE.Group;
-  muzzle: THREE.Object3D;
-  muzzleFx: THREE.Object3D; // 撃ったときのマズルフラッシュ
-  pelvisSpring: Spring; // 腰の位置のずれ (m)。y は膝が沈む分
-  leanSpring: Spring; // 上体の傾き（回転ベクトル, rad）。y は使わない
-  twistSpring: Spring; // 上体のひねり。y だけ使う (rad)
-  headSpring: Spring; // 背骨に対する首の曲がり（回転ベクトル）
-  gunSpring: Spring; // 銃と両腕の跳ね上がり。x だけ使う（負で銃口が上がる）
-  springs: Spring[];
-  prevLeanVel: THREE.Vector3;
-  prevTwistVel: number;
-  footState: DummyFoot[];
-  scars: Scar[];
-  debris: Debris[];
-  debrisRootSet: Set<THREE.Object3D>; // 砕けたときに 1 つの塊にする骨
-  finishEl: HTMLElement; // とどめの印
-  threatEl: HTMLElement; // 画面外にいるときの向きの印
-  yaw: number; // 体の向き（+Z が 0、+X へ回すと正）
-  aimYaw: number; // 体の向きに対して銃を左右へ振る角度
-  aimPitch: number; // 銃口を上げる角度
-  hp: number;
-  alive: boolean;
-  deadTime: number; // 倒されてからの時間
-  riseTime: number; // 起き上がり始めてからの時間
-  flashT: number; // 最後に当たってからの時間
-  cooldown: number; // 次に撃てるまでの時間
-  flashAge: number; // マズルフラッシュを出してからの時間
-  riseDelay: number; // ステージへ入るとき、床の下から迫り上がり始める時刻
-  baseY: number; // 足もとの高さ（迫り上がりの間も、ここを基準に沈める）
-  spawnIndex: number; // 今いる出現位置（-1 = 出現位置を持たない）
-  mobile: boolean; // 歩き回るか（訓練場の的は動かない）
-  moving: boolean;
-  moveTo: THREE.Vector3; // 歩いて向かう先
-  waitT: number; // 立ち止まっている残りの時間
-  vel: THREE.Vector3; // 歩く速さ（水平）
-  knockVel: THREE.Vector3; // 斧で吹き飛ばされている速さ（水平）
-  flung: boolean; // 斧の突進で前へ吹き飛ばされている（このまま壁に当たると叩きつけ）
-  walk: number; // 歩く足の動きの強さ (0..1)
-  walkPhase: number;
-  walkDir: THREE.Vector3; // 足を振る向き（体の座標）
-  airY: number; // 打ち上げられて足もと（baseY）から浮いている高さ
-  airVel: number; // 打ち上げられているときの上下の速さ
-  airTilt: THREE.Vector3; // 打ち上げで体ごと回っている角度（x: 前後、z: 左右。体の座標、rad）
-  airTiltVel: THREE.Vector3;
-  airRoll: number; // 打ち上げで左右へ傾ける向き（打ち上げるたびに変える）
-  airPose: number; // 浮いて脚を縮めている度合い (0..1)
-  spiked: boolean; // 斧の振り下ろしで床へ叩き落とされている（着いたら床への叩きつけ）
-  // 体の表情（よろめきのばねに上乗せする姿勢）
-  poseLean: THREE.Vector3; // 歩く向き・速さの変わり目へ上体を傾ける量（回転ベクトル, rad）
-  prevVel: THREE.Vector3;
-  brace: number; // 撃つ前に腰を落として構えている度合い (0..1)
-  idleT: number; // 立っている間の呼吸と重心の揺れの時刻
-  speedMul: number; // 歩く速さの個体差
-  // 狙われたときの横っ飛び
-  aimedAt: number; // プレイヤーに狙われ続けている時間
-  dodgeT: number; // 横へ跳んでいる残りの時間
-  dodgeCool: number; // 次に跳べるまでの時間
-  dodgeVel: THREE.Vector3;
-  // 吹き飛ばされて床を滑っている間の踏ん張り
-  stumble: number; // 踏ん張りの強さ (0..1)
-  stumbling: boolean; // 大きく滑っている最中か（止まりきった瞬間に揺り戻すため）
-  skidT: number; // 次に床をこする火花を出すまで
-  // 倒すまでの過程（とどめのスコアに足す）。出てくるたびに戻す
-  hits: number; // この敵に当てた数
-  lastHitAt: number; // この敵に最後に当てた時刻（実時間）
-  comboKept: boolean; // 最初の一撃からヒット数の表示を切らさずに当て続けているか
-  parried: boolean; // パリィで弾き返した弾を当てたか
-  spun: boolean; // 視点を 1 回転させてから当てたか
-  hitPlayer: boolean; // この敵の弾を受けたか
-  weapons: Set<WeaponId>; // 当てた武器
-}
-const enemies: Enemy[] = [];
-let en: Enemy; // いま扱っている敵
 // とどめの印は 1 体ずつ別の要素で出す（ページにある 1 つを型にして複製する）
 const finishTemplate = document.getElementById('finish')!;
 const threatsEl = document.getElementById('threats')!;
@@ -3514,7 +3165,7 @@ function createEnemy(mobile: boolean): Enemy {
 }
 
 function removeEnemy(e: Enemy) {
-  en = e;
+  setEn(e);
   for (const t of thrown) if (t.phase === 'stuck' && isOnDummy(t.mesh)) startReturn(t);
   clearDebris();
   clearScars(en);
@@ -3531,90 +3182,10 @@ function updateEnemies(dt: number) {
   camera.getWorldPosition(playerEye);
   camera.getWorldDirection(playerLook);
   for (const e of enemies) {
-    en = e;
+    setEn(e);
     updateDummy(dt);
   }
   updateEnemyBullets(dt);
-}
-
-// heavy = true（斧）なら、散らばりを抑えて攻撃の向き（と刃の振り抜けた向き）へまとめて吹き飛ばす
-const debrisPush = new THREE.Vector3();
-function breakDummy(dir: THREE.Vector3, heavy = false, swing?: THREE.Vector3) {
-  clearDebris();
-  debrisPush.copy(dir);
-  if (heavy && swing && swing.lengthSq() > 1e-6) debrisPush.addScaledVector(swing.clone().normalize(), 0.7).normalize();
-  en.root.updateMatrixWorld(true);
-  // 部品を、いちばん近い塊の根元ごとに分ける
-  const groups = new Map<THREE.Object3D, THREE.Mesh[]>();
-  en.root.traverse((o) => {
-    if (!(o as THREE.Mesh).isMesh) return;
-    let root = o.parent;
-    while (root && !en.debrisRootSet.has(root)) root = root.parent;
-    if (!root) return;
-    let list = groups.get(root);
-    if (!list) groups.set(root, (list = []));
-    list.push(o as THREE.Mesh);
-  });
-  for (const [root, meshes] of groups) {
-    // 塊の中心を回転の中心にする（骨の原点は関節なので、そのまま回すと振り子のように見える）
-    debrisBox.makeEmpty();
-    for (const m of meshes) debrisBox.expandByObject(m);
-    const obj = new THREE.Group();
-    debrisBox.getCenter(obj.position);
-    root.getWorldQuaternion(obj.quaternion);
-    obj.updateMatrixWorld();
-    debrisInv.copy(obj.matrixWorld).invert();
-    for (const m of meshes) {
-      const c = new THREE.Mesh(m.geometry, m.material);
-      c.matrix.multiplyMatrices(debrisInv, m.matrixWorld).decompose(c.position, c.quaternion, c.scale);
-      obj.add(c);
-    }
-    scene.add(obj);
-    debrisBox.getSize(debrisSize);
-    // 体の中心から外へ、攻撃の向きへ押し出し、上へ跳ね上げる
-    const vel = new THREE.Vector3(obj.position.x - en.root.position.x, 0, obj.position.z - en.root.position.z);
-    if (vel.lengthSq() < 1e-6) vel.set(Math.random() - 0.5, 0, Math.random() - 0.5);
-    if (heavy) {
-      vel.normalize().multiplyScalar(rand(0.4, 1.2)).addScaledVector(debrisPush, rand(6, 10));
-      vel.y = Math.max(vel.y, 0) + rand(1.5, 3.5) + (obj.position.y - en.root.position.y) * 0.6;
-    } else {
-      vel.normalize().multiplyScalar(rand(1.5, 3.5)).addScaledVector(dir, rand(2.5, 5.5));
-      vel.y = rand(2, 5.5) + obj.position.y * 1.2; // 上の部品ほど高く飛ぶ
-    }
-    en.debris.push({
-      obj,
-      vel,
-      axis: new THREE.Vector3().randomDirection(),
-      spin: rand(6, 16) * (Math.random() < 0.5 ? -1 : 1),
-      radius: Math.min(debrisSize.x, debrisSize.y, debrisSize.z) * 0.5,
-    });
-  }
-}
-
-function clearDebris() {
-  for (const d of en.debris) d.obj.removeFromParent();
-  en.debris.length = 0;
-}
-
-function updateDebris(dt: number) {
-  const shrink = THREE.MathUtils.clamp((RESPAWN_TIME - en.deadTime) / DEBRIS_SHRINK, 0, 1);
-  for (const d of en.debris) {
-    const p = d.obj.position;
-    d.vel.y -= DEBRIS_GRAVITY * dt;
-    p.addScaledVector(d.vel, dt);
-    d.obj.quaternion.premultiply(debrisRot.setFromAxisAngle(d.axis, d.spin * dt));
-    // 床で跳ねて、転がりながら止まる
-    const floor = floorAt(p.x, p.z, p.y) + d.radius;
-    if (p.y < floor) {
-      p.y = floor;
-      if (d.vel.y < 0) d.vel.y *= -DEBRIS_BOUNCE;
-      if (d.vel.y < 0.5) d.vel.y = 0;
-      d.vel.x *= 0.7;
-      d.vel.z *= 0.7;
-      d.spin *= 0.6;
-    }
-    d.obj.scale.setScalar(Math.max(0.001, shrink));
-  }
 }
 
 function updateDummy(dt: number) {
@@ -3648,52 +3219,9 @@ function updateDummy(dt: number) {
   updateEnemyFire(dt);
 }
 
-// ---- 打ち上げられた敵 ----
-// 斧の打ち上げで真上へ飛び、プレイヤーと同じ重力で落ちる。浮いている間は歩かず撃たない。
-// 叩きつけられて速く落ちてきたら、地面で重く鳴って小さく跳ねる
-const ENEMY_SLAM_LAND = 15; // これより速く着地したら、叩きつけられた着地にする
-const ENEMY_SLAM_BOUNCE = 2.5;
-const enemyLandAt = new THREE.Vector3();
-function updateEnemyAir(dt: number) {
-  en.airVel -= GRAVITY * dt;
-  en.airY += en.airVel * dt;
-  if (en.airY <= 0) {
-    const impact = -en.airVel;
-    en.airY = 0;
-    en.airVel = 0;
-    if (en.spiked) {
-      en.spiked = false;
-      if (impact > ENEMY_SLAM_LAND) slamEnemyIntoFloor();
-    } else if (impact > ENEMY_SLAM_LAND) {
-      en.airVel = ENEMY_SLAM_BOUNCE;
-      en.airY = 1e-3;
-      sfx.playAxeGround(0.7);
-      addTrauma(0.2);
-      enemyLandAt.set(en.root.position.x, en.baseY + 0.05, en.root.position.z);
-      spawnSparks(enemyLandAt, UP, 10, 0.8, 0.8);
-      en.pelvisSpring.v.y -= 2; // 膝が沈む
-    }
-  }
-  en.root.position.y = en.baseY + en.airY;
-}
-
-// ---- 床への叩きつけ ----
-// 打ち上げて浮いている敵に斧の振り下ろしが当たると、真下へ一気に叩き落とす。
-// 床に着いた瞬間に重い一撃になり、床がひび割れて、体は反り返ったまま潰れるように跳ねてから起き上がる
-const ENEMY_SPIKE_SPEED = 38; // 叩き落とす速さ (m/s)。自分の急降下より速く、先に床へ着く
-const ENEMY_SPIKE_BOUNCE = 4.5; // 床で跳ね返る速さ (m/s)
+// ---- 床と壁への叩きつけ ----（当たりの処理を呼ぶので本体に置く。敵の動きは enemy/motion.ts）
 const FLOOR_SLAM_HIT: HitDef = { kick: [-2, 0, 0], slash: 0, knock: 420, hitStop: 0.14, fx: 1.4 };
 const floorSlamAt = new THREE.Vector3();
-function spikeEnemy() {
-  if (enemyHeld()) return;
-  en.spiked = true;
-  en.airVel = -ENEMY_SPIKE_SPEED;
-  en.knockVel.set(0, 0, 0); // 横へは流さず、真下へ落とす
-  en.flung = false;
-  en.airTiltVel.x -= AIR_TILT_KICK * 1.5; // 打たれた勢いで、さらに大きく反り返る
-  en.gunSpring.v.x -= 4;
-  addImpulse(en.headSpring, LEG_FWD_X, 4);
-}
 function slamEnemyIntoFloor() {
   floorSlamAt.set(en.root.position.x, en.baseY, en.root.position.z);
   sfx.playAxeGround(1.4);
@@ -3709,166 +3237,10 @@ function slamEnemyIntoFloor() {
   floorSlamAt.y += 0.5;
   applyDummyHit(FLOOR_SLAM_HIT, floorSlamAt, 'axe', undefined, false);
 }
-
-// 打ち上げで浮いている間の見た目: 腹を突き上げられて上体が後ろへ反り返りながら回り、脚は縮んで垂れる。
-// 落ち始めたら足から降りるよう起き直り、着地で行き過ぎて揺れ戻る。
-// 回すのは見た目の入れ物（shake）だけで、体の中ほどを中心にする（足もとを中心にすると振り子に見える）
-const AIR_TILT_BACK = 70 * DEG; // 上がっている間に反り返る角度
-const AIR_TILT_KICK = 7; // 打ち上げた瞬間に後ろへ回し始める速さ (rad/s)
-const AIR_TILT_ROLL = 18 * DEG; // 左右へ傾ける角度の最大
-const AIR_TILT_RIGHT = 2.5; // 落ちるとき、足もとまでこの高さ (m) を切ったら起き直り始める
-const AIR_TILT_K = 45;
-const AIR_TILT_D = 7;
-const AIR_PIVOT_Y = 1.0;
-const FLING_TILT = 75 * DEG; // 横へ吹き飛ばされて浮いている間に倒れ込む角度の最大
-const FLING_TILT_SPEED = 14; // この速さ (m/s) で最も深く倒れ込む
-const AIR_TUCK = [new THREE.Vector3(0, 0.36, 0.06), new THREE.Vector3(0, 0.22, 0.14)]; // 浮いている間の足の寄せ（右、左）
-function launchEnemy() {
-  en.airVel = AXE_LAUNCH_ENEMY_SPEED;
-  en.airTiltVel.x -= AIR_TILT_KICK;
-  en.airRoll = rand(-1, 1) * AIR_TILT_ROLL;
-  en.airTiltVel.z += en.airRoll * 4;
-  en.gunSpring.v.x -= 6; // 銃を持った腕が跳ね上がる
-  addImpulse(en.headSpring, LEG_FWD_X, 3); // 首は遅れて前へ残る
-}
-const LEG_FWD_X = new THREE.Vector3(1, 0, 0);
-function updateEnemyTumble(dt: number) {
-  const air = en.airY > 0;
-  // 上がっている間は反り返り、落ち始めたら地面が近づくほど起き直る（叩き落とされている間は反り返ったまま）
-  const w = !air ? 0 : en.airVel > 0 || en.spiked ? 1 : THREE.MathUtils.clamp(en.airY / AIR_TILT_RIGHT, 0, 1);
-  // 横へ吹き飛ばされて浮いている間は、飛ぶ向きへ上体から倒れ込む（速いほど深く）
-  let tx = -AIR_TILT_BACK;
-  let tz = en.airRoll;
-  const flySpeed = Math.hypot(en.knockVel.x, en.knockVel.z);
-  if (air && en.flung && flySpeed > 0.5) {
-    tumbleTmp.copy(en.knockVel).applyQuaternion(moveInvQ.copy(en.root.quaternion).invert());
-    const a = FLING_TILT * Math.min(1, flySpeed / FLING_TILT_SPEED);
-    tx = (tumbleTmp.z / flySpeed) * a;
-    tz = (-tumbleTmp.x / flySpeed) * a + en.airRoll * 0.5;
-  }
-  const n = Math.max(1, Math.ceil(dt / STAGGER_SUBSTEP));
-  const h = dt / n;
-  for (let i = 0; i < n; i++) {
-    en.airTiltVel.x += ((tx * w - en.airTilt.x) * AIR_TILT_K - en.airTiltVel.x * AIR_TILT_D) * h;
-    en.airTiltVel.z += ((tz * w - en.airTilt.z) * AIR_TILT_K - en.airTiltVel.z * AIR_TILT_D) * h;
-    en.airTilt.addScaledVector(en.airTiltVel, h);
-  }
-  // 脚は浮いたらすぐ縮め、着いたら素早く伸ばして立つ
-  en.airPose += ((air && en.airY > 0.05 ? 1 : 0) - en.airPose) * Math.min(1, dt * (air ? 10 : 18));
-}
-// shake の向きと位置（揺れの分を足す前）を、打ち上げの回転にする
-const tumbleQ = new THREE.Quaternion();
-const tumbleE = new THREE.Euler();
-const tumblePivot = new THREE.Vector3();
-const tumbleTmp = new THREE.Vector3();
-function poseEnemyTumble(e: Enemy) {
-  if (e.airTilt.lengthSq() < 1e-8) {
-    e.shake.quaternion.identity();
-    e.shake.position.set(0, 0, 0);
-    return;
-  }
-  e.shake.quaternion.copy(tumbleQ.setFromEuler(tumbleE.set(e.airTilt.x, 0, e.airTilt.z)));
-  tumblePivot.set(0, AIR_PIVOT_Y, 0);
-  e.shake.position.copy(tumblePivot).sub(tumbleTmp.copy(tumblePivot).applyQuaternion(tumbleQ));
-}
-
-// ---- 敵の移動 ----
-// ステージの敵は、歩ける所から次の立ち位置を選んで歩き、着いたら少し立ち止まる（歩きながらも撃つ）。
-// プレイヤーとの間合いを保つよう、遠ければ寄り、近すぎれば下がり、程よければ横へ回り込む。
-// 歩ける所は、今の床と同じ高さの床があり、体の高さに壁や柱が無い所。行き先までの線の上も同じ条件で確かめる。
-// よろけている間・起き上がる途中・鎖鎌で掛けられている間・突進の的になっている間は止まる
-const ENEMY_WALK_SPEED = 2.6; // m/s
-const ENEMY_WALK_ACCEL = 8; // 歩く速さへ近づく速さ（残りの差に掛ける割合 /s）
-const ENEMY_STEP_MIN = 3; // 一度に歩く距離
-const ENEMY_STEP_MAX = 8;
-const ENEMY_KEEP_NEAR = 7; // プレイヤーとの間合い
-const ENEMY_KEEP_FAR = 22;
-const ENEMY_WAIT_MIN = 0.8; // 着いてから立ち止まる時間
-const ENEMY_WAIT_MAX = 2.2;
-const ENEMY_APART = 1.6; // ほかの敵とこれより近づかない
-const ENEMY_PLAYER_GAP = 1.4; // プレイヤーがこれより近くにいたら止まる
-const ENEMY_WALL_GAP = 0.25; // 壁や柱からこれだけ離れて歩く
-const ENEMY_STRIDE = 0.6; // 1 歩で進む距離（足を前後に振る幅）
-const ENEMY_WALK_LIFT = 0.1; // 振り出す足を上げる高さ
-const ENEMY_WALK_BOB = 0.03; // 足を開いたときに腰が沈む量
-const moveWant = new THREE.Vector3();
-const moveInvQ = new THREE.Quaternion();
-
-// (x, z) に en が立てるか
-function enemyCanStand(x: number, z: number): boolean {
-  if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ) return false;
-  if (Math.abs(floorAt(x, z, en.baseY + 0.05) - en.baseY) > 0.01) return false;
-  return !enemyBlockedAt(x, z, en.baseY);
-}
-
-// 足もとの高さ y で (x, z) に立った敵の体が、箱や坂（を囲む箱）に掛かるか。足もとの床と、頭より上の物は除く
-function enemyBlockedAt(x: number, z: number, y: number): boolean {
-  const r = DUMMY_RADIUS + ENEMY_WALL_GAP;
-  const hit = (b: Block) => {
-    if (b.h <= y + 0.2 || (b.y0 ?? 0) >= y + DUMMY_HEIGHT) return false;
-    const dx = x - THREE.MathUtils.clamp(x, b.minX, b.maxX);
-    const dz = z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ);
-    return dx * dx + dz * dz < r * r;
-  };
-  return blocks.some(hit) || ramps.some(hit);
-}
-
-// ---- 斧で吹き飛ばされた敵 ----
-// 当たった向きへ滑るように押し下げられ、足を踏ん張って速さを殺していく。壁や段差の縁に着いたらそこで止まる。
-// 吹き飛んでいる間は歩かない（向かっていた先は選び直す）
-const ENEMY_KNOCK_FRICTION = 6; // 速さが減っていく割合 (1/s)。滑る距離はおよそ 速さ / これ
-const ENEMY_KNOCK_STOP = 0.4; // これより遅くなったら止める (m/s)
-const ENEMY_KNOCK_AIR_FRICTION = 0.4; // 浮いている間の速さの減り方 (1/s)
-const ENEMY_KNOCK_FLUNG_FRICTION = 2; // 大きく吹き飛ばされて床を滑っている間の速さの減り方 (1/s)
-const AXE_KNOCKBACK = 4; // 吹き飛ばす速さ (m/s)。knock = DEFAULT_KNOCK のときの量で、knock に比例させる
-function knockEnemy(dir: THREE.Vector3, knock: number) {
-  if (enemyHeld()) return;
-  en.knockVel.set(dir.x, 0, dir.z).normalize().multiplyScalar(AXE_KNOCKBACK * (knock / DEFAULT_KNOCK));
-  en.vel.set(0, 0, 0);
-  en.moving = false;
-  en.dodgeT = 0;
-  en.waitT = Math.max(en.waitT, rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX) * 0.5);
-}
-function updateEnemyKnock(dt: number) {
-  const k = en.knockVel;
-  if (k.lengthSq() === 0) return;
-  if (enemyHeld()) {
-    k.set(0, 0, 0);
-    en.flung = false;
-    return;
-  }
-  const p = en.root.position;
-  const nx = p.x + k.x * dt;
-  const nz = p.z + k.z * dt;
-  if (enemyCanStand(nx, nz)) {
-    p.x = nx;
-    p.z = nz;
-    // 浮いている間は踏ん張れないので、ほとんど速さが落ちない
-    k.multiplyScalar(Math.exp(-(en.airY > 0 ? ENEMY_KNOCK_AIR_FRICTION : en.flung ? ENEMY_KNOCK_FLUNG_FRICTION : ENEMY_KNOCK_FRICTION) * dt));
-    if (k.lengthSq() < ENEMY_KNOCK_STOP ** 2) {
-      k.set(0, 0, 0);
-      en.flung = false;
-    }
-  } else {
-    const slam = en.flung && enemyWallAt(nx, nz) && slamEnemyIntoWall();
-    // 叩きつけられたら、壁から少しだけ跳ね返る
-    if (slam) k.multiplyScalar(-WALL_SLAM_BOUNCE / k.length());
-    else k.set(0, 0, 0);
-    en.flung = false;
-  }
-}
-
-// (x, z) で en の体が壁や柱（ステージの端を含む）に掛かるか。段差の縁で止まったときは壁にしない
-function enemyWallAt(x: number, z: number): boolean {
-  if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ) return true;
-  return enemyBlockedAt(x, z, en.baseY + en.airY);
-}
-
 // ---- 壁への叩きつけ ----
 // 斧の突進で前へ飛ばした敵が壁に当たると、その速さに応じた重い一撃になる。叩きつけたら true
 const WALL_SLAM_MIN = 5; // これより遅く当たったら叩きつけにしない (m/s)
 const WALL_SLAM_FULL = 18; // これ以上の速さで最も重くなる
-const WALL_SLAM_BOUNCE = 1.5; // 壁から跳ね返る速さ (m/s)
 const WALL_SLAM_HIT: HitDef = { kick: [-1.5, 0, 0], slash: 0, hitStop: 0.12 };
 const wallSlamAt = new THREE.Vector3();
 function slamEnemyIntoWall(): boolean {
@@ -3886,235 +3258,10 @@ function slamEnemyIntoWall(): boolean {
   applyDummyHit(WALL_SLAM_HIT, wallSlamAt, 'axe', undefined, false);
   return true;
 }
-
-// 今いる所から (x, z) まで、まっすぐ歩いて行けるか
-function enemyPathClear(x: number, z: number): boolean {
-  const p = en.root.position;
-  const n = Math.ceil(Math.hypot(x - p.x, z - p.z) / 0.5);
-  for (let i = 1; i <= n; i++) if (!enemyCanStand(p.x + ((x - p.x) * i) / n, p.z + ((z - p.z) * i) / n)) return false;
-  return true;
-}
-
-// ほかの敵のいる所と向かう先から、十分に離れているか
-function enemyApartAt(x: number, z: number): boolean {
-  const gap = ENEMY_APART * 1.5;
-  return enemies.every((e) =>
-    e === en || !e.alive ||
-    (Math.hypot(e.root.position.x - x, e.root.position.z - z) >= gap && (!e.moving || Math.hypot(e.moveTo.x - x, e.moveTo.z - z) >= gap)));
-}
-
-// 次の立ち位置を選ぶ。間合いに合わせた向きで探し、見つからなければどの向きでも探す
-function pickMoveTarget(): boolean {
-  const p = en.root.position;
-  const toPlayer = Math.atan2(position.x - p.x, position.z - p.z);
-  const dist = Math.hypot(position.x - p.x, position.z - p.z);
-  let base = toPlayer + (Math.random() < 0.5 ? -1 : 1) * (Math.PI / 2); // 程よい間合いなら横へ回り込む
-  let spread = 45 * DEG;
-  if (dist > ENEMY_KEEP_FAR) {
-    base = toPlayer;
-    spread = 50 * DEG;
-  } else if (dist < ENEMY_KEEP_NEAR) {
-    base = toPlayer + Math.PI;
-    spread = 60 * DEG;
-  }
-  for (let tries = 0; tries < 18; tries++) {
-    if (tries === 10) spread = Math.PI;
-    const a = base + rand(-spread, spread);
-    const len = rand(ENEMY_STEP_MIN, ENEMY_STEP_MAX);
-    const x = p.x + Math.sin(a) * len;
-    const z = p.z + Math.cos(a) * len;
-    if (!enemyCanStand(x, z) || !enemyApartAt(x, z) || !enemyPathClear(x, z)) continue;
-    en.moveTo.set(x, en.baseY, z);
-    return true;
-  }
-  return false;
-}
-
 // 鎖鎌で掛けられているか、突進の的になっているか
 function enemyHeld(): boolean {
   return (grapple?.enemy === en && grapple.phase !== 'back') || (rushTime >= 0 && rushEnemy === en);
 }
-
-// ---- 狙われたときの横っ飛び ----
-// プレイヤーの照準が少しの間この敵に重なり続けたら、構えを解いて横へ素早く跳ぶ。近くにいるとき（刃の間合い）は跳ばない
-const ENEMY_DODGE_CONE = 4 * DEG; // 視線と敵の胸の向きのずれがこれ以内なら狙われているとみなす
-const ENEMY_DODGE_NOTICE = 0.5; // これだけ狙われ続けたら跳ぶ
-const ENEMY_DODGE_NEAR = 6; // プレイヤーがこれより近ければ跳ばない
-const ENEMY_DODGE_DIST = 2.4; // 跳ぶ距離 (m)
-const ENEMY_DODGE_SPEED = 8; // m/s
-const ENEMY_DODGE_ACCEL = 25;
-const ENEMY_DODGE_COOL_MIN = 2.5;
-const ENEMY_DODGE_COOL_MAX = 4.5;
-const ENEMY_RETREAT_NEAR = 4; // プレイヤーがこれより近いと、立ち止まる時間を縮めてすぐ下がり始める
-const ENEMY_MOVE_LEAN = 0.025; // 速さ 1 m/s あたりに上体を傾ける角度 (rad)
-const ENEMY_ACCEL_LEAN = 0.012; // 加速 1 m/s² あたりに上体を傾ける角度 (rad)
-const ENEMY_MAX_MOVE_LEAN = 0.25;
-const playerEye = new THREE.Vector3();
-const playerLook = new THREE.Vector3();
-const dodgeTo = new THREE.Vector3();
-const leanWant = new THREE.Vector3();
-
-function updateEnemyAimed(dt: number) {
-  dodgeTo.set(en.root.position.x, en.root.position.y + en.airY + 1.2, en.root.position.z).sub(playerEye);
-  const dist = dodgeTo.length();
-  const aimed = dist > ENEMY_DODGE_NEAR && playerLook.angleTo(dodgeTo) < ENEMY_DODGE_CONE;
-  en.aimedAt = aimed ? en.aimedAt + dt : Math.max(0, en.aimedAt - dt * 2);
-}
-
-function tryDodge(): boolean {
-  const p = en.root.position;
-  const toPlayer = Math.atan2(position.x - p.x, position.z - p.z);
-  const first = Math.random() < 0.5 ? -1 : 1;
-  for (const side of [first, -first]) {
-    const a = toPlayer + side * (Math.PI / 2) + rand(-20, 20) * DEG;
-    const x = p.x + Math.sin(a) * ENEMY_DODGE_DIST;
-    const z = p.z + Math.cos(a) * ENEMY_DODGE_DIST;
-    if (!enemyCanStand(x, z) || !enemyApartAt(x, z) || !enemyPathClear(x, z)) continue;
-    en.dodgeVel.set(Math.sin(a), 0, Math.cos(a)).multiplyScalar(ENEMY_DODGE_SPEED);
-    en.dodgeT = ENEMY_DODGE_DIST / ENEMY_DODGE_SPEED;
-    en.dodgeCool = rand(ENEMY_DODGE_COOL_MIN, ENEMY_DODGE_COOL_MAX);
-    en.aimedAt = 0;
-    en.moving = false;
-    en.cooldown = Math.max(en.cooldown, 0.5); // 跳んですぐは撃たない
-    en.pelvisSpring.v.y -= 0.8; // 膝を沈めて踏み切る
-    return true;
-  }
-  en.dodgeCool = 0.6; // 跳べる所が無ければ、少し待って探し直す
-  return false;
-}
-
-function updateEnemyMove(dt: number) {
-  if (!en.mobile) return;
-  const p = en.root.position;
-  moveWant.set(0, 0, 0);
-  const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || enemyHeld() || playerHp <= 0 || en.airY > 0
-    || en.knockVel.lengthSq() > ENEMY_KNOCK_STOP ** 2;
-  en.dodgeCool -= dt;
-  updateEnemyAimed(dt);
-  if (halted) en.dodgeT = 0;
-  else if (en.dodgeT <= 0 && en.dodgeCool <= 0 && en.aimedAt > ENEMY_DODGE_NOTICE) tryDodge();
-  const playerDist = Math.hypot(position.x - p.x, position.z - p.z);
-  if (en.dodgeT > 0) {
-    en.dodgeT -= dt;
-    moveWant.copy(en.dodgeVel);
-    if (en.dodgeT <= 0) en.waitT = rand(0.3, 0.7); // 着地して一息おく
-  } else if (!halted && en.moving) {
-    const dx = en.moveTo.x - p.x;
-    const dz = en.moveTo.z - p.z;
-    const d = Math.hypot(dx, dz);
-    // 行く手のすぐ先に、ほかの敵かプレイヤーがいたら止まる
-    const blocked =
-      Math.hypot(position.x - p.x, position.z - p.z) < ENEMY_PLAYER_GAP ||
-      enemies.some((e) => {
-        if (e === en || !e.alive) return false;
-        const ox = e.root.position.x - p.x;
-        const oz = e.root.position.z - p.z;
-        return Math.hypot(ox, oz) < ENEMY_APART && ox * dx + oz * dz > 0;
-      });
-    if (d < 0.15 || blocked) {
-      en.moving = false;
-      en.waitT = rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX);
-    } else {
-      moveWant.set(dx / d, 0, dz / d).multiplyScalar(Math.min(ENEMY_WALK_SPEED * en.speedMul, d * 3)); // 着く手前で緩める
-    }
-  } else if (!halted) {
-    // 詰め寄られたら、のんびり立ち止まらずに下がり始める
-    en.waitT -= dt * (playerDist < ENEMY_RETREAT_NEAR ? 4 : 1);
-    if (en.waitT <= 0) {
-      en.moving = pickMoveTarget();
-      if (!en.moving) en.waitT = 0.5; // 行ける所が無ければ、少し待って探し直す
-    }
-  }
-  en.vel.lerp(moveWant, 1 - Math.exp(-(en.dodgeT > 0 ? ENEMY_DODGE_ACCEL : ENEMY_WALK_ACCEL) * dt));
-  // 次の 1 歩の先に立てなければ止まる
-  const nx = p.x + en.vel.x * dt;
-  const nz = p.z + en.vel.z * dt;
-  if (enemyCanStand(nx, nz)) {
-    p.x = nx;
-    p.z = nz;
-  } else {
-    en.vel.set(0, 0, 0);
-    en.moving = false;
-    en.dodgeT = 0;
-  }
-}
-
-// ---- 足取りと上体の傾き（歩き・吹き飛ばされての踏ん張り） ----
-// 歩いている間は速さに合わせて足を振り、進む速さと速さの変わり目の向きへ上体を傾ける。
-// 吹き飛ばされて床を滑っている間は、押された向きへ小刻みに後ずさって（たたらを踏んで）踏ん張る。
-// 上体は押された向きへ大きく流れ、腰を落とし、銃を持った腕は狙いを外れて跳ね上がる。
-// 速いほど足を引きずって床をこすり、止まりきる瞬間に上体が揺り戻して体勢を立て直す
-const STUMBLE_MIN = 1.2; // 床を滑る速さがこれを超えたら踏ん張る (m/s)
-const STUMBLE_FULL = 6; // この速さで踏ん張りが最も強くなる
-const STUMBLE_CADENCE = 4.5; // 後ずさる足の運びの最高（歩きの速さに直した値, m/s）
-const STUMBLE_LEAN = 0.035; // 滑る速さ 1 m/s あたりに上体を流す角度 (rad)
-const STUMBLE_MAX_LEAN = 0.5;
-const STUMBLE_RECOVER = 1.8; // 止まりきったときに上体を揺り戻す勢い (rad/s)
-const SKID_SPEED = 5; // これより速く滑っていたら床をこする火花を出す
-const SKID_INTERVAL = 0.05;
-const gaitDir = new THREE.Vector3();
-const skidAt = new THREE.Vector3();
-const skidBack = new THREE.Vector3();
-function updateEnemyGait(dt: number) {
-  moveInvQ.copy(en.root.quaternion).invert();
-  const knockSpeed = en.airY > 0 ? 0 : Math.hypot(en.knockVel.x, en.knockVel.z);
-  const stumbleWant = knockSpeed > STUMBLE_MIN ? Math.min(1, knockSpeed / STUMBLE_FULL) : 0;
-  const recovered = en.stumbling && stumbleWant === 0 && en.airY <= 0;
-  if (stumbleWant > 0.3) en.stumbling = true;
-  else if (stumbleWant === 0) en.stumbling = false;
-  en.stumble += (stumbleWant - en.stumble) * Math.min(1, dt * (stumbleWant > en.stumble ? 20 : 6));
-
-  // 上体: 歩きの速さと加速の向きへ。踏ん張っている間は、押されている向きへ大きく流す
-  leanWant.subVectors(en.vel, en.prevVel).divideScalar(Math.max(dt, 1e-4)).multiplyScalar(ENEMY_ACCEL_LEAN)
-    .addScaledVector(en.vel, ENEMY_MOVE_LEAN).applyQuaternion(moveInvQ);
-  en.prevVel.copy(en.vel);
-  leanWant.set(leanWant.z, 0, -leanWant.x); // 傾ける向き → 回転ベクトル（+Z へ傾けるのは +X 軸まわり）
-  if (leanWant.length() > ENEMY_MAX_MOVE_LEAN) leanWant.setLength(ENEMY_MAX_MOVE_LEAN);
-  if (knockSpeed > 0) {
-    gaitDir.copy(en.knockVel).applyQuaternion(moveInvQ);
-    const a = Math.min(STUMBLE_MAX_LEAN, knockSpeed * STUMBLE_LEAN);
-    leanWant.x += (gaitDir.z / knockSpeed) * a;
-    leanWant.z -= (gaitDir.x / knockSpeed) * a;
-  }
-  en.poseLean.lerp(leanWant, 1 - Math.exp(-(knockSpeed > 0 ? 18 : 10) * dt));
-  // 止まりきったら、流れていた上体を逆へ揺り戻す
-  if (recovered) {
-    en.leanSpring.v.addScaledVector(en.poseLean, -STUMBLE_RECOVER / Math.max(en.poseLean.length(), 1e-3));
-    en.pelvisSpring.v.y -= 0.5;
-  }
-
-  // 足: 歩きの速さか、踏ん張って後ずさる足の運びの速い方に合わせて振る（体はプレイヤーへ向けたまま、横や後ろへも歩く）
-  const walkSpeed = Math.hypot(en.vel.x, en.vel.z);
-  const stumbleSpeed = Math.min(knockSpeed, STUMBLE_CADENCE) * en.stumble;
-  const speed = Math.max(walkSpeed, stumbleSpeed);
-  en.walk += (Math.min(1, (speed / ENEMY_WALK_SPEED) * 1.5) - en.walk) * Math.min(1, dt * (en.stumble > 0.1 ? 16 : 8));
-  en.walkPhase += (speed / ENEMY_STRIDE) * Math.PI * dt;
-  if (stumbleSpeed > walkSpeed && knockSpeed > 0.2) en.walkDir.copy(en.knockVel).applyQuaternion(moveInvQ).setY(0).normalize();
-  else if (walkSpeed > 0.2) en.walkDir.copy(en.vel).applyQuaternion(moveInvQ).setY(0).normalize();
-
-  // 速く滑っている間は、足が床をこすって火花が後ろへ散る
-  en.skidT -= dt;
-  if (knockSpeed > SKID_SPEED && en.skidT <= 0) {
-    en.skidT = SKID_INTERVAL;
-    const f = en.footState[Math.random() < 0.5 ? 0 : 1];
-    skidAt.copy(f.pos).setY(0.03).applyMatrix4(en.root.matrixWorld);
-    skidBack.copy(en.knockVel).negate().normalize().setY(0.35);
-    spawnSparks(skidAt, skidBack, 2, 0.4, 0.45);
-  }
-}
-
-// 歩いている間の足: 左右の足を半周期ずらして前後に振り、前へ振り出す間だけ持ち上げる
-function walkFeet() {
-  for (const f of en.footState) {
-    const ph = en.walkPhase + (f.side > 0 ? Math.PI : 0);
-    f.pos.copy(f.rest).addScaledVector(en.walkDir, Math.sin(ph) * ENEMY_STRIDE * 0.5 * en.walk);
-    f.pos.y = DUMMY_ANKLE_Y + Math.max(0, Math.cos(ph)) * ENEMY_WALK_LIFT * en.walk;
-    f.from.copy(f.pos);
-    f.to.copy(f.pos);
-    f.t = 1;
-  }
-}
-
 // ---- 投擲（左手のクナイ） ----
 // 右クリックを押している間、左手のクナイを寝かせて輪を中心に水平にくるくる回して溜め、
 // 離すと溜めた段階の本数を投げる
@@ -4751,7 +3898,7 @@ function stickThrown(t: Thrown, at: THREE.Vector3, onDummy: Enemy | null, dir: T
   orientThrown(t, dir);
   sampleFlightTrail(t, at, dir);
   if (onDummy) {
-    en = onDummy;
+    setEn(onDummy);
     // 敵に刺さったものは、刺さった部位の骨に付けて、よろめきや震えに一緒についていく
     (castHit.part?.parent ?? en.shake).attach(t.mesh);
     hitDir.set(dir.x, 0, dir.z);
@@ -5094,7 +4241,7 @@ function castDummy(origin: THREE.Vector3, dir: THREE.Vector3, far: number): numb
   let best = Infinity;
   castEnemy = null;
   for (const e of enemies) {
-    en = e;
+    setEn(e);
     const t = castEnemyBody(origin, dir, far);
     if (t < best) {
       best = t;
@@ -5456,7 +4603,7 @@ function updateHook(h: GrappleHook, dt: number) {
         sfx.playChain('taut');
         capPoint.copy(h.dir).multiplyScalar(h.sickle.userData.capTip).add(h.sickle.position);
         if (!grapple.struck && grapple.enemy.alive) {
-          en = grapple.enemy;
+          setEn(grapple.enemy);
           grapple.struck = true;
           hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
           if (hitDir.lengthSq() < 1e-6) hitDir.set(h.dir.x, 0, h.dir.z);
@@ -7262,7 +6409,7 @@ function endFocus() {
 
 function startRush() {
   endFocus();
-  en = rushEnemy = lockEnemy ?? en;
+  setEn(rushEnemy = lockEnemy ?? en);
   // 敵の手前（こちら側）で止まる位置へ、空中からでもまっすぐ飛び込む
   rushDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
   const d = rushDir.length();
@@ -7285,7 +6432,7 @@ function startRush() {
 // update() の移動の中で呼ぶ。止まる位置へ RUSH_SPEED でまっすぐ向かい、届く 1 歩はぴったり合わせる
 function updateRush(dt: number) {
   rushTime += dt;
-  en = rushEnemy ?? en;
+  setEn(rushEnemy ?? en);
   // 突進しながら視線を敵へ吸い寄せる
   lockTo.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z).sub(camera.position);
   lookEuler.setFromQuaternion(camera.quaternion);
@@ -7308,7 +6455,7 @@ function updateRush(dt: number) {
 function finishRush() {
   rushTime = -1;
   rushArrived = false;
-  en = rushEnemy ?? en;
+  setEn(rushEnemy ?? en);
   rushDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z).normalize();
   velocity.set(rushDir.x * RUSH_EXIT_SPEED, 0, rushDir.z * RUSH_EXIT_SPEED);
   startSwordAttack(SWORD_ISSEN);
@@ -8297,7 +7444,6 @@ const AXE_POWER_HIGH = 1.5; // 勢い 1 のときの威力の倍率
 const AXE_POWER_HASTE = 0.2; // 勢い 1 のとき、振りをこれだけ速める
 // ---- 右クリックの打ち上げ ----
 // 地上で右クリックを押すと打ち上げ。当たった敵は真上へ飛び、自分も同じくらい跳び上がる。空中で当たった敵は叩きつけで地面へ叩き落とす
-const AXE_LAUNCH_ENEMY_SPEED = 12; // 敵を打ち上げる速さ (m/s)。自分より少し高く上げて、叩きつけで捉えやすくする
 const AXE_LAUNCH_SELF_SPEED = 11.5;
 const AXE_LAUNCH_KEEP = 0.3; // 打ち上げたとき、自分の水平の速さをこれだけ残す（敵から離れていかないように）
 // 右クリックを押し続けていれば、振りかぶった所（AXE_LAUNCH_COCK）で止めて構え、離したら振り上げる
@@ -8350,7 +7496,7 @@ function axeShockwave(fall: number) {
   for (const e of enemies) {
     if (!e.alive || axeHits.has(e)) continue;
     if (Math.abs(e.root.position.y - position.y) > 1.5) continue;
-    en = e;
+    setEn(e);
     hitDir.set(e.root.position.x - position.x, 0, e.root.position.z - position.z);
     const dist = hitDir.length();
     if (dist > radius + DUMMY_RADIUS) continue;
@@ -8860,7 +8006,7 @@ function tryAxeWheelHit(): boolean {
   let any = false;
   for (const e of enemies) {
     if (axeWheelHits.has(e)) continue;
-    en = e;
+    setEn(e);
     if (!inReachOf(AXE_REACH, AXE_HIT_ANGLE)) continue;
     if (!any) {
       camera.updateMatrixWorld();
@@ -8893,7 +8039,7 @@ function tryAxeHit(def: AxeAttackDef): boolean {
   const speedPower = axeSpeedPower();
   for (const e of enemies) {
     if (axeHits.has(e)) continue;
-    en = e;
+    setEn(e);
     if (!inReachOf(def.reach ?? AXE_REACH, AXE_HIT_ANGLE)) continue;
     if (!any) {
       camera.updateMatrixWorld();
@@ -8969,7 +8115,7 @@ function updateAxeRush(dt: number, before: number) {
     if (!player.onGround) velocity.y = Math.max(velocity.y, 0);
     let caught = axeRushTime >= AXE_RUSH_TIME;
     for (const e of enemies) {
-      en = e;
+      setEn(e);
       if (!caught && inReachOf(AXE_RUSH_REACH, AXE_HIT_ANGLE)) caught = true;
     }
     if (caught) endAxeRush();
@@ -9809,19 +8955,6 @@ function spawnCasing(live: boolean, at: THREE.Vector3, quat: THREE.Quaternion, v
   if (casings.length > CASING_MAX) casings.shift()!.mesh.removeFromParent();
 }
 
-// 足元の高さ: 箱の上に落ちたら箱の上面、それ以外は地面
-function floorAt(x: number, z: number, y: number) {
-  let floor = 0;
-  for (const b of blocks) {
-    if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && y >= b.h - 0.1) floor = Math.max(floor, b.h);
-  }
-  for (const r of ramps) {
-    if (x < r.minX || x > r.maxX || z < r.minZ || z > r.maxZ) continue;
-    const top = rampTop(r, x, z);
-    if (y >= top - 0.1) floor = Math.max(floor, top);
-  }
-  return floor;
-}
 
 const casingEuler = new THREE.Euler();
 const casingRot = new THREE.Quaternion();
@@ -9906,7 +9039,7 @@ function updateBullets(dt: number) {
 
 function onBulletHit(at: THREE.Vector3, dir: THREE.Vector3, onDummy: Enemy | null, parried = false, deadEyeShot = false) {
   if (onDummy) {
-    en = onDummy;
+    setEn(onDummy);
     hitDir.set(dir.x, 0, dir.z);
     if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
     hitDir.normalize();
@@ -9936,7 +9069,6 @@ const ENEMY_FIRE_CONE = 5 * DEG; // 銃口の向きと狙いのずれがこれ�
 const ENEMY_SPREAD = 0.8 * DEG;
 const ENEMY_STAGGER_LIMIT = 0.12; // 銃がこれ以上跳ね上がっている間（よろめいている間）は撃たない (rad)
 const ENEMY_LEAN_LIMIT = 6 * DEG; // 上体がこれ以上反っている間も撃たない
-const ENEMY_HIT_RECOVER = 0.6; // 攻撃を受けてから、少なくともこの時間は撃たない
 const ENEMY_RECOIL = 3.5; // 撃ったときに銃口を跳ね上げる角速度
 const ENEMY_BULLET_SPEED = 40; // m/s
 const ENEMY_BULLET_RANGE = 120;
@@ -10816,7 +9948,7 @@ function enterStage(id: StageId) {
   enemySpawns = layout.enemySpawns;
   const hasEnemies = enemySpawns.length > 0;
   for (let i = 0; hasEnemies && i < STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]]; i++) {
-    en = createEnemy(true);
+    setEn(createEnemy(true));
     en.alive = false;
     en.root.visible = false;
     en.deadTime = RESPAWN_TIME - (STAGE_SPAWN_FIRST + i * STAGE_SPAWN_GAP);
@@ -11090,7 +10222,7 @@ function finishStageIntro() {
 }
 
 // 訓練場の的: 動かずに、倒されてもその場で起き上がる
-en = createEnemy(false);
+setEn(createEnemy(false));
 en.root.position.set(0, 0, -10);
 en.riseDelay = riseDelayAt(0, -10);
 
