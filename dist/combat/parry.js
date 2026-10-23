@@ -3,6 +3,7 @@ import * as sfx from '../audio.js';
 import { DEG } from '../math.js';
 import { camera, scene } from '../core.js';
 import { swordState } from '../weapons/swordCombat.js';
+import { SWORD_DRAW } from '../weapons/swordAttacks.js';
 import { bullets, tracerGeo } from '../weapons/handgunCombat.js';
 import { kunaiState } from '../weapons/kunaiCombat.js';
 import { spawnSparks } from '../fx/hitFx.js';
@@ -65,7 +66,8 @@ export function parryActive() {
     // クナイは指先で回す細い軌跡を除いた、本当に振っている間だけ
     if (kunaiState.attack && game.shownWeapon === 'kunai')
         return kunaiState.attack.trails.some((w) => !w[2] && inParryWindow(kunaiState.attackTime, w));
-    if (swordState.swordAttack && game.shownWeapon === 'sword')
+    // 剣は持ち替えの抜刀では弾かない
+    if (swordState.swordAttack && swordState.swordAttack !== SWORD_DRAW && game.shownWeapon === 'sword')
         return swordState.swordAttack.trails.some((w) => inParryWindow(swordState.swordTime, w));
     return false;
 }

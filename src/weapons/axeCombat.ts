@@ -531,8 +531,12 @@ export function applyAxePose(p: AxePose) {
 }
 
 export function startAxeAttack(def: AxeAttackDef) {
-  axeFrom.pos.copy(axeCur.pos);
-  axeFrom.quat.copy(axeCur.quat);
+  if (def.fromFirstKey) {
+    evalAxeAttack(def, 0, axeFrom);
+  } else {
+    axeFrom.pos.copy(axeCur.pos);
+    axeFrom.quat.copy(axeCur.quat);
+  }
   axeState.axeAttack = def;
   axeRushTime = -1;
   if (def === AXE_RUSH) startAxeRush();

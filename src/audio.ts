@@ -723,20 +723,18 @@ export function playGrip() {
 }
 
 // 武器を持ち替えた: 武器ごとに抜く音を変える
-export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'chakram') {
+export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe') {
   sample('gear', { gain: 0.35 });
   sample('cloth', { gain: 0.2, rate: 1.2 });
   if (weapon === 'kunai') {
-    sample('knife_draw', { gain: 0.9, rate: 1.1, delay: 0.02 });
-    playGrip();
+    sample('knife_draw', { gain: 0.9, rate: 1.1, delay: 0.02 }); // 握り込む音は取り出しの最後に鳴らす（kunaiCombat.ts）
   } else if (weapon === 'handgun') {
     sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
     sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
   } else {
-    // 斧は重いので低く遅く、チャクラムは薄い輪なので高く
-    const rate = weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : weapon === 'chakram' ? 1.3 : 1;
-    sample('unsheathe', { gain: 0.55, rate, delay: 0.02, reverb: 0.15 });
-    playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : weapon === 'chakram' ? 1.9 : 1.2, 0.4, 0.4);
+    // 斧は重いので低く遅く
+    sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : 1, delay: 0.02, reverb: 0.15 });
+    playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : 1.2, 0.4, 0.4);
     if (weapon === 'sickle') playChain('ready');
   }
 }
@@ -860,6 +858,36 @@ export function playRush() {
   sample('swish', { gain: 0.6, rate: 0.5, reversed: true });
   noise('bandpass', 300, 2600, 0.35, 0.35, { attack: 0.12, q: 0.6 });
   tone(90, 40, 0.4, 0.3);
+}
+
+// ---- ストライカー ----
+// 振りかぶり: 刃を返す短い金属の「チャキッ」に、高く細い「キィ」を重ねる。背後からでも斬られる前に気づけるよう、銃声より目立たせる。
+// volume と pan は敵の距離と向きから決める
+export function playStrikerWindup(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('knife_draw', { gain: 0.6 * volume, rate: 1.1, hp: 900, pan });
+  sample('metal_small', { gain: 0.35 * volume, rate: 1.3, pan, delay: 0.02 });
+  noise('bandpass', 5000, 9000, 0.08 * volume, 0.25, { q: 4, attack: 0.08, reverb: 0.15 });
+}
+
+// 斬撃: 薄い刃が空気を裂く短い風切り
+export function playStrikerSlash(volume = 1) {
+  playSwish({ dur: 0.2, f0: 400, f1: 2400, gain: 0.45 * volume }, 'sickle');
+}
+
+// 飛び降りて着地した: 金属の脚が床を打つ重い「ドスッ」。高い所から降りるほど低く重くする（impact は着く速さ m/s）
+export function playStrikerLand(impact: number, volume = 1, pan = 0) {
+  if (!ctx) return;
+  const k = Math.min(1, impact / 15);
+  sample('step_hard', { gain: (0.4 + 0.4 * k) * volume, rate: 0.75, pan });
+  sample('thud_heavy', { gain: (0.3 + 0.5 * k) * volume, rate: 0.9 - 0.2 * k, lp: 900, pan, reverb: 0.2 });
+  sample('metal_small', { gain: 0.2 * volume, rate: 0.7, pan, delay: 0.02 });
+}
+
+// 斬られた: 刃が入る「ザッ」。高い音は短く切り、体に響く鈍い音は playHurt に任せる
+export function playStrikerCut() {
+  sample('slice', { gain: 0.7, rate: 0.85, lp: 5000 });
+  noise('highpass', 3000, 1500, 0.2, 0.06, { attack: 0.002 });
 }
 
 // ---- ハンドガンの装填 ----

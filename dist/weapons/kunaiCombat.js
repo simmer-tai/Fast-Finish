@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playGrip, playRing, playSwish } from '../audio.js';
-import { easeInOutCubic, easeOutCubic } from '../ease.js';
+import { easeInOutCubic, easeOutBack, easeOutCubic } from '../ease.js';
 import { DEG, UP, catmullRom } from '../math.js';
 import { camera, controls, scene } from '../core.js';
 import { REST_TIP, THROW_RANGE, createKunai } from './kunai.js';
 import { COMBO_RESET, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLIDE_UP, THROW_SWISH, } from './kunaiAttacks.js';
-import { attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, weaponMats, } from './viewModels.js';
+import { LEFT_FAN_ANGLES, attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, weaponMats, } from './viewModels.js';
 import { axeState } from './axeCombat.js';
 import { swordState } from './swordCombat.js';
 import { SLIDE_SPIN_SWISH, TAU, gunState } from './handgunCombat.js';
@@ -34,6 +34,7 @@ export const kunaiState = {
     firedImpact: false,
     dashSpinTime: Infinity, // 回し始めてからの時間（回していないときは Infinity）
     firedDashSpinGrip: true,
+    drawTime: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 // ---- 投擲（左手のクナイ） ----
 // 右クリックを押している間、左手のクナイを寝かせて輪を中心に水平にくるくる回して溜め、
@@ -86,8 +87,9 @@ export const pendingThrows = [];
 export const throwAim = new THREE.Vector3();
 // 回す構え: 切っ先を水平に寝かせ、刃の平たい面を上へ向けて、縦の軸まわりに回す
 // （leftViewModel の空間で組み、扇の構えと同じ leftKunaiRest の空間へ直して補間する）
-export const restFanQuats = leftFanPivots.map((p) => p.quaternion.clone());
 export const restFanPos = leftFanPivots.map((p) => p.position.clone());
+export const FAN_AXIS = new THREE.Vector3(0, 0, 1);
+export const fanRestQuat = new THREE.Quaternion();
 export const SPIN_LAY = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)));
 export const leftRestInv = leftKunaiRest.quaternion.clone().invert();
 leftKunaiRest.updateMatrix();
@@ -98,9 +100,12 @@ export const spinQuat = new THREE.Quaternion();
 export function fanPose(i, spin, outPos, outQuat) {
     spinYaw.setFromAxisAngle(UP, SPIN_START + SPIN_PHASES[i] - spin);
     spinQuat.copy(leftRestInv).multiply(spinYaw).multiply(SPIN_LAY);
-    outQuat.slerpQuaternions(restFanQuats[i], spinQuat, spinBlend);
+    // 取り出しの途中は扇を閉じて 3 本を重ねておき、開くときは少し開きすぎてから収める
+    const open = drawFanOpen();
+    fanRestQuat.setFromAxisAngle(FAN_AXIS, LEFT_FAN_ANGLES[i] * open);
+    outQuat.slerpQuaternions(fanRestQuat, spinQuat, spinBlend);
     // 回すときは輪を 1 か所に集める（重なってよい）
-    outPos.copy(restFanPos[i]).multiplyScalar(1 - spinBlend);
+    outPos.copy(restFanPos[i]).multiplyScalar(open * (1 - spinBlend));
 }
 // 回転の軌跡は手と一緒に動くよう leftViewModel の空間に置く
 export const spinRibbons = leftKunais.map(() => {
@@ -173,9 +178,10 @@ export function endKunaiSlideSpin() {
 }
 // applyPose の後に呼ぶ。1 フレームで大きく回るので、角度を細かく刻んで弧を滑らかにする
 export function sampleKunaiSlideTrail(dt) {
-    const from = kunaiSlideSpinPrev;
-    const to = kunaiSlideSpin;
-    if (kunaiState.attack || Math.abs(kunaiSlideSpinVel) < 3 || to === from) {
+    // 取り出しの回転も同じ軌跡で描く
+    const from = kunaiSlideSpinPrev + drawSpinPrev;
+    const to = kunaiSlideSpin + drawSpin;
+    if (kunaiState.attack || (Math.abs(kunaiSlideSpinVel) < 3 && drawSpin === drawSpinPrev) || to === from) {
         slideSpinRibbon.cut();
     }
     else {
@@ -192,6 +198,64 @@ export function sampleKunaiSlideTrail(dt) {
         spinPivot.rotation.z = finalZ;
     }
     slideSpinRibbon.update(game.trailNow);
+}
+// ---- 取り出し ----
+// 持ち替えたとき: 右手は下から振り上げながら、輪に掛けた指でクナイを 2 回転させ、握り込んで「チャキッ」と止める。
+// 左手は少し遅れて上がり、重ねて持った 3 本を扇に開く。手の位置の動きは viewModelMotion.ts で付ける
+export const KUNAI_DRAW_TIME = 0.6;
+export const DRAW_SPIN_END = 0.36; // 回し終えて握る時間
+export const DRAW_SPIN_TURNS = 2;
+export const DRAW_FAN_AT = 0.28; // 左手の扇を開き始める時間
+export const DRAW_FAN_TIME = 0.2;
+let drawSpin = 0; // 取り出しで回した角度 (rad)
+let drawSpinPrev = 0;
+let drawSpinning = false;
+let drawFiredFan = true;
+export function startKunaiDraw() {
+    kunaiState.drawTime = 0;
+    drawSpin = 0;
+    drawSpinPrev = 0;
+    drawSpinning = true;
+    drawFiredFan = false;
+    playSwish(SLIDE_SPIN_SWISH);
+}
+// 扇の開き具合: 0 = 閉じて重ねている, 1 = 構え
+export function drawFanOpen() {
+    const t = kunaiState.drawTime;
+    if (t >= DRAW_FAN_AT + DRAW_FAN_TIME)
+        return 1;
+    if (t < DRAW_FAN_AT)
+        return 0;
+    return easeOutBack((t - DRAW_FAN_AT) / DRAW_FAN_TIME);
+}
+export function updateKunaiDraw(dt) {
+    if (!drawSpinning)
+        drawSpin = 0; // 回し終えた次のフレームで戻す（ちょうど 2 回転なので見た目は変わらない）
+    drawSpinPrev = drawSpin;
+    if (kunaiState.drawTime >= KUNAI_DRAW_TIME)
+        return;
+    kunaiState.drawTime += dt;
+    const t = kunaiState.drawTime;
+    if (drawSpinning) {
+        const u = Math.min(1, t / DRAW_SPIN_END);
+        drawSpin = DRAW_SPIN_TURNS * TAU * easeOutCubic(u);
+        if (u === 1) {
+            drawSpinning = false;
+            playGrip();
+            kickVel.x += -0.4 * DEG * 22; // 握り込んだ手応え
+        }
+    }
+    if (!drawFiredFan && t >= DRAW_FAN_AT) {
+        drawFiredFan = true;
+        playRing(1.6, 0.35, 0.1);
+        playSwish(SLIDE_SPIN_SWISH);
+    }
+}
+// 振り始めたら回すのはやめる（手の位置の動きはそのまま最後まで流す）
+export function endKunaiDrawSpin() {
+    drawSpinning = false;
+    drawSpin = 0;
+    drawSpinPrev = 0;
 }
 export const thrown = [];
 export const thrownTemplate = createKunai(weaponMats);
@@ -588,6 +652,7 @@ export function startAttack(def) {
     kunaiState.dashSpinTime = Infinity;
     kunaiState.firedDashSpinGrip = true;
     endKunaiSlideSpin();
+    endKunaiDrawSpin();
 }
 export function chooseAttack() {
     if (player.sliding)
@@ -681,6 +746,7 @@ export function updateAttack(dt) {
 // updateAttack と updateKick の後に呼ぶ: クナイの構えと軌跡
 export function updateKunaiPose(dt) {
     updateKunaiSlideSpin(dt);
+    updateKunaiDraw(dt);
     if (kunaiState.attack) {
         sampleTrail();
         attackPoseAt(kunaiState.attack, kunaiState.attackTime, curPose);
@@ -694,7 +760,7 @@ export function updateKunaiPose(dt) {
             kunaiState.firedDashSpinGrip = true;
             playGrip();
         }
-        curPose.spin -= kunaiSlideSpin / DEG;
+        curPose.spin -= (kunaiSlideSpin + drawSpin) / DEG;
     }
     applyPose(curPose);
     sampleKunaiSlideTrail(dt);

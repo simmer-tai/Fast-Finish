@@ -30,6 +30,7 @@ export const gunState = {
     cylinderSpin: 0, // 装填の最後に指で弾いて空回しする速さ (rad/s)
     muzzleFlashAge: Infinity,
     twirlT: -1, // 回している間の経過時間。負なら回していない
+    drawT: -1, // 取り出しの経過時間。負なら取り出していない
     gunReloading: false,
     gunReloadT: 0,
     reloadEvent: 0,
@@ -126,6 +127,8 @@ export function fireGun(at, target) {
     // 回している途中でも、撃てば即座に構え直す
     if (gunState.twirlT >= 0)
         endTwirl(false);
+    if (gunState.drawT >= 0)
+        endGunDraw();
     endSlideSpin();
     slideSpinHold = SLIDE_SPIN_HOLD;
     gunState.gunAmmo--;
@@ -250,7 +253,7 @@ export function applyGunSpin(dt) {
 }
 export function updateSlideSpin(dt) {
     slideSpinHold = Math.max(0, slideSpinHold - dt);
-    const spinning = player.sliding && gunReady() && !gunState.gunReloading && gunState.twirlT < 0 && slideSpinHold <= 0;
+    const spinning = player.sliding && gunReady() && !gunState.gunReloading && gunState.twirlT < 0 && gunState.drawT < 0 && slideSpinHold <= 0;
     if (spinning) {
         slideSpinVel += (SLIDE_SPIN_SPEED - slideSpinVel) * Math.min(1, dt * 12);
         slideSpinTarget = NaN;
@@ -296,7 +299,10 @@ export const reloadPosOff = new THREE.Vector3();
 export const reloadRotOff = new THREE.Vector3();
 export const ramp = (t, a, b, ease = easeInOutCubic) => ease(THREE.MathUtils.clamp((t - a) / (b - a), 0, 1));
 export function evalReloadPose(t) {
-    const keys = RELOAD_KEYS;
+    evalGunKeys(RELOAD_KEYS, t);
+}
+// キーフレームの t の姿勢を reloadPosOff / reloadRotOff に入れる（装填と取り出しで使う）
+export function evalGunKeys(keys, t) {
     let i = 0;
     while (i < keys.length - 2 && t >= keys[i + 1].t)
         i++;
@@ -323,7 +329,82 @@ export function poseReloadParts(t) {
     speedLoader.position.x = gunCylinder.position.x + (1 - inT) * 0.015;
     speedLoader.rotation.z = gunCylinder.rotation.z + ramp(t, 0.86, 0.9) * 0.5;
 }
+// ---- 取り出し ----
+// 腰のホルスターから銃口を下へ向けたまま抜き、画面の右下から振り上げる。
+// 振り上げる勢いでトリガーに掛けた指を軸に縦に 2 回転させ、同時にシリンダーを親指で弾いて空回しする。
+// 回し終えたら少し沈んで握りに収め、空回しを止めて薬室を合わせる
+export const DRAW_KEYS = [
+    { t: 0, pos: [0.08, -0.28, 0.08], rot: [-75, 30, -55], ease: easeOutCubic }, // ホルスターから抜いた所
+    { t: 0.13, pos: [0.025, -0.05, 0.02], rot: [-15, 12, -28] }, // 振り上げる
+    { t: 0.32, pos: [-0.012, 0.03, -0.012], rot: [10, -5, 14] }, // 回しながら持ち上げ、内側へ行き過ぎる
+    { t: 0.44, pos: [0.004, -0.014, 0.004], rot: [-6, 2, -4] }, // 握りに収めた勢いで沈む
+    { t: 0.62, pos: [0, 0, 0], rot: [0, 0, 0] },
+].map((k) => ({
+    t: k.t,
+    pos: new THREE.Vector3(...k.pos),
+    rot: new THREE.Vector3(...k.rot),
+    ease: k.ease ?? easeInOutCubic,
+}));
+export const GUN_DRAW_TIME = DRAW_KEYS[DRAW_KEYS.length - 1].t;
+export const DRAW_SPIN_START = 0.05;
+export const DRAW_SPIN_END = 0.42; // ここで握りに収める
+export const DRAW_SPINS = 2;
+export const DRAW_SPIN_SWISH = { at: 0, dur: 0.34, f0: 600, f1: 2000, gain: 0.13 };
+// 時間順に一度だけ起こす出来事
+export const DRAW_EVENTS = [
+    { at: DRAW_SPIN_START, fn: () => playSwish(DRAW_SPIN_SWISH, 'gun') },
+    { at: 0.08, fn: spinCylinder },
+    { at: DRAW_SPIN_END, fn: catchDrawnGun },
+];
+let drawEvent = 0;
+export function startGunDraw() {
+    if (gunState.twirlT >= 0)
+        endTwirl(false);
+    endSlideSpin();
+    gunState.drawT = 0;
+    drawEvent = 0;
+    evalGunKeys(DRAW_KEYS, 0);
+    twirlAngle = 0;
+}
+export function updateGunDraw(dt) {
+    if (gunState.drawT < 0)
+        return;
+    gunState.drawT += dt;
+    const t = gunState.drawT;
+    while (drawEvent < DRAW_EVENTS.length && t >= DRAW_EVENTS[drawEvent].at)
+        DRAW_EVENTS[drawEvent++].fn();
+    if (t >= GUN_DRAW_TIME) {
+        endGunDraw();
+        return;
+    }
+    evalGunKeys(DRAW_KEYS, t);
+    // 勢いよく回し始め、収める直前にゆるめる
+    twirlAngle = -Math.PI * 2 * DRAW_SPINS * easeOutCubic(THREE.MathUtils.clamp((t - DRAW_SPIN_START) / (DRAW_SPIN_END - DRAW_SPIN_START), 0, 1));
+}
+function catchDrawnGun() {
+    // 空回しを止めて、次の薬室の位置にぴたりと合わせる
+    gunState.cylinderSpin = 0;
+    gunState.cylinderTarget = Math.ceil(gunCylinder.rotation.z / CHAMBER_STEP) * CHAMBER_STEP;
+    sfx.playGrip();
+    playRing(1.3, 0.35, 0.04);
+    kickVel.x -= 0.8 * DEG * 22;
+    kickVel.z -= 1 * DEG * 22;
+    hooks.addTrauma(0.03);
+}
+export function endGunDraw() {
+    if (gunState.drawT >= 0 && gunState.cylinderSpin > 0) {
+        // 収める前に打ち切ったときも、空回しは止めて薬室を合わせる
+        gunState.cylinderSpin = 0;
+        gunState.cylinderTarget = Math.ceil(gunCylinder.rotation.z / CHAMBER_STEP) * CHAMBER_STEP;
+    }
+    gunState.drawT = -1;
+    twirlAngle = 0;
+    reloadPosOff.set(0, 0, 0);
+    reloadRotOff.set(0, 0, 0);
+}
 export function startReload() {
+    if (gunState.drawT >= 0)
+        endGunDraw();
     gunState.gunReloading = true;
     gunState.gunReloadT = 0;
     gunState.reloadEvent = 0;
@@ -398,7 +479,6 @@ export const DEADEYE_SHOT_GAP = 0.09; // 撃つ間隔（実時間）。間に次
 export const DEADEYE_AFTER = 0.3; // 撃ち終えてからスローを解くまで（実時間）
 export const DEADEYE_ZOOM = 8; // 印を付けている間に狭める視野（度）
 export const DEADEYE_TURN = 30; // 次の印へ視点を寄せる速さ (1/s)
-export const DEADEYE_STACK_OFFSET = 9; // 同じ敵に重ねた印を、画面上でずらす量 (px)
 export const DEADEYE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1 };
 let deadEyeFullT = 0;
 let deadEyeOver = null; // 照準が今乗っている敵
@@ -430,9 +510,7 @@ export function addDeadEyeMark(e, at) {
         '<svg viewBox="0 0 20 20"><path class="br" d="M-9 0 V-9 H0 M20 -9 H29 V0 M29 20 V29 H20 M0 29 H-9 V20" />' +
             '<path class="x" d="M4 4 L16 16 M16 4 L4 16" /></svg>';
     document.body.appendChild(el);
-    // ずらし量は付けた時に決めておく（先の印を撃って消しても、残りの印が跳ばないように）
-    const stack = deadEyeMarks.filter((m) => !m.done && m.enemy === e).length;
-    deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false, stack });
+    deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false });
     sfx.playDeadEyeMark(deadEyeMarks.length);
 }
 export const markWorld = (m, out) => m.enemy.root.localToWorld(out.copy(m.local));
@@ -498,9 +576,10 @@ export function updateDeadEye() {
             markUnderCrosshair();
         else
             deadEyeFullT += game.realDt;
-        if (gunState.fireQueued || !game.throwHeld || game.deadEyeT >= DEADEYE_MAX || deadEyeFullT >= DEADEYE_FULL_DELAY) {
+        // 右クリックは単押しで入る。もう一度の右クリックか左クリックで撃つ（待てば時間切れか弾の数で撃つ）
+        if (gunState.fireQueued || pressed || game.deadEyeT >= DEADEYE_MAX || deadEyeFullT >= DEADEYE_FULL_DELAY) {
             if (deadEyeMarks.length === 0)
-                endDeadEye(); // 1 つも付けずに離したら、ゲージは減らさない
+                endDeadEye(); // 1 つも付けずに終えたら、ゲージは減らさない
             else {
                 game.deadEye = 'fire';
                 game.deadEyeT = DEADEYE_SHOT_GAP * 0.5; // 最初の 1 発は少し早く
@@ -553,8 +632,8 @@ export function placeDeadEyeMarks() {
         }
         deadEyeScreen.copy(markWorld(m, deadEyeAt)).project(camera);
         m.el.style.display = deadEyeScreen.z > 1 ? 'none' : '';
-        const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth + m.stack * DEADEYE_STACK_OFFSET;
-        const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight + m.stack * DEADEYE_STACK_OFFSET;
+        const x = ((deadEyeScreen.x + 1) / 2) * window.innerWidth;
+        const y = ((1 - deadEyeScreen.y) / 2) * window.innerHeight;
         m.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     }
 }

@@ -125,6 +125,7 @@ export const lockScreen = new THREE.Vector3();
 export const lockonEl = document.getElementById('lockon');
 export const focusHud = document.getElementById('focusgauge');
 export const focusFill = focusHud.querySelector('.f');
+const focusKey = document.getElementById('focuskey');
 // 居合の構え: 柄を右肩の前に上げ、刀を立てて少し後ろへ寝かせる。刃は前へ向ける
 export const SWORD_FOCUS_POS = new THREE.Vector3(0.08, 0.22, -0.06);
 export const SWORD_FOCUS_QUAT = new THREE.Quaternion();
@@ -275,7 +276,10 @@ export function updateFocus() {
         ? Math.max(0, 1 - focusTime / FOCUS_MAX)
         : game.deadEye === 'mark' ? Math.max(0, 1 - game.deadEyeT / DEADEYE_MAX) : swordState.focusCharge;
     const ready = swordState.focusing || game.deadEye === 'mark' || swordState.focusCharge >= 1;
-    focusHud.classList.toggle('show', swordState.focusing || game.shownWeapon === 'sword' || game.shownWeapon === 'handgun');
+    const gaugeShown = swordState.focusing || game.shownWeapon === 'sword' || game.shownWeapon === 'handgun';
+    focusHud.classList.toggle('show', gaugeShown);
+    // 満タンで、まだ使っていない間だけ、押すボタンを帯の左に出す
+    focusKey.classList.toggle('show', gaugeShown && swordState.focusCharge >= 1 && !swordState.focusing && game.deadEye === 'off');
     focusHud.classList.toggle('ready', ready);
     focusHud.classList.toggle('empty', swordState.focusEmptyFlash > 0);
     focusFill.style.transform = `scaleX(${fill.toFixed(3)})`;
@@ -345,9 +349,14 @@ export function applySwordPose(p) {
     swordSpin.rotation.z = p.spin * DEG;
 }
 export function startSwordAttack(def) {
-    swordFrom.pos.copy(swordCur.pos);
-    swordFrom.quat.copy(swordCur.quat);
-    swordFrom.spin = ((((swordCur.spin + 180) % 360) + 360) % 360) - 180; // 回した分を巻き戻さないように
+    if (def.fromFirstKey) {
+        evalSwordAttack(def, 0, swordFrom);
+    }
+    else {
+        swordFrom.pos.copy(swordCur.pos);
+        swordFrom.quat.copy(swordCur.quat);
+        swordFrom.spin = ((((swordCur.spin + 180) % 360) + 360) % 360) - 180; // 回した分を巻き戻さないように
+    }
     swordState.swordAttack = def;
     // ダッシュで回している途中に振ったら、回すのをやめて攻撃へつなぐ
     swordTwirlTime = Infinity;

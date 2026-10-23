@@ -141,11 +141,15 @@ export const moveWant = new THREE.Vector3();
 export const moveInvQ = new THREE.Quaternion();
 // (x, z) に en が立てるか
 export function enemyCanStand(x, z) {
+    return enemyCanStandAt(x, z, en.baseY);
+}
+// 足もとの高さ y の床の (x, z) に、敵が立てるか
+export function enemyCanStandAt(x, z, y) {
     if (x < playBounds.minX || x > playBounds.maxX || z < playBounds.minZ || z > playBounds.maxZ)
         return false;
-    if (Math.abs(floorAt(x, z, en.baseY + 0.05) - en.baseY) > 0.01)
+    if (Math.abs(floorAt(x, z, y + 0.05) - y) > 0.01)
         return false;
-    return !enemyBlockedAt(x, z, en.baseY);
+    return !enemyBlockedAt(x, z, y);
 }
 // 足もとの高さ y で (x, z) に立った敵の体が、箱や坂（を囲む箱）に掛かるか。足もとの床と、頭より上の物は除く
 export function enemyBlockedAt(x, z, y) {
@@ -395,7 +399,8 @@ export function updateEnemyGait(dt) {
         en.stumbling = false;
     en.stumble += (stumbleWant - en.stumble) * Math.min(1, dt * (stumbleWant > en.stumble ? 20 : 6));
     // 上体: 歩きの速さと加速の向きへ。踏ん張っている間は、押されている向きへ大きく流す
-    leanWant.subVectors(en.vel, en.prevVel).divideScalar(Math.max(dt, 1e-4)).multiplyScalar(ENEMY_ACCEL_LEAN)
+    // ストライカーは速く走って向きを変えるので、速さの変わり目で上体をあおられすぎないよう控えめにする
+    leanWant.subVectors(en.vel, en.prevVel).divideScalar(Math.max(dt, 1e-4)).multiplyScalar(ENEMY_ACCEL_LEAN * (en.kind === 'striker' ? 0.3 : 1))
         .addScaledVector(en.vel, ENEMY_MOVE_LEAN).applyQuaternion(moveInvQ);
     en.prevVel.copy(en.vel);
     leanWant.set(leanWant.z, 0, -leanWant.x); // 傾ける向き → 回転ベクトル（+Z へ傾けるのは +X 軸まわり）
@@ -418,7 +423,7 @@ export function updateEnemyGait(dt) {
     const stumbleSpeed = Math.min(knockSpeed, STUMBLE_CADENCE) * en.stumble;
     const speed = Math.max(walkSpeed, stumbleSpeed);
     en.walk += (Math.min(1, (speed / ENEMY_WALK_SPEED) * 1.5) - en.walk) * Math.min(1, dt * (en.stumble > 0.1 ? 16 : 8));
-    en.walkPhase += (speed / ENEMY_STRIDE) * Math.PI * dt;
+    en.walkPhase += (speed / en.stride) * Math.PI * dt;
     if (stumbleSpeed > walkSpeed && knockSpeed > 0.2)
         en.walkDir.copy(en.knockVel).applyQuaternion(moveInvQ).setY(0).normalize();
     else if (walkSpeed > 0.2)
@@ -435,10 +440,34 @@ export function updateEnemyGait(dt) {
 }
 // 歩いている間の足: 左右の足を半周期ずらして前後に振り、前へ振り出す間だけ持ち上げる
 export function walkFeet() {
+    if (en.kind === 'striker')
+        return runFeet();
     for (const f of en.footState) {
         const ph = en.walkPhase + (f.side > 0 ? Math.PI : 0);
-        f.pos.copy(f.rest).addScaledVector(en.walkDir, Math.sin(ph) * ENEMY_STRIDE * 0.5 * en.walk);
+        f.pos.copy(f.rest).addScaledVector(en.walkDir, Math.sin(ph) * en.stride * 0.5 * en.walk);
         f.pos.y = DUMMY_ANKLE_Y + Math.max(0, Math.cos(ph)) * ENEMY_WALK_LIFT * en.walk;
+        f.from.copy(f.pos);
+        f.to.copy(f.pos);
+        f.t = 1;
+    }
+}
+// ストライカーの走り: 1 周期を、足を着いて後ろへ流す間と、浮かせて前へ振り出す間に分ける（歩きを速回しして前後に揺するのではなく）。
+// 足を出す幅は、構えで落とした腰から脚が届く範囲に収める（届かないと腰が毎歩がくっと沈む）。振り出す足は高く上げてから前へ運ぶ
+export const RUN_STANCE = 0.45; // 1 周期のうち足を着いている割合
+export const RUN_REACH = 0.36; // 足を前後へ出す幅（片側, m）
+export const RUN_LIFT = 0.2; // 振り出す足を上げる高さ
+function runFeet() {
+    for (const f of en.footState) {
+        const u = ((((en.walkPhase + (f.side > 0 ? Math.PI : 0)) / (2 * Math.PI)) % 1) + 1) % 1;
+        let x = RUN_REACH * (1 - (2 * u) / RUN_STANCE); // 着いている間は前から後ろへまっすぐ流す
+        let lift = 0;
+        if (u >= RUN_STANCE) {
+            const w = (u - RUN_STANCE) / (1 - RUN_STANCE);
+            x = RUN_REACH * (2 * w * w * (3 - 2 * w) - 1); // 後ろから前へ、ゆっくり出てゆっくり着く
+            lift = Math.sin(Math.PI * w) * RUN_LIFT * (1 - 0.4 * w); // 振り出しの前半で高く上げる
+        }
+        f.pos.copy(f.rest).addScaledVector(en.walkDir, x * en.walk);
+        f.pos.y = DUMMY_ANKLE_Y + lift * en.walk;
         f.from.copy(f.pos);
         f.to.copy(f.pos);
         f.t = 1;

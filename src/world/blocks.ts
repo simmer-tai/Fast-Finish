@@ -74,6 +74,42 @@ export const wedgeGeo = (() => {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   return geo;
 })();
+// 八角柱の形（車輪）: 箱と同じく 0..1 の立方体に収め、x・y の面が八角形で、z の向きに伸びる。
+// 側面は面ごとに uv を 0..1 にして縁の線を引く。底と蓋の uv は x・y をそのまま使う
+export const octagonZGeo = (() => {
+  const c = 1 / (2 + Math.SQRT2); // 正八角形にするための角の切り落とし
+  const ring = [[c, 0], [1 - c, 0], [1, c], [1, 1 - c], [1 - c, 1], [c, 1], [0, 1 - c], [0, c]];
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const vert = (p: number[], n: number[], t: number[]) => {
+    pos.push(...p);
+    nor.push(...n);
+    uv.push(...t);
+  };
+  for (let i = 0; i < 8; i++) {
+    const [ax, ay] = ring[i];
+    const [bx, by] = ring[(i + 1) % 8];
+    const len = Math.hypot(bx - ax, by - ay);
+    const n = [(by - ay) / len, -(bx - ax) / len, 0];
+    const p = [[ax, ay, 1], [bx, by, 1], [bx, by, 0], [ax, ay, 0]];
+    const t = [[0, 1], [1, 1], [1, 0], [0, 0]];
+    for (const k of [0, 2, 1, 0, 3, 2]) vert(p[k], n, t[k]);
+  }
+  for (const z of [0, 1]) {
+    for (let i = 1; i < 7; i++) {
+      const tri = z === 1 ? [0, i, i + 1] : [0, i + 1, i];
+      for (const k of tri) vert([ring[k][0], ring[k][1], z], [0, 0, z === 1 ? 1 : -1], ring[k]);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geo;
+})();
+// x の向きに伸びる八角柱（z の向きのものを y 軸まわりに回したもの）
+export const octagonXGeo = octagonZGeo.clone().translate(-0.5, -0.5, -0.5).rotateY(Math.PI / 2).translate(0.5, 0.5, 0.5);
 export const RAMP_TURN: Record<Ramp['up'], number> = { '+z': 0, '-z': Math.PI, '+x': Math.PI / 2, '-x': -Math.PI / 2 };
 export const rampScale = new THREE.Matrix4();
 // 坂を置く行列。height は底面からの高さ（せり上がりの途中では縮める）
@@ -93,9 +129,11 @@ export const EDGE_PX = 1.2;
 export const EDGE_DARK = 0.5;
 export const EDGE_FADE_NEAR = 25;
 export const EDGE_FADE_FAR = 90;
-// origin を渡すと、その点を格子の起点にする（省けば世界の原点）。格子からずれた所に置く物の縁に線を乗せるのに使う
-export const gridMaterial = (body: string, origin?: { x: number; y: number; z: number }) => {
+// origin を渡すと、その点を格子の起点にする（省けば世界の原点）。格子からずれた所に置く物の縁に線を乗せるのに使う。
+// local なら、メッシュの位置を動かしても格子が面に付いてくる（動く物に使う）
+export const gridMaterial = (body: string, origin?: { x: number; y: number; z: number }, local = false) => {
   const o = origin ? `vec3(${origin.x.toFixed(3)}, ${origin.y.toFixed(3)}, ${origin.z.toFixed(3)})` : 'vec3(0.0)';
+  const model = local ? '' : 'modelMatrix * ';
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -103,7 +141,7 @@ export const gridMaterial = (body: string, origin?: { x: number; y: number; z: n
       .replace(
         '#include <project_vertex>',
         `#include <project_vertex>
-        vGridPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz - ${o};
+        vGridPos = (${model}instanceMatrix * vec4(transformed, 1.0)).xyz - ${o};
         vGridNormal = ${INSTANCE_NORMAL};
         vEdgeUv = uv;`,
       );
@@ -160,9 +198,10 @@ export const STRUCT_GRID = `
   float l10 = 1.0 - min(min(g10.x, g10.y), 1.0);
   diffuseColor.rgb *= (1.0 - l2 * 0.1) * (1.0 - l10 * 0.18);
 `;
-// 箱をまとめて 1 つのメッシュにして parent に置き、せり上がりに加える。箱ごとの黒さを持たせるので、形はメッシュごとに分ける
-export function addBoxes<T extends Block>(list: T[], mat: THREE.Material, lightness: (b: T) => number, parent: THREE.Object3D, inArena = true) {
-  const mesh = new THREE.InstancedMesh(boxGeo.clone(), withRiseBuild(mat), list.length);
+// 箱をまとめて 1 つのメッシュにして parent に置き、せり上がりに加える。箱ごとの黒さを持たせるので、形はメッシュごとに分ける。
+// geo を渡すと、箱の代わりにその形（0..1 の立方体に収めたもの）を箱の範囲に引き伸ばして置く
+export function addBoxes<T extends Block>(list: T[], mat: THREE.Material, lightness: (b: T) => number, parent: THREE.Object3D, inArena = true, geo: THREE.BufferGeometry = boxGeo) {
+  const mesh = new THREE.InstancedMesh(geo.clone(), withRiseBuild(mat), list.length);
   list.forEach((b, i) => {
     const y0 = b.y0 ?? 0;
     mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));

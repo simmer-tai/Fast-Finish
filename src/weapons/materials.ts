@@ -7,7 +7,7 @@ export function createWeaponMats(renderer: THREE.WebGLRenderer) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   return {
-    // クナイ: 単色の黒 + 面ごとの陰影だけで見せるシンプルな質感。剣の刃、鎖鎌・斧・チャクラムの金属もこれ
+    // クナイ: 単色の黒 + 面ごとの陰影だけで見せるシンプルな質感。剣の刃、鎖鎌・斧の金属もこれ
     kunai: new THREE.MeshStandardMaterial({
       color: 0x111111,
       metalness: 0.6,

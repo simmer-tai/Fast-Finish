@@ -444,6 +444,38 @@ export const AXE_DRIVE = makeAxeAttack({
     hitStop: 0.12,
     fx: 1.2,
 });
+// 取り出し: 持ち替えたとき、右肩の後ろに担いだ斧を肩越しに引き抜き、頭上を大きく回して体の前へ振り下ろす。
+// 重さに引かれて流れたのを踏ん張って止め、引き起こしてから柄を手の中で一回転させ、構えへ叩き込む。
+// 当たりも踏み込みも出さない（impact・lungeAt に届かない）
+export const AXE_DRAW = makeAxeAttack({
+    keys: [
+        { t: 0, pos: [0.35, 0.12, 0.32], up: [0.25, 0.45, 0.86] }, // 右肩の後ろに担いだ形（画面の外）
+        { t: 0.12, pos: [0.24, 0.34, 0.1], up: [0.2, 0.92, 0.33], lead: true }, // 肩越しに引き抜いて、頭を高く上げる
+        { t: 0.2, pos: [0.15, 0.3, -0.06], up: [0.12, 0.45, -0.88] }, // 頭が画面の右上へ回り込む
+        { t: 0.245, pos: [0.08, 0.1, -0.16], up: [0.06, -0.5, -0.86] }, // 体の前へ振り下ろす
+        { t: 0.36, pos: [0.07, 0.03, -0.14], up: [0.07, -0.7, -0.71] }, // 重さに引かれて流れる
+        { t: 0.46, pos: [0.07, 0.04, -0.14], up: [0.07, -0.68, -0.73] }, // 踏ん張って止める
+        { t: 0.52, pos: [0.0, 0.1, -0.12], up: [0.05, -0.05, -1] }, // 引き起こす
+        ...axeTwirlBack([0.58, 0.64, 0.7], [
+            { pos: [0.04, 0.1, -0.06], up: [0.15, 0.8, 0.55] }, // 頭を跳ね上げる
+            { pos: [0.04, 0.06, 0.0], up: [0.3, 0.95, 0.1] },
+        ]),
+    ],
+    fromFirstKey: true,
+    trails: [[0.13, 0.32]],
+    impact: Infinity,
+    lungeAt: Infinity,
+    kick: [0, 0, 0],
+    windKick: [0.6, -0.4, 0.5],
+    kicks: [[0.25, [-1.8, 0, 0.3]], [0.47, [0.5, 0, 0]], [0.745, AXE_CATCH_KICK]],
+    lunge: 0,
+    cancel: 0.3,
+    grips: [0.02, 0.47, 0.745],
+    swishes: [
+        { at: 0.1, dur: 0.24, f0: 180, f1: 950, gain: 0.6 },
+        { ...AXE_TWIRL_SWISH, at: 0.57 },
+    ],
+});
 export const AXE_DRIVE_SPEED = 18; // 突き飛ばす速さ (m/s)。勢い 1 で AXE_POWER_HIGH / AXE_POWER_LOW 倍
 export const AXE_DRIVE_LIFT = 4; // 突き飛ばすときに浮かせる速さ (m/s)。浮いている間は速さがほとんど落ちず、遠くまで飛ぶ
 export const AXE_WHEEL_START = AXE_RUSH.keys[2].t; // 回転の 1 周（AXE_TIME_SCALE を掛けた後の時間）
@@ -460,6 +492,7 @@ export const AXE_RUSH_EXIT = 5; // 突進をやめたときに残す水平の速
 export const AXE_FLING_SPEED = 14; // 浮いている敵を前へ吹き飛ばす速さ (m/s)。勢い 1 で AXE_POWER_HIGH / AXE_POWER_LOW 倍
 export const AXE_FLING_LIFT = 3; // 吹き飛ばすときに少しだけ浮かせる速さ (m/s)
 export const AXE_ATTACKS = {
+    draw: AXE_DRAW,
     launch: AXE_LAUNCH,
     rush: AXE_RUSH,
     drive: AXE_DRIVE,

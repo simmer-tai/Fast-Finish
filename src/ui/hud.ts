@@ -11,9 +11,12 @@ export const dashGauges = [...document.querySelectorAll<SVGPathElement>('#crossh
 export const hookHud = document.getElementById('hookgauge')!;
 export const hookCells = [...hookHud.querySelectorAll<HTMLElement>('.cell')];
 export const hookFills = hookCells.map((c) => c.querySelector<HTMLElement>('.f')!);
+export const hookKey = document.getElementById('hookkey')!;
 export let hookShown = -1; // 表示に反映済みの残り回数
 export function updateHookHud() {
   hookHud.style.opacity = game.shownWeapon === 'sickle' ? '1' : '0';
+  // 1 本でも溜まっていて、まだ投げていない間だけ、押すボタンを帯の左に出す
+  hookKey.classList.toggle('show', game.shownWeapon === 'sickle' && sickleState.hookCharges > 0 && !sickleState.grapple);
   hookHud.classList.toggle('empty', sickleState.hookEmptyFlash > 0);
   for (let i = 0; i < hookCells.length; i++) {
     const fill = i < sickleState.hookCharges ? 1 : i === sickleState.hookCharges ? sickleState.hookRecharge / HOOK_RECHARGE : 0;

@@ -3,6 +3,7 @@ import * as sfx from '../audio.js';
 import { playGrip, playRing, playSwish } from '../audio.js';
 import { pressed } from '../input.js';
 import { DEG, UP } from '../math.js';
+import { easeOutBack } from '../ease.js';
 import { camera, controls, scene } from '../core.js';
 import { createChainSickle, createLongChain, layChain, layLongChain } from './chainSickle.js';
 import { RETURN_SWISH, THROW_SWISH } from './kunaiAttacks.js';
@@ -36,6 +37,7 @@ export const sickleState = {
     sickleCombo: 0,
     sickleAirCombo: 0,
     tossPressed: false,
+    drawT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 // ---- 鎖鎌（左クリックの近接は updateSickleMelee）: 右クリックで構えてすぐ投げる。建物に掛かったら鎖をたぐって自分を引き寄せる ----
 // 掛かったら自動で引き始め、近くまで寄ったら放す。引いている間に右クリックで放し、スペースで放して跳ぶ
@@ -411,6 +413,7 @@ export function updateGrapple(dt) {
         }
     }
     sickleState.throwPressed = false;
+    updateSickleDraw(dt);
     for (const h of grappleHooks) {
         if (h.launchIn >= 0) {
             h.launchIn -= dt;
@@ -485,6 +488,7 @@ export function poseHand(h, dt, aiming) {
     applyMeleeHandPose(h, p);
     applySlidePose(h, p, dt);
     applyToss(h, p, dt);
+    applyDrawHandPose(h, p);
     // 頭は普段は握りに組んだまま
     h.head.position.set(0, 0, 0);
     h.head.quaternion.identity();
@@ -493,21 +497,12 @@ export function poseHand(h, dt, aiming) {
         // 投げる前の 1 周: 継ぎ目を外し、握りの先から短い鎖で頭を体の横で縦に回す。振りかぶった向き（後ろ上）から始めて、
         // だんだん速く 1 周し、真上で前へ振り出す。回し始めに、組んだ所から鎖の先へ頭を送り出す
         const u = Math.min(1, h.windT / WINDUP_TIME);
-        const angle = -AIM_TILT + (Math.PI * 2 + AIM_TILT) * u * u;
-        windRadial.set(0, Math.cos(angle), -Math.sin(angle));
-        windTangent.set(0, -Math.sin(angle), -Math.cos(angle));
-        windFace.crossVectors(windTangent, windRadial);
-        windQuat.setFromRotationMatrix(tumbleBasis.makeBasis(windTangent, windRadial, windFace));
-        const k = THREE.MathUtils.smoothstep(u, 0, WINDUP_REACH);
-        // 手の座標で決めた頭の置き方（握りの先を中心に、鎖の長さ WINDUP_RADIUS で回す）を、rest の座標へ直す
-        gripTip.copy(joint).applyQuaternion(h.rest.quaternion);
-        restInv.copy(h.rest.quaternion).invert();
-        h.head.quaternion.slerp(windQuat.premultiply(restInv), k);
-        h.head.position.copy(windRadial).multiplyScalar(WINDUP_RADIUS - joint.y).add(gripTip).applyQuaternion(restInv).multiplyScalar(k);
-        // 鎖: 握りの先から頭の付け根まで
-        chainHang.copy(joint).applyQuaternion(h.head.quaternion).add(h.head.position).applyQuaternion(h.rest.quaternion);
-        layChain(h.shortChain, [gripTip, chainHang]);
-        h.shortChain.visible = k > 0.02;
+        hangHead(h, -AIM_TILT + (Math.PI * 2 + AIM_TILT) * u * u, WINDUP_RADIUS, THREE.MathUtils.smoothstep(u, 0, WINDUP_REACH));
+    }
+    else if (sickleState.drawT < SICKLE_DRAW_TIME) {
+        // 取り出し: 真下に垂らした頭を前回りに 1 周半ぶん回し、だんだん緩めて真上へ来た所で握りへ引き戻す
+        const s = THREE.MathUtils.clamp(drawLocalT(h) / DRAW_SPIN_TIME, 0, 1);
+        hangHead(h, Math.PI + DRAW_SWEEP * (1 - (1 - s) ** 2), DRAW_RADIUS, 1 - THREE.MathUtils.smoothstep(s, 1 - DRAW_DOCK, 1));
     }
     else {
         h.shortChain.visible = false;
@@ -532,6 +527,24 @@ export function poseHand(h, dt, aiming) {
     }
     h.head.visible = !out;
     h.sickle.visible = h.chain.visible = out;
+}
+// 継ぎ目を外した頭を、握りの先から長さ radius の短い鎖で吊る。angle は手の縦の面での向き（0 = 真上、増えると前へ回る）、
+// k は組んだ所 (0) から鎖の先 (1) への送り出し具合。rest の向きを決めた後に呼ぶ
+export function hangHead(h, angle, radius, k) {
+    const joint = h.sickle.userData.chainAnchor;
+    windRadial.set(0, Math.cos(angle), -Math.sin(angle));
+    windTangent.set(0, -Math.sin(angle), -Math.cos(angle));
+    windFace.crossVectors(windTangent, windRadial);
+    windQuat.setFromRotationMatrix(tumbleBasis.makeBasis(windTangent, windRadial, windFace));
+    // 手の座標で決めた頭の置き方（握りの先を中心に、鎖の長さ radius で回す）を、rest の座標へ直す
+    gripTip.copy(joint).applyQuaternion(h.rest.quaternion);
+    restInv.copy(h.rest.quaternion).invert();
+    h.head.quaternion.slerp(windQuat.premultiply(restInv), k);
+    h.head.position.copy(windRadial).multiplyScalar(radius - joint.y).add(gripTip).applyQuaternion(restInv).multiplyScalar(k);
+    // 鎖: 握りの先から頭の付け根まで
+    chainHang.copy(joint).applyQuaternion(h.head.quaternion).add(h.head.position).applyQuaternion(h.rest.quaternion);
+    layChain(h.shortChain, [gripTip, chainHang]);
+    h.shortChain.visible = k > 0.02;
 }
 // 手元の鎌の握りの先（ワールド座標）。長い鎖はここから伸びる
 export function gripTipWorld(h, out) {
@@ -1604,5 +1617,62 @@ export function applyMeleeHandPose(h, handPos) {
     const p = handPoseOf(h).cur;
     handPos.add(p.pos);
     applyHandRotation(h, p);
+}
+// ---- 取り出し ----
+// 持ち替えたとき: 継ぎ目を外して頭を短い鎖で垂らしたまま、両手を下から外へ振り上げる。頭は体の横で前回りに 1 周半回り、
+// だんだん緩めて真上へ来た所で握りへ「ガチッ」と組み戻し、刃を前へ小さく振り出して構える。左手は少し遅れる
+export const SICKLE_DRAW_TIME = 0.62;
+export const DRAW_STAGGER = 0.06; // 右手から左手までの遅れ (s)
+export const DRAW_RISE = 0.3; // 下から構えの高さまで振り上げる時間
+export const DRAW_SPIN_TIME = 0.42; // 回し始めてから組み戻すまで
+export const DRAW_SWEEP = Math.PI * 3; // 回す角度（真下から始めて真上で終わる）
+export const DRAW_RADIUS = 0.17; // 回している間の鎖の長さ
+export const DRAW_DOCK = 0.3; // 回しの最後のこの割合で、頭を鎖の先から握りへ引き戻す
+export const DRAW_SNAP_TIME = 0.16; // 組み戻してから、刃を前へ振り出して収めるまで
+export const DRAW_SWISH = { at: 0, dur: 0.22, f0: 350, f1: 1500, gain: 0.07 };
+const drawTmpPose = newHandPose();
+const drawLocalT = (h) => sickleState.drawT - (h.side < 0 ? DRAW_STAGGER : 0);
+export function startSickleDraw() {
+    sickleState.drawT = 0;
+    playSwish(DRAW_SWISH, 'sickle');
+    playRing(1.4, 0.35, 0.03); // 継ぎ目が外れる「カチン」
+    sfx.playChain('windup');
+}
+export function updateSickleDraw(dt) {
+    if (sickleState.drawT >= SICKLE_DRAW_TIME)
+        return;
+    // 振り始めたり投げたりしたら、取り出しはやめてそちらの動きにする
+    if (game.shownWeapon !== 'sickle' || sickleState.sickleMelee || sickleState.grapple || tossing()) {
+        sickleState.drawT = Infinity;
+        return;
+    }
+    const prev = sickleState.drawT;
+    sickleState.drawT += dt;
+    const t = sickleState.drawT;
+    if (prev < DRAW_SPIN_TIME * 0.4 && t >= DRAW_SPIN_TIME * 0.4)
+        playSwish(DRAW_SWISH, 'sickle'); // 2 周目の風切り
+    for (const h of grappleHooks) {
+        const dock = DRAW_SPIN_TIME + (h.side < 0 ? DRAW_STAGGER : 0);
+        if (prev < dock && t >= dock) {
+            playGrip(); // 組み戻した「ガチッ」。左手が少し遅れて 2 度鳴る
+            kickVel.x -= 0.4 * DEG * 22;
+        }
+    }
+    if (t >= SICKLE_DRAW_TIME)
+        sickleState.drawT = Infinity;
+}
+// poseHand から呼ぶ: 下から外へひねった形で振り上げ、少し行き過ぎてから構えに収める。組み戻した瞬間に刃を前へ小さく振り出す
+export function applyDrawHandPose(h, handPos) {
+    if (sickleState.drawT >= SICKLE_DRAW_TIME)
+        return;
+    const t = drawLocalT(h);
+    const r = 1 - easeOutBack(THREE.MathUtils.clamp(t / DRAW_RISE, 0, 1));
+    const g = (t - DRAW_SPIN_TIME) / DRAW_SNAP_TIME;
+    const snap = g > 0 && g < 1 ? Math.sin(g * Math.PI) * (1 - g) : 0;
+    handPos.x += r * 0.08 * h.side;
+    handPos.y -= r * 0.3;
+    handPos.z += r * 0.05 - snap * 0.03;
+    drawTmpPose.rot.set(-r * 1.0 - snap * 0.35, r * 0.4 * h.side, -r * 0.7 * h.side);
+    applyHandRotation(h, drawTmpPose);
 }
 export const SICKLE_DAMAGE_SCALE = 0.85; // 鎖鎌の近接は刀と同じ 'sword' の量に、これを掛けて少し抑える

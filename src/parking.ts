@@ -1,61 +1,59 @@
-// ---- ステージ: PARKING（立体駐車場） ----
-// 地上と 3 つの階、屋上の 5 段の自走式の立体駐車場。外周は手すり壁で囲み、両側の壁ぎわと真ん中に車を並べる。
-// 階と階は、真ん中に 2 本並べた坂（シザース式）でつなぐ。坂は 1 段ごとに左右と上る向きを入れ替え、上りきった所で U ターンして次の坂へ入る。
-// 坂の真上の床は抜いてあり、坂から隣の穴へ飛び降りると 1 つ下の坂へ近道できる。奥の吹き抜けには箱を積んだシンボルツリーがあり、
-// 枝（樹冠の段）を足場にして 3 階まで登れる。屋上は天井が無く、奥の角に階段室の塔が立つ。
-// 外は道路で、両側と奥はとなりのビルの壁、手前は道路の向かいのビル。
+// ---- ステージ: PARKING（地下駐車場） ----
+// 天井の低い、1 層だけの広い地下駐車場。真ん中で十字に交わる広い通路（主通路と横通路）があり、プレイヤーはこの交差点から始める。
+// 主通路の左右には、背中合わせの車の列と通路が交互に 2 組ずつ並び、外周の壁ぎわにも車を 1 列並べる。前後の壁ぎわは車の無い通路。
+// 柱は車の列の真ん中の線（車と車の隙間）に立てる。天井は平らなスラブで、通路の真上に蛍光灯を並べる。
+// 天井は一面ふさがっていて、日の光は入らない。奥の壁の真ん中に、地上へ上がる坂（シャッターで閉じている）、
+// 手前の壁の真ん中にエレベーターホール、対角の 2 つの角に階段室がある。
 // 走る速さに合わせて、実際の駐車場より 1.5 倍ほど大きく作る。当たり判定のある箱はすべて 0.5m のグリッドに合わせる（車だけは除く）
 import type { StageLayout, StageBox, StageRamp } from './stage.js';
 
-const HALF_W = 24; // 外周の手すり壁の外面 (|x|)
-const NEAR = 12; // 手前の外面 (z)。地上は入口と出口が開いている
-const FAR = -84; // 奥の外面 (z)
-const STORY = 4.5; // 1 階分の高さ
-const SLAB = 0.5; // 床の厚さ。床の裏から次の床の上面まで 4m
-const FLOORS = [0, 4.5, 9, 13.5, 18]; // 各階の床の上面（地上・1〜3 階・屋上）
-const PARAPET_H = 1.5;
-const PARAPET_T = 0.5;
+const HALF_W = 58; // 左右の壁の内面 (|x|)
+const HALF_D = 50; // 前後の壁の内面 (|z|)
+const WALL_T = 1;
+const CEIL_Y0 = 3.5; // 天井の下面。セダンの屋根（1.65m）に立っても頭が当たらない高さ
+const CEIL_Y1 = 4.5; // 天井の上面（地上の地面）
 
-// 真ん中の帯 (|x| < CENTER)。手前に車、坂、U ターンの場所、吹き抜け、奥に車の順に並ぶ
-const CENTER = 7;
-const RAMP_NEAR = -26; // 坂の範囲 (z)
-const RAMP_FAR = -44;
-const ATRIUM_NEAR = -58; // 吹き抜けの範囲 (z)。|x| < CENTER
-const ATRIUM_FAR = -70;
-// 壁ぎわの駐車ます: |x| が 16.5〜23 に車の長さ 6.5m。ますの幅（z）は 4m
-const STALL_IN = 16.5;
-const STALL_OUT = 23;
-const STALL_W = 4;
-const AISLE_X = 11.25; // 通路の真ん中 (|x|)
-// 柱: z は 8m おき。外周（壁の中）と、壁ぎわの車の内側、真ん中の線に立てる
-const COLUMN_Z = Array.from({ length: 12 }, (_, k) => 8 - 8 * k);
-const CENTER_COLUMN_Z = [8, 0, -8, -16, -56, -72, -80];
-// 階段室の塔: 奥の左の角。屋上より 1 階分高い
-const CORE = { minX: -23.5, maxX: -15.5, minZ: -83.5, maxZ: -75.5 };
-const CORE_H = FLOORS[4] + STORY;
+// x の帯（右半分。左は鏡写し）: 主通路の半分 | 背中合わせの車の列 | 通路 | 車の列 | 通路 | 壁ぎわの車
+const MAIN = 5; // 主通路の半幅
+const ROWS: [number, number][] = [[5, 19], [28, 42]]; // 背中合わせの車の列 (|x|)。真ん中の線に柱が立つ
+const AISLES = [23.5, 46.5]; // 列の間の通路の真ん中 (|x|)
+const WALL_ROW = 51; // 壁ぎわの車の列の内側の端 (|x|)
+// z の帯（奥側。手前は鏡写し）: 横通路の半分 | 駐車ます 9 台分 | 前後の壁ぎわの通路
+const CROSS = 5; // 横通路の半幅
+const STALL_W = 4; // 駐車ますの幅（z）
+const STALLS = 9;
+const ROW_END = CROSS + STALL_W * STALLS; // 41
+const COLUMN_Z = [5, 17, 29, 41]; // 柱の z (|z|)。3 ますおき
+// 天井を張る区切り。帯の境目で切る（組み上がりで少しずつせり上がるよう、小分けにする）
+const CEIL_X = [-59, -51, -42, -28, -19, -5, 5, 19, 28, 42, 51, 59];
+const CEIL_Z = [-51, -41, -29, -17, -5, 5, 17, 29, 41, 51];
+// 地上への坂: 奥の壁を主通路の幅で抜き、トンネルの中を上った先の踊り場にシャッター
+const RAMP_Z0 = -(HALF_D + WALL_T); // 坂の下の端
+const RAMP_Z1 = -64; // 坂の上の端
+const RAMP_H = 3;
+const SHUTTER_Z = -68;
+const TUNNEL_Y = 7.5; // トンネルの天井の下面
+// 階段室: 対角の 2 つの角
+const CORE_X = 51;
+const CORE_Z = 42;
 
 // 明るさ（0 が黒）。高いもの・重いものほど暗くする
-const LIGHT_SLAB = 0.66;
-const LIGHT_RAMP = 0.58;
-const LIGHT_PARAPET = 0.76;
+const LIGHT_CEIL = 0.5;
+const LIGHT_WALL = 0.74;
 const LIGHT_COLUMN = 0.86;
-const LIGHT_CORE = 0.5;
+const LIGHT_CORE = 0.56;
 const LIGHT_DARK = 0.2;
 const LIGHT_PAINT = 0.3; // 床の白線の代わりの暗い線
 const LIGHT_LAMP = 0.97;
-const LIGHT_RAIL = 0.3;
-const LIGHT_TREE_TRUNK = 0.3;
-const LIGHT_TREE = 0.44;
-const LIGHT_PLANTER = 0.55;
-const LIGHT_BOOTH = 0.86;
-const LIGHT_FENCE = 0.4;
+const LIGHT_PIPE = 0.4;
+const LIGHT_SHUTTER = 0.4;
+const LIGHT_RAMP = 0.58;
 const CAR_LIGHTS = [0.16, 0.28, 0.55, 0.72, 0.9];
 
 export function buildParking(): StageLayout {
   const boxes: StageBox[] = [];
   const decor: StageBox[] = [];
   const colliders: StageLayout['colliders'] = [];
-  const scenery: StageBox[] = [];
   const ramps: StageRamp[] = [];
   const rect = (x0: number, x1: number, z0: number, z1: number) => ({ minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1) });
   const box = (x0: number, x1: number, z0: number, z1: number, y0: number, h: number, light: number, look: StageBox['look'] = 'struct') =>
@@ -67,250 +65,233 @@ export function buildParking(): StageLayout {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
-  // 坂 k（k 階から k+1 階へ）の置き場所: 偶数は右（+x）で奥へ上り、奇数は左（-x）で手前へ上る
-  const rampSide = (k: number) => (k % 2 === 0 ? 1 : -1);
-  // [z0, z1) の範囲から、抜く範囲を除いた区間
-  const cut = (z0: number, z1: number, holes: [number, number][]) => {
-    const out: [number, number][] = [];
-    let from = z0;
-    for (const [h0, h1] of [...holes].sort((a, b) => b[0] - a[0])) {
-      if (h0 < from) out.push([from, h0]);
-      from = Math.min(from, h1);
-    }
-    if (from > z1) out.push([from, z1]);
-    return out;
-  };
-  // z の区間を、手前から順に組み上がるよう 12m ずつに分ける
-  const chunks = (z0: number, z1: number, step = 12) => {
-    const out: [number, number][] = [];
-    for (let z = z0; z > z1; z -= step) out.push([z, Math.max(z - step, z1)]);
-    return out;
-  };
 
-  // ---- 床 ----
-  // 外側の帯（車と通路）は一面に張り、真ん中の帯は坂の上の穴と吹き抜けを抜く
-  for (let level = 1; level < FLOORS.length; level++) {
-    const top = FLOORS[level];
-    for (const [x0, x1] of [[-HALF_W, -CENTER], [CENTER, HALF_W]]) {
-      for (const [z0, z1] of chunks(NEAR, FAR)) box(x0, x1, z0, z1, top - SLAB, top, LIGHT_SLAB, 'terrain');
-    }
-    for (const s of [-1, 1]) {
-      const holes: [number, number][] = [[ATRIUM_NEAR, ATRIUM_FAR]];
-      if (rampSide(level - 1) === s) holes.push([RAMP_NEAR, RAMP_FAR]);
-      for (const [z0, z1] of cut(NEAR, FAR, holes)) {
-        for (const [c0, c1] of chunks(z0, z1)) box(0, s * CENTER, c0, c1, top - SLAB, top, LIGHT_SLAB, 'terrain');
-      }
+  // ---- 天井 ----
+  // 区切りのマスごとに一面に張る
+  for (let i = 0; i < CEIL_X.length - 1; i++) {
+    for (let j = 0; j < CEIL_Z.length - 1; j++) {
+      const [x0, x1, z0, z1] = [CEIL_X[i], CEIL_X[i + 1], CEIL_Z[j], CEIL_Z[j + 1]];
+      box(x0, x1, z0, z1, CEIL_Y0, CEIL_Y1, LIGHT_CEIL);
     }
   }
 
-  // ---- 坂 ----
-  for (let k = 0; k < FLOORS.length - 1; k++) {
-    const s = rampSide(k);
-    ramps.push({
-      ...rect(0, s * CENTER, RAMP_NEAR, RAMP_FAR),
-      y0: FLOORS[k], h: FLOORS[k + 1], up: s > 0 ? '-z' : '+z', light: LIGHT_RAMP, look: 'terrain',
-    });
-    // 坂の上の床の縁の線（上りきった所）
-    const zTop = s > 0 ? RAMP_FAR : RAMP_NEAR;
-    deco(0, s * CENTER, zTop - 0.15, zTop + 0.15, FLOORS[k + 1], FLOORS[k + 1] + 0.03, LIGHT_PAINT);
-  }
-
-  // ---- 手すり壁 ----
-  // 地上の手前は、入口（右）と出口（左）を開ける
-  for (let level = 0; level < FLOORS.length; level++) {
-    const y = FLOORS[level];
-    for (const s of [-1, 1]) {
-      for (const [z0, z1] of chunks(NEAR, FAR)) box(s * (HALF_W - PARAPET_T), s * HALF_W, z0, z1, y, y + PARAPET_H, LIGHT_PARAPET);
+  // ---- 壁 ----
+  // 外周を囲む。奥の壁は主通路の幅だけ抜いて、坂のトンネルへつなぐ
+  for (const s of [-1, 1]) {
+    for (let z = HALF_D + WALL_T; z > -HALF_D - WALL_T; z -= 12) {
+      box(s * HALF_W, s * (HALF_W + WALL_T), z, Math.max(z - 12, -HALF_D - WALL_T), 0, CEIL_Y0, LIGHT_WALL);
     }
-    const front: [number, number][] = level === 0 ? [[-HALF_W, -16], [-CENTER, CENTER], [16, HALF_W]] : [[-HALF_W, HALF_W]];
-    for (const [x0, x1] of front) box(x0, x1, NEAR - PARAPET_T, NEAR, y, y + PARAPET_H, LIGHT_PARAPET);
-    box(-HALF_W, HALF_W, FAR, FAR + PARAPET_T, y, y + PARAPET_H, LIGHT_PARAPET);
+  }
+  for (let x = -HALF_W; x < HALF_W; x += 14.5) box(x, x + 14.5, HALF_D, HALF_D + WALL_T, 0, CEIL_Y0, LIGHT_WALL);
+  for (const [x0, x1] of [[-HALF_W, -MAIN], [MAIN, HALF_W]]) {
+    for (let x = x0; x < x1; x += 13.25) box(x, Math.min(x + 13.25, x1), -HALF_D, -HALF_D - WALL_T, 0, CEIL_Y0, LIGHT_WALL);
+  }
+  // 壁の付け柱: 左右の壁は柱の z に、前後の壁は柱の x に
+  for (const s of [-1, 1]) {
+    for (const z of COLUMN_Z) for (const sz of [-1, 1]) box(s * (HALF_W - 1), s * HALF_W, sz * z - 0.5, sz * z + 0.5, 0, CEIL_Y0, LIGHT_COLUMN);
+    for (const x of [12, 35]) for (const sz of [-1, 1]) box(s * x - 0.5, s * x + 0.5, sz * (HALF_D - 0.5), sz * HALF_D, 0, CEIL_Y0, LIGHT_COLUMN);
+  }
+  // 前後の壁ぎわの通路の上に、壁に沿って配管を通す（見た目だけ）
+  for (const sz of [-1, 1]) {
+    for (const y of [2.9, 3.2]) deco(-HALF_W, HALF_W, sz * (HALF_D - 0.4), sz * (HALF_D - 0.1), y, y + 0.2, LIGHT_PIPE);
   }
 
   // ---- 柱 ----
-  for (let level = 0; level < FLOORS.length - 1; level++) {
-    const y0 = FLOORS[level];
-    const y1 = FLOORS[level + 1] - SLAB;
-    for (const z of COLUMN_Z) {
-      for (const s of [-1, 1]) {
-        box(s * (HALF_W - 1), s * HALF_W, z + 0.5, z - 0.5, y0, y1, LIGHT_COLUMN);
-        box(s * (STALL_IN - 1), s * STALL_IN, z + 0.5, z - 0.5, y0, y1, LIGHT_COLUMN);
-      }
-    }
-    for (const z of CENTER_COLUMN_Z) box(-0.5, 0.5, z + 0.5, z - 0.5, y0, y1, LIGHT_COLUMN);
-    // 天井の照明: 通路の真上、柱の間ごとに 1 本（見た目だけ）
-    for (const s of [-1, 1]) {
-      for (const z of COLUMN_Z) deco(s * AISLE_X - 0.25, s * AISLE_X + 0.25, z - 3, z - 5, y1 - 0.15, y1, LIGHT_LAMP);
-    }
-  }
-
-  // ---- 階段室の塔 ----
-  box(CORE.minX, CORE.maxX, CORE.minZ, CORE.maxZ, 0, CORE_H, LIGHT_CORE);
-  // 各階の扉（通路側の面）と、屋上より上の窓の帯
-  for (const y of FLOORS) deco(-20.5, -18.5, CORE.maxZ, CORE.maxZ + 0.03, y, y + 2.5, LIGHT_DARK);
-  deco(CORE.minX + 0.5, CORE.maxX - 0.5, CORE.maxZ, CORE.maxZ + 0.03, FLOORS[4] + 3, FLOORS[4] + 3.5, LIGHT_DARK);
-
-  // ---- 車 ----
-  // fill は階ごとの、ますが埋まっている割合（上の階ほど空いている）
-  const fill = [0.65, 0.6, 0.5, 0.4, 0.3];
-  const stallLine = (x0: number, x1: number, z: number, y: number) => deco(x0, x1, z - 0.1, z + 0.1, y, y + 0.03, LIGHT_PAINT);
-  for (let level = 0; level < FLOORS.length; level++) {
-    const y = FLOORS[level];
-    // 壁ぎわ: 鼻先を壁へ向けて止める
-    for (const s of [-1, 1]) {
-      for (let k = 0; k < 22; k++) {
-        const top = 8 - STALL_W * k;
-        const inCore = s < 0 && top - STALL_W < CORE.maxZ;
-        if (!inCore) {
-          stallLine(s * STALL_IN, s * (HALF_W - PARAPET_T), top, y);
-          if (rand() < fill[level]) car(decor, colliders, s * (STALL_IN + STALL_OUT) / 2, top - STALL_W / 2, y, s, rand);
+  // 背中合わせの車の列の真ん中の線に立てる。車と車の隙間（1m）に収まる。足もとには暗い帯を巻く
+  for (const sx of [-1, 1]) {
+    for (const x of [12, 35]) {
+      for (const z of COLUMN_Z) {
+        for (const sz of [-1, 1]) {
+          box(sx * x - 0.5, sx * x + 0.5, sz * z - 0.5, sz * z + 0.5, 0, CEIL_Y0, LIGHT_COLUMN);
+          deco(sx * x - 0.53, sx * x + 0.53, sz * z - 0.53, sz * z + 0.53, 0, 0.8, LIGHT_DARK);
         }
       }
-      stallLine(s * STALL_IN, s * (HALF_W - PARAPET_T), 8 - STALL_W * 22, y);
     }
-    // 真ん中: 背中合わせに、鼻先を通路へ向けて止める
-    for (const s of [-1, 1]) {
-      for (const top of [8, 4, 0, -4, -8, -72, -76]) {
-        stallLine(s * 0.5, s * CENTER, top, y);
-        if (rand() < fill[level]) car(decor, colliders, s * 3.75, top - STALL_W / 2, y, s, rand);
+  }
+
+  // ---- 車 ----
+  // 列ごとに、駐車ますの線と輪止めを引く。x0 が通路の側、x1 が奥（輪止めの側）。
+  // 埋まり具合は列の片側（9 ます）ごとに変えて、混んだ所と空いた所を作る。向き（頭から入れたか、バックで入れたか）と車種はますごとに選ぶ。
+  // 車は奥（輪止め）へ寄せ、ますの中で少しずらす
+  const row = (x0: number, x1: number) => {
+    const back = Math.sign(x1 - x0);
+    for (const sz of [-1, 1]) {
+      for (let k = 0; k <= STALLS; k++) {
+        const z = sz * (CROSS + STALL_W * k);
+        deco(x0, x1, z - 0.1, z + 0.1, 0, 0.03, LIGHT_PAINT);
       }
-      for (const z of [-12, -80]) stallLine(s * 0.5, s * CENTER, z, y);
+      const fill = 0.1 + rand() * 0.6;
+      for (let k = 0; k < STALLS; k++) {
+        const cz = sz * (CROSS + STALL_W * (k + 0.5));
+        for (const v of [-1, 1]) deco(x1 - back * 1.1, x1 - back * 1.4, cz + v * 0.6, cz + v * 1.4, 0, 0.15, LIGHT_PAINT);
+        if (rand() >= fill) continue;
+        const type = pickCar(rand);
+        const cx = x1 - back * Math.min(type.len / 2 + 0.25 + rand() * 0.3, Math.abs(x1 - x0) / 2);
+        const slack = (STALL_W - 1) / 2 - type.wid / 2; // ますの境の柱（幅 1m）に当たらない範囲
+        car(decor, colliders, type, cx, cz + (rand() * 2 - 1) * slack, rand() < 0.5 ? back : -back, 'x', rand);
+      }
     }
-  }
-
-  // ---- 穴の縁の手すり ----
-  // 床の縁に沿った横棒と 2m おきの支柱。落ちて近道できるよう、当たり判定は持たせない
-  const railX = (x0: number, x1: number, z: number, y: number) => {
-    deco(x0, x1, z - 0.05, z + 0.05, y + 1, y + 1.1, LIGHT_RAIL);
-    for (let x = Math.min(x0, x1); x <= Math.max(x0, x1) + 1e-6; x += 2) deco(x - 0.05, x + 0.05, z - 0.05, z + 0.05, y, y + 1, LIGHT_RAIL);
   };
-  const railZ = (x: number, z0: number, z1: number, y: number) => {
-    deco(x - 0.05, x + 0.05, z0, z1, y + 1, y + 1.1, LIGHT_RAIL);
-    for (let z = Math.min(z0, z1); z <= Math.max(z0, z1) + 1e-6; z += 2) deco(x - 0.05, x + 0.05, z - 0.05, z + 0.05, y, y + 1, LIGHT_RAIL);
-  };
-  for (let level = 1; level < FLOORS.length; level++) {
-    const y = FLOORS[level];
-    // 吹き抜け: 四方
-    railX(-CENTER, CENTER, ATRIUM_NEAR - 0.1, y);
-    railX(-CENTER, CENTER, ATRIUM_FAR + 0.1, y);
-    for (const s of [-1, 1]) railZ(s * (CENTER - 0.1), ATRIUM_NEAR, ATRIUM_FAR, y);
-    // 坂の上の穴: 通路側と、坂が上ってくるのと反対の端（坂が上ってくる端と、隣の坂の側は開けておく）
-    const s = rampSide(level - 1);
-    railZ(s * (CENTER - 0.1), RAMP_NEAR, RAMP_FAR, y);
-    railX(0, s * CENTER, s > 0 ? RAMP_NEAR - 0.1 : RAMP_FAR + 0.1, y);
-  }
-
-  // ---- 吹き抜けの木 ----
-  // 植え込みに、箱を積んだ木を立てる。樹冠は 2 段で、1 階 → 下の段 → 2 階 → 上の段 → 3 階と飛び移って登れる
-  box(-4, 4, -60, -68, 0, 1, LIGHT_PLANTER, 'terrain');
-  box(-0.5, 0.5, -63.5, -64.5, 1, 7, LIGHT_TREE_TRUNK);
-  box(-3.5, 3.5, -60.5, -67.5, 5, 7, LIGHT_TREE, 'terrain');
-  box(-2, 2, -62, -66, 7, 11, LIGHT_TREE, 'terrain');
-  box(-1, 1, -63, -65, 11, 12, LIGHT_TREE, 'terrain');
-
-  // ---- 地上 ----
-  // 入口と出口のゲート: 発券機と、横に渡したバー（バーは見た目だけ）
   for (const s of [-1, 1]) {
-    const inner = s * CENTER;
-    box(inner, inner + s * 1, NEAR - 0.5, NEAR - 1.5, 0, 1.5, LIGHT_BOOTH);
-    deco(inner + s * 0.25, inner + s * 0.75, NEAR - 1.5, NEAR - 1.8, 0.8, 1.2, LIGHT_DARK);
-    deco(inner + s * 1, s * 15.5, NEAR - 1.05, NEAR - 0.95, 1, 1.12, LIGHT_LAMP);
-    // 入口・出口の車線の誘導線
-    decor.push({ ...rect(inner + s * 0.5, inner + s * 0.8, NEAR, NEAR - 8), h: 0.03, light: LIGHT_PAINT, look: 'struct' });
-  }
-  // 管理室: 左の坂の下（1 階の床の下）にある小屋。通路側に窓を並べる
-  box(-6, -1, -31, -40, 0, 3, LIGHT_BOOTH);
-  for (let z = -32; z > -39; z -= 2.5) deco(-6.03, -6, z, z - 1.8, 1, 2.2, LIGHT_DARK);
-  deco(-6.03, -6, -38.5, -39.5, 0, 2.2, LIGHT_DARK); // 扉
-
-  // ---- 屋上 ----
-  // 照明の柱: 壁ぎわの車の内側の線に立てる（上に乗れる）
-  for (const s of [-1, 1]) {
-    for (const z of [0, -16, -32, -48, -64]) {
-      box(s * 16 - 0.25, s * 16 + 0.25, z + 0.25, z - 0.25, FLOORS[4], FLOORS[4] + 6, LIGHT_COLUMN);
-      deco(s * 16 - 0.4, s * 16 + 0.4, z + 1, z - 1, FLOORS[4] + 6, FLOORS[4] + 6.3, LIGHT_DARK);
+    for (const [a, b] of ROWS) {
+      const mid = (a + b) / 2;
+      row(s * a, s * mid);
+      row(s * b, s * mid);
     }
+    row(s * WALL_ROW, s * HALF_W);
+  }
+  // 通路に止まっている車: 敵の出る所を避ける。少し片側へ寄せる
+  for (const [x, z, axis, dir] of [
+    [47.5, 17, 'z', 1], [-45.5, -29, 'z', -1], [1.5, -29, 'z', 1], [-46.5, 17, 'z', -1], [23.5, 1.5, 'x', -1], [-23.5, 44.5, 'x', 1],
+  ] as const) {
+    car(decor, colliders, pickCar(rand), x, z, dir, axis, rand);
   }
 
-  // ---- 外: 道路ととなりのビル ----
-  const BOUND_X = HALF_W + 8;
-  const BOUND_NEAR = NEAR + 18;
-  const BOUND_FAR = FAR - 8;
-  // 敷地の境の塀（両側と奥）。登れる高さ
-  for (const s of [-1, 1]) for (const [z0, z1] of chunks(BOUND_NEAR, BOUND_FAR)) box(s * BOUND_X, s * (BOUND_X + 0.5), z0, z1, 0, 3, LIGHT_FENCE);
-  for (const [x0, x1] of [[-BOUND_X, -12], [-12, 12], [12, BOUND_X]]) box(x0, x1, BOUND_FAR, BOUND_FAR - 0.5, 0, 3, LIGHT_FENCE);
-  // 道路の中央線（破線）
-  for (let x = -BOUND_X; x < BOUND_X; x += 6) deco(x, x + 3, NEAR + 9.85, NEAR + 10.15, 0, 0.03, LIGHT_PAINT);
-  // となりのビル（遠景）: 塀の向こうの両側と奥、道路の向かい
-  const building = (x0: number, x1: number, z0: number, z1: number, h: number) =>
-    scenery.push({ ...rect(x0, x1, z0, z1), h, light: 0.35 + rand() * 0.3, look: 'struct' });
+  // ---- 通路の線と照明 ----
+  // 主通路と横通路は真ん中に破線を引く。照明は通路の真上に、天井に貼りつけた蛍光灯を並べる（見た目だけ）
   for (const s of [-1, 1]) {
-    for (let z = BOUND_NEAR + 10; z > BOUND_FAR - 30; ) {
-      const len = 14 + Math.floor(rand() * 4) * 4;
-      building(s * (BOUND_X + 4), s * (BOUND_X + 20 + Math.floor(rand() * 3) * 6), z, z - len + 2, 14 + Math.floor(rand() * 7) * 4);
-      z -= len;
-    }
+    for (let c = 8; c < ROW_END; c += 6) deco(-0.15, 0.15, s * c - 1.5, s * c + 1.5, 0, 0.03, LIGHT_PAINT);
+    for (let c = 8; c < HALF_W - 1.5; c += 6) deco(s * c - 1.5, s * c + 1.5, -0.15, 0.15, 0, 0.03, LIGHT_PAINT);
   }
-  for (let x = -60; x < 60; ) {
-    const w = 12 + Math.floor(rand() * 4) * 4;
-    building(x, x + w - 2, BOUND_FAR - 4, BOUND_FAR - 24, 20 + Math.floor(rand() * 6) * 5);
-    building(x, x + w - 2, BOUND_NEAR + 6, BOUND_NEAR + 24, 12 + Math.floor(rand() * 6) * 4);
-    x += w;
+  const lampZ = (x: number, z: number) => deco(x - 0.2, x + 0.2, z - 1.5, z + 1.5, CEIL_Y0 - 0.08, CEIL_Y0, LIGHT_LAMP);
+  const lampX = (x: number, z: number) => deco(x - 1.5, x + 1.5, z - 0.2, z + 0.2, CEIL_Y0 - 0.08, CEIL_Y0, LIGHT_LAMP);
+  // 縦の通路は 8m おき、横の通路は真ん中の交差点にも 1 本。前後の壁ぎわは階段室とエレベーターホールを避ける
+  lampX(0, 0);
+  for (const s of [-1, 1]) {
+    for (const x of [0, ...AISLES.flatMap((a) => [-a, a])]) for (const z of [11, 19, 27, 35]) lampZ(x, s * z);
+    for (let x = 10; x <= 50; x += 8) lampX(s * x, 0);
+    for (let x = 10; x <= 42; x += 8) for (const z of [-45.5, 45.5]) lampX(s * x, z);
   }
 
-  // 敵の出る所: 通路（車と柱を避けた |x| = 11.5 の線）と、真ん中の U ターンの場所、手前の道路。
-  // 敵は今の床と同じ高さの所しか歩かないので、上の階の敵はその階に留まる
-  const at = (level: number, list: number[][]) => list.map(([x, z]) => ({ x, y: FLOORS[level], z }));
+  // ---- 地上への坂 ----
+  // 奥の壁の抜けから、トンネルの中を上って踊り場へ。踊り場の先はシャッターで閉じている
+  ramps.push({ ...rect(-MAIN, MAIN, RAMP_Z0, RAMP_Z1), y0: 0, h: RAMP_H, up: '-z', light: LIGHT_RAMP, look: 'terrain' });
+  box(-MAIN, MAIN, RAMP_Z1, SHUTTER_Z, 0, RAMP_H, LIGHT_RAMP, 'terrain');
+  box(-MAIN, MAIN, SHUTTER_Z, SHUTTER_Z - 0.5, RAMP_H, TUNNEL_Y, LIGHT_SHUTTER);
+  for (let y = RAMP_H + 0.5; y < TUNNEL_Y; y += 0.5) deco(-MAIN, MAIN, SHUTTER_Z + 0.03, SHUTTER_Z, y - 0.05, y, LIGHT_DARK);
+  for (const s of [-1, 1]) box(s * MAIN, s * (MAIN + WALL_T), RAMP_Z0, SHUTTER_Z - 0.5, 0, TUNNEL_Y, LIGHT_WALL);
+  box(-MAIN - WALL_T, MAIN + WALL_T, RAMP_Z0, SHUTTER_Z - 0.5, TUNNEL_Y, TUNNEL_Y + 1, LIGHT_CEIL);
+  // トンネルの天井の照明と、坂の入口の上の「出口」の表示
+  for (let z = RAMP_Z0 - 4; z > SHUTTER_Z; z -= 6) deco(-0.2, 0.2, z - 1.5, z + 1.5, TUNNEL_Y - 0.08, TUNNEL_Y, LIGHT_LAMP);
+  deco(-2, 2, -HALF_D + 0.03, -HALF_D, 2.75, 3.25, LIGHT_LAMP);
+
+  // ---- エレベーターホール ----
+  // 手前の壁の真ん中に張り出した部屋。主通路の突き当たりにガラスの扉と、中のエレベーターの扉が見える
+  box(-6, 6, 44, HALF_D, 0, CEIL_Y0, LIGHT_CORE);
+  deco(-2.5, 2.5, 43.97, 44, 0, 2.5, LIGHT_DARK);
+  for (const x of [-4.5, 3]) deco(x, x + 1.5, 43.97, 44, 0.5, 2.5, LIGHT_LAMP);
+
+  // ---- 階段室 ----
+  for (const s of [-1, 1]) {
+    box(s * CORE_X, s * HALF_W, s * CORE_Z, s * HALF_D, 0, CEIL_Y0, LIGHT_CORE);
+    // 通路側の面に扉と、非常口の明かり
+    deco(s * (CORE_X - 0.03), s * CORE_X, s * 45, s * 47, 0, 2.5, LIGHT_DARK);
+    deco(s * (CORE_X - 0.03), s * CORE_X, s * 45.25, s * 46.75, 2.75, 3.1, LIGHT_LAMP);
+  }
+
+  // 敵の出る所: 車と柱を避けた通路（主通路・横通路・列の間の通路・前後の壁ぎわの通路）。始めの交差点のすぐ近くには出さない
+  const spawns: [number, number][] = [];
+  for (const x of [0, ...AISLES.flatMap((a) => [-a, a])]) {
+    for (const z of [-35, -23, -11, 11, 23, 35]) spawns.push([x, z]);
+  }
+  for (const z of [0, -45.5, 45.5]) for (const x of [-35, -12, 12, 35]) spawns.push([x, z]);
   return {
     boxes,
     decor,
     colliders,
-    scenery,
+    scenery: [],
     ramps,
     lines: [],
-    bounds: { minX: -BOUND_X, maxX: BOUND_X, minZ: BOUND_FAR, maxZ: BOUND_NEAR },
-    // 道路の上、入口の正面から駐車場を向いて始める
-    start: { x: 11.5, y: 0, z: NEAR + 10 },
-    enemySpawns: [
-      ...at(0, [[11.5, 4], [-11.5, -20], [11.5, -36], [-11.5, -52], [11.5, -68], [3.5, -19], [-3.5, -50], [-20, NEAR + 10]]),
-      ...at(1, [[-11.5, 0], [11.5, -24], [-11.5, -64], [3.5, -51]]),
-      ...at(2, [[11.5, -8], [-11.5, -40], [11.5, -76], [-3.5, -19]]),
-      ...at(3, [[-11.5, -12], [11.5, -52], [-11.5, -76]]),
-      ...at(4, [[11.5, 0], [-11.5, -24], [11.5, -44], [3.5, -19], [-3.5, -50]]),
-    ],
-    // 道路の右手前の上から、手すり壁の重なる正面と、奥の階段室の塔を見る
-    view: { eye: { x: 30, y: 12, z: 28 }, target: { x: 0, y: 8, z: -36 } },
+    // 壁の外側の面まで。境界の壁は壁の中に隠れ、動ける範囲は壁そのものの当たり判定で決まる
+    bounds: { minX: -HALF_W - WALL_T, maxX: HALF_W + WALL_T, minZ: SHUTTER_Z - 0.5, maxZ: HALF_D + WALL_T },
+    // 真ん中の交差点
+    start: { x: 0, y: 0, z: 0 },
+    enemySpawns: spawns.map(([x, z]) => ({ x, y: 0, z })),
+    // 手前の右の角の近くから、低い天井の下に車の列と柱が奥まで続くのを見る
+    view: { eye: { x: 40, y: 2.8, z: 46 }, target: { x: 4, y: 1.2, z: -10 } },
   };
 }
 
 // ---- 車 ----
-// 長さ 6.5m・幅 3m・高さ 2m（床の裏まで 2m 空くので、屋根に乗れる）。x 方向に置き、dir が鼻先の向き（+x なら 1）。
-// (cx, cz) は車体の中心、y は床の高さ。当たり判定は車体とキャビンの 2 つの箱
-function car(decor: StageBox[], colliders: StageLayout['colliders'], cx: number, cz: number, y: number, dir: number, rand: () => number) {
-  // u: 前（鼻先の向き）、v: 横（+z）
+// 車種ごとの形。長さ len・幅 wid（m）、車体の底 bottom と上面 top、キャビン（窓のある上の箱）の前後の範囲 cab（鼻先の向きが正）と
+// 屋根の高さ roof、内側へのすぼまり inset、車輪の直径 wheel と前後の位置 axle。bed なら、キャビンの後ろを荷台にする（ピックアップ）。
+// 車体の底が 0.75m 以上の車（SUV とピックアップ）は、下をスライディングでくぐれる（スライディング中の頭は 0.7m）。
+// 屋根が 1.7m 以下の車（セダン・スポーツカー）は屋根に乗れる。ほかはボンネットや荷台まで
+interface CarType { len: number; wid: number; bottom: number; top: number; cab: [number, number]; roof: number; inset: number; wheel: number; axle: number; bed?: boolean; weight: number }
+const CAR_TYPES: CarType[] = [
+  { len: 6.5, wid: 3, bottom: 0.35, top: 1.05, cab: [-1.9, 1.3], roof: 1.65, inset: 0.25, wheel: 0.8, axle: 2.1, weight: 3 }, // セダン
+  { len: 6.5, wid: 3, bottom: 0.25, top: 0.8, cab: [-1.6, 0.9], roof: 1.25, inset: 0.3, wheel: 0.75, axle: 2.2, weight: 0.8 }, // スポーツカー
+  { len: 5, wid: 2.6, bottom: 0.3, top: 1, cab: [-2.3, 1.4], roof: 2.1, inset: 0.15, wheel: 0.7, axle: 1.6, weight: 2 }, // 軽自動車
+  { len: 7, wid: 3, bottom: 0.4, top: 1.2, cab: [-3.4, 2.4], roof: 2.7, inset: 0.1, wheel: 0.9, axle: 2.4, weight: 1.5 }, // ワンボックス
+  { len: 6.5, wid: 3, bottom: 0.75, top: 1.5, cab: [-1.75, 1.25], roof: 2.2, inset: 0.25, wheel: 1.1, axle: 2.2, weight: 2 }, // SUV
+  { len: 7, wid: 3, bottom: 0.75, top: 1.4, cab: [0.2, 2.2], roof: 2.3, inset: 0.2, wheel: 1.1, axle: 2.4, bed: true, weight: 1 }, // ピックアップ
+];
+const CAR_WEIGHT = CAR_TYPES.reduce((sum, t) => sum + t.weight, 0);
+const SLIDE_UNDER = 0.75; // 底がこれ以上の車は下をくぐれる
+function pickCar(rand: () => number): CarType {
+  let r = rand() * CAR_WEIGHT;
+  for (const t of CAR_TYPES) if ((r -= t.weight) < 0) return t;
+  return CAR_TYPES[0];
+}
+
+// (cx, cz) は車体の中心、dir は鼻先の向き（軸の正の向きなら 1）、axis は車の長さの向き。
+// 当たり判定は車体とキャビン（くぐれる車は車輪も、ピックアップは荷台のあおりも）
+function car(decor: StageBox[], colliders: StageLayout['colliders'], t: CarType, cx: number, cz: number, dir: number, axis: 'x' | 'z', rand: () => number) {
+  // u: 前（鼻先の向き）、v: 横
   const area = (u0: number, u1: number, v0: number, v1: number) => {
-    const xa = cx + dir * u0;
-    const xb = cx + dir * u1;
-    return { minX: Math.min(xa, xb), maxX: Math.max(xa, xb), minZ: cz + Math.min(v0, v1), maxZ: cz + Math.max(v0, v1) };
+    const a = cx + (axis === 'x' ? dir * u0 : v0);
+    const b = cx + (axis === 'x' ? dir * u1 : v1);
+    const c = cz + (axis === 'x' ? v0 : dir * u0);
+    const d = cz + (axis === 'x' ? v1 : dir * u1);
+    return { minX: Math.min(a, b), maxX: Math.max(a, b), minZ: Math.min(c, d), maxZ: Math.max(c, d) };
   };
-  const part = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, light: number) =>
-    decor.push({ ...area(u0, u1, v0, v1), y0: y + y0 || undefined, h: y + y1, light, look: 'struct' });
+  const part = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, light: number, round = false) =>
+    decor.push({ ...area(u0, u1, v0, v1), y0: y0 || undefined, h: y1, light, look: 'struct', shape: round ? (axis === 'x' ? 'octagonZ' : 'octagonX') : undefined });
+  const solid = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number) => colliders.push({ ...area(u0, u1, v0, v1), y0: y0 || undefined, h: y1 });
   const body = CAR_LIGHTS[Math.floor(rand() * CAR_LIGHTS.length)];
   const dark = 0.12;
-  // 車体と床下の影、車輪
-  part(-3.25, 3.25, -1.5, 1.5, 0.4, 1.25, body);
-  part(-2.75, 2.75, -1.1, 1.1, 0.1, 0.4, dark);
-  for (const u of [1.75, -2.75]) for (const [v0, v1] of [[1.05, 1.55], [-1.55, -1.05]]) part(u, u + 1, v0, v1, 0, 0.8, dark);
-  // キャビン: 少し後ろ寄り。窓の帯を一回り大きく巻き、前後のガラスを貼る
-  part(-1.75, 1.25, -1.25, 1.25, 1.25, 2, body);
-  part(-1.6, 1.1, -1.28, 1.28, 1.4, 1.85, LIGHT_DARK);
-  part(1.25, 1.28, -1.1, 1.1, 1.35, 1.9, LIGHT_DARK);
-  part(-1.78, -1.75, -1.1, 1.1, 1.4, 1.9, LIGHT_DARK);
-  // 前照灯と尾灯
-  for (const [v0, v1] of [[0.6, 1.3], [-1.3, -0.6]]) {
-    part(3.25, 3.28, v0, v1, 0.85, 1.05, LIGHT_LAMP);
-    part(-3.28, -3.25, v0, v1, 0.85, 1.05, dark);
+  const L = t.len / 2;
+  const W = t.wid / 2;
+  const high = t.bottom >= SLIDE_UNDER;
+  // 車体。底の高い車は裏に暗い底板を、低い車は車体の下に暗い影を入れる
+  part(-L, L, -W, W, t.bottom, t.top, body);
+  if (high) part(-L + 0.25, L - 0.25, -W + 0.3, W - 0.3, t.bottom - 0.05, t.bottom, dark);
+  else part(-L + 0.5, L - 0.5, -W + 0.4, W - 0.4, 0.08, t.bottom, dark);
+  // 車輪: 八角柱。上の端は車体に隠れる
+  const r = t.wheel / 2;
+  for (const u of [t.axle, -t.axle]) {
+    for (const s of [-1, 1]) {
+      const v0 = s * (W - 0.45);
+      const v1 = s * (W + 0.05);
+      part(u - r, u + r, v0, v1, 0, t.wheel, dark, true);
+      part(u - r * 0.45, u + r * 0.45, v0 - s * 0.02, v1 + s * 0.02, r * 0.55, r * 1.45, 0.5, true); // ホイール
+      if (high) solid(u - r, u + r, v0, v1, 0, t.bottom);
+    }
   }
-  colliders.push({ ...area(-3.25, 3.25, -1.5, 1.5), h: y + 1.25, y0: y || undefined });
-  colliders.push({ ...area(-1.75, 1.25, -1.25, 1.25), h: y + 2, y0: y + 1.25 });
+  // キャビン: 窓の帯を一回り大きく巻き、前後のガラスを貼る
+  const [c0, c1] = t.cab;
+  const cw = W - t.inset;
+  const w0 = t.top + (t.roof - t.top) * 0.15;
+  const w1 = t.roof - (t.roof - t.top) * 0.12;
+  part(c0, c1, -cw, cw, t.top, t.roof, body);
+  part(c0 + 0.15, c1 - 0.15, -cw - 0.03, cw + 0.03, w0, w1, LIGHT_DARK);
+  part(c1, c1 + 0.03, -cw + 0.15, cw - 0.15, w0, w1, LIGHT_DARK);
+  if (!t.bed) part(c0 - 0.03, c0, -cw + 0.15, cw - 0.15, w0, w1, LIGHT_DARK);
+  // ピックアップの荷台: キャビンの後ろを低いあおりで囲う
+  if (t.bed) {
+    for (const s of [-1, 1]) {
+      part(-L, c0, s * (W - 0.15), s * W, t.top, t.top + 0.5, body);
+      solid(-L, c0, s * (W - 0.15), s * W, t.top, t.top + 0.5);
+    }
+    part(-L, -L + 0.15, -W + 0.15, W - 0.15, t.top, t.top + 0.5, body);
+    solid(-L, -L + 0.15, -W + 0.15, W - 0.15, t.top, t.top + 0.5);
+  }
+  // 前照灯と尾灯
+  const l0 = t.top - 0.35;
+  for (const [v0, v1] of [[W - 0.9, W - 0.2], [-W + 0.2, -W + 0.9]]) {
+    part(L, L + 0.03, v0, v1, l0, l0 + 0.2, LIGHT_LAMP);
+    part(-L - 0.03, -L, v0, v1, l0, l0 + 0.2, dark);
+  }
+  solid(-L, L, -W, W, high ? t.bottom : 0, t.top);
+  solid(c0, c1, -cw, cw, t.top, t.roof);
 }

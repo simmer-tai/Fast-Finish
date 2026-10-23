@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { camera, renderer, scene } from '../core.js';
 import { SICKLE_VIEW_MODEL_POS, createHeldSickle } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
-import { CHAKRAM_VIEW_MODEL_POS, createHeldChakram } from './chakram.js';
 import { REST_TIP, createKunai } from './kunai.js';
 import { createRevolver } from './revolver.js';
 import { SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './sword.js';
@@ -128,12 +127,3 @@ export const axeRest = heldAxe.userData.rest;
 export const heldAxeModel = heldAxe.userData.axe;
 axeViewModel.add(heldAxe);
 axeViewModel.visible = false;
-// ---- 武器: チャクラム ----
-// 全体をクナイと同じ黒光りにする。右手で持つ
-export const chakramViewModel = new THREE.Group();
-chakramViewModel.position.copy(CHAKRAM_VIEW_MODEL_POS);
-camera.add(chakramViewModel);
-export const heldChakram = createHeldChakram({ metal: kunaiMat });
-export const chakramRest = heldChakram.userData.rest;
-chakramViewModel.add(heldChakram);
-chakramViewModel.visible = false;

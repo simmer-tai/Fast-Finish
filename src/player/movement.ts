@@ -98,9 +98,11 @@ export function collideCylinder(cx: number, cz: number, r: number, h: number, pr
 }
 
 // 箱との当たり判定: 上から落ちてきたら上面に乗り、横からなら一番近い面から押し出す
-// プレイヤーの頭の高さ（足もとから）。浮いた箱の下をくぐれるかどうかに使う
+// プレイヤーの頭の高さ（足もとから）。浮いた箱の下をくぐれるかどうかに使う。
+// スライディング中と、低い箱の下に入っている間（車の下でスライディングが止まったときなど）は低い方を使う
 export const PLAYER_HEAD = 1.8;
-export const PLAYER_HEAD_SLIDE = 1.1;
+export const PLAYER_HEAD_LOW = 0.7;
+const headNow = () => (player.sliding || player.underCover ? PLAYER_HEAD_LOW : PLAYER_HEAD);
 export function collideBox(b: Block, prevY: number) {
   const px = THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
   const pz = THREE.MathUtils.clamp(position.z, b.minZ, b.maxZ);
@@ -116,7 +118,7 @@ export function collideBox(b: Block, prevY: number) {
   }
   // 浮いた箱の下から頭をぶつけたら、底面で止める
   const y0 = b.y0 ?? 0;
-  const head = player.sliding ? PLAYER_HEAD_SLIDE : PLAYER_HEAD;
+  const head = headNow();
   if (y0 > 0 && prevY + head <= y0 + 1e-4 && position.y + head > y0 && dist < PLAYER_RADIUS * 0.5) {
     position.y = y0 - head;
     if (velocity.y > 0) velocity.y = 0;
@@ -184,7 +186,7 @@ export function collideRamp(r: Ramp, prevY: number, stick: boolean) {
     player.groundRamp = r;
     return;
   }
-  const head = player.sliding ? PLAYER_HEAD_SLIDE : PLAYER_HEAD;
+  const head = headNow();
   if (position.y >= top - RAMP_STEP || position.y + head <= r.y0) return;
   pushOutOfBox(r, px, pz, dx, dz, dist);
 }
@@ -203,6 +205,19 @@ export function hasHeadroom(x: number, z: number, y: number): boolean {
     if (x > b.minX - PLAYER_RADIUS && x < b.maxX + PLAYER_RADIUS && z > b.minZ - PLAYER_RADIUS && z < b.maxZ + PLAYER_RADIUS) return false;
   }
   return true;
+}
+
+// 足もとの高さ y で (x, z) にいるとき、立った頭の高さより低い浮いた箱の下に入っているか。
+// 箱の側面に押し当てられているだけ（体の円がちょうど接している）のときは入っていないとみなす
+export function underLowBox(x: number, z: number, y: number): boolean {
+  for (const b of blocks) {
+    const y0 = b.y0 ?? 0;
+    if (y0 <= y || y0 >= y + PLAYER_HEAD || b.h <= y) continue;
+    const dx = x - THREE.MathUtils.clamp(x, b.minX, b.maxX);
+    const dz = z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ);
+    if (Math.hypot(dx, dz) < PLAYER_RADIUS - 1e-3) return true;
+  }
+  return false;
 }
 
 export function tryMantleBox(b: Block, speedBefore: number): boolean {

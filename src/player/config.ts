@@ -22,6 +22,7 @@ export const DASH_COOLDOWN = 0.2;
 
 // スライディング
 export const SLIDE_EYE_HEIGHT = 0.9;
+export const LOW_EYE_HEIGHT = 0.45; // 車の下などをくぐっている間の目の高さ
 export const SLIDE_START_SPEED = 10;
 export const SLIDE_END_SPEED = 6;
 export const SLIDE_BOOST = 6;

@@ -13,7 +13,7 @@ import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMo
 import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js';
 import { handCam } from './handCam.js';
 import { player, position, right, velocity, wallNormal } from '../player/state.js';
-import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js';
+import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js';
 import { moveToward } from '../player/movement.js';
 import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js';
 import { game, kick, kickVel } from '../game/state.js';
@@ -45,7 +45,7 @@ export function onDash() {
         playRing();
     }
     // ハンドガンは、トリガーに掛けた指を軸に縦にくるりと一周回す（装填後より速く）
-    if (gunReady() && !gunState.gunReloading && gunState.twirlT < 0)
+    if (gunReady() && !gunState.gunReloading && gunState.twirlT < 0 && gunState.drawT < 0)
         startTwirl(DASH_TWIRL_TIME);
     // 剣は、握った手を軸に縦にくるくると 2 回転させる
     if (swordReady() && !swordState.swordAttack && swordState.swordHold < 0)
@@ -159,8 +159,9 @@ export function updateCamera(dt) {
     // 着地の沈み込み（ばねで戻す）
     game.landDipVel += (-150 * cameraFx.landDip - 18 * game.landDipVel) * dt;
     cameraFx.landDip = Math.max(-0.5, cameraFx.landDip + game.landDipVel * dt);
-    // スライディングで視点を下げる
-    player.eyeHeight += ((player.sliding ? SLIDE_EYE_HEIGHT : EYE_HEIGHT) - player.eyeHeight) * Math.min(1, dt * 12);
+    // スライディングで視点を下げる。車の下などをくぐるときはさらに下げる
+    const eyeTarget = player.lowEye ? LOW_EYE_HEIGHT : player.sliding ? SLIDE_EYE_HEIGHT : EYE_HEIGHT;
+    player.eyeHeight += (eyeTarget - player.eyeHeight) * Math.min(1, dt * (player.lowEye ? 20 : 12));
     // 横移動とスライディングでカメラを傾ける。壁走り中は壁と反対側へ傾ける
     const lateral = (velocity.x * right.x + velocity.z * right.z) / SPRINT_SPEED;
     const wallRoll = player.wallRunning ? -(wallNormal.x * right.x + wallNormal.z * right.z) * WALLRUN_ROLL : 0;

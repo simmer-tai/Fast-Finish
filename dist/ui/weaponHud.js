@@ -5,7 +5,7 @@ export const ammoHud = document.getElementById('ammo');
 export const weaponHud = document.getElementById('weapon');
 export const weaponName = weaponHud.querySelector('.name span');
 export const weaponIcons = [...weaponHud.querySelectorAll('.icon svg')];
-export const WEAPON_LABELS = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE', chakram: 'CHAKRAM' };
+export const WEAPON_LABELS = { kunai: 'KUNAI', handgun: 'HANDGUN', sword: 'SWORD', sickle: 'CHAIN SICKLE', axe: 'BATTLE AXE' };
 export let weaponHudShown = null;
 // 右下の武器表示: 構えている武器のアイコンと名前。持ち替えたら差し込み直す
 export function updateWeaponHud() {

@@ -29,8 +29,9 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 
 - `?attack=slash1`（クナイ: slash1 / slash2 / finisher / slideUp / dashSlash）
 - `?sword=kesa`（剣: kesa / gyaku / karatake / sweep / charge / issen / thrust）
-- `?axe=kesa`（斧: kesa / nagi / kabuto / sweep / air / launch / rush / drive）
-- `?grapple`（鎖鎌の引き寄せ）、`?focus`（剣の構え）、`?stage=station`（station / warehouse / parking）
+- `?axe=kesa`（斧: draw / kesa / nagi / kabuto / sweep / air / launch / rush / drive）
+- `?striker=windup&yaw=70`（ストライカーの姿勢: ready / windup / slash。yaw は正面から回り込んで見る角度）
+- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?stage=station`（station / warehouse / parking）
 
 ## 武器のプレビュー動画
 

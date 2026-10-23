@@ -29,10 +29,11 @@ export const DUMMY_SHIN = DUMMY_KNEE_Y - DUMMY_ANKLE_Y;
 const prism = (top: number, bottom: number, h: number, sides = 10) => new THREE.CylinderGeometry(top, bottom, h, sides);
 const joint = (r: number) => new THREE.IcosahedronGeometry(r, 1);
 
-// 敵 1 体分の体を組む。当たったときの白い光りを 1 体ずつ出せるよう、マテリアルも 1 体ごとに作る
-export function buildEnemyBody() {
+// 骨組み: 銃撃役とストライカーで同じ骨を使う（脚の IK とよろめきの決まりを共有する）。
+// 当たったときの白い光りを 1 体ずつ出せるよう、マテリアルも 1 体ごとに作る
+function buildEnemyRig(color: number) {
   const root = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color: DUMMY_COLOR, emissive: 0xffffff, emissiveIntensity: 0, flatShading: true });
+  const mat = new THREE.MeshLambertMaterial({ color, emissive: 0xffffff, emissiveIntensity: 0, flatShading: true });
   const jointMat = new THREE.MeshLambertMaterial({ color: DUMMY_JOINT_COLOR, emissive: 0xffffff, emissiveIntensity: 0, flatShading: true });
   // 見た目だけを揺らすための入れ物（当たり判定に使う root の位置は動かさない）
   const shake = new THREE.Group();
@@ -54,10 +55,8 @@ export function buildEnemyBody() {
     shins.push(shin);
     feet.push(dummyBone(shin, DUMMY_LEG_X * side, DUMMY_ANKLE_Y));
   }
-  let buildBone: THREE.Object3D = shake; // 部品を付ける骨（作る間だけ切り替える）
-
   // 骨に付ける部品の位置は shake 座標で書き、骨の原点からの差に直す（腕と前腕はそのままのローカル座標）
-  function addPart(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0, parent: THREE.Object3D = buildBone) {
+  function addPart(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D) {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     if (parent.userData.origin) m.position.sub(parent.userData.origin);
@@ -65,6 +64,20 @@ export function buildEnemyBody() {
     parts.push(m);
     return m;
   }
+  const body = {
+    root, shake, parts, mat, jointMat, mats: [mat, jointMat], arms, forearms, pelvis, spine, neck, gunRig, thighs, shins, feet,
+    edgeMat: null as THREE.MeshLambertMaterial | null, // ストライカーの刃の縁（構えると光る）
+  };
+  return { body, addPart };
+}
+
+// 銃撃役の体を組む
+export function buildEnemyBody() {
+  const { body, addPart: put } = buildEnemyRig(DUMMY_COLOR);
+  const { mat, jointMat, arms, forearms, pelvis, spine, neck, gunRig, thighs, shins, feet } = body;
+  let buildBone: THREE.Object3D = body.shake; // 部品を付ける骨（作る間だけ切り替える）
+  const addPart = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0, parent: THREE.Object3D = buildBone) =>
+    put(geo, mat, x, y, z, parent);
   {
     // 八角の部品は平らな面を正面へ向け、前後に少しつぶす
     const octPart = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0, depth = 1, parent?: THREE.Object3D) => {
@@ -148,6 +161,97 @@ export function buildEnemyBody() {
       addPart(new THREE.BoxGeometry(0.02, 0.05, 0.025), jointMat, -0.035 * side, -0.35, 0.03, forearm);
     }
   }
-  return { root, shake, parts, mat, jointMat, mats: [mat, jointMat], arms, forearms, pelvis, spine, neck, gunRig, thighs, shins, feet };
+  return body;
 }
 export type EnemyBody = ReturnType<typeof buildEnemyBody>;
+
+// ---- ストライカーの体 ----
+// 銃撃役を細く高くした体型（同じ骨を 1.08 倍に伸ばす）。装甲は少なめで黒い関節が多く見え、頭に赤いトサカ、背中に 2 枚のひれ。
+// 右の前腕は手の代わりに 1 枚の刃になっていて、刃の縁だけを白くする（構えると光る）。部品の寸法は伸ばした後の大きさで書く
+export const STRIKER_SCALE = 1.08;
+export function buildStrikerBody() {
+  const { body, addPart } = buildEnemyRig(DUMMY_COLOR);
+  const { mat: R, jointMat: K, pelvis, spine, neck, gunRig, thighs, shins, feet } = body;
+  body.shake.scale.setScalar(STRIKER_SCALE);
+  const k = 1 / STRIKER_SCALE;
+  const put = (bone: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0) =>
+    addPart(geo.scale(k, k, k), mat, x * k, y * k, z * k, bone);
+  const flat = (m: THREE.Mesh, depth = 1) => {
+    m.rotation.y = Math.PI / 8;
+    m.scale.z = depth;
+    return m;
+  };
+  const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z);
+  // 脚: 細い黒の芯に、すねと太ももの前だけ赤い板を当てる
+  for (const side of [-1, 1]) {
+    const i = side < 0 ? 0 : 1;
+    const x = 0.1 * side;
+    put(feet[i], box(0.09, 0.05, 0.22), K, x, 0.025, 0.04);
+    put(feet[i], box(0.08, 0.04, 0.07), R, x, 0.03, 0.15);
+    put(feet[i], joint(0.045), K, x, 0.09);
+    put(shins[i], prism(0.04, 0.035, 0.45), K, x, 0.33);
+    put(shins[i], box(0.06, 0.3, 0.03), R, x, 0.36, 0.05).rotation.x = 0.08;
+    put(shins[i], joint(0.05), K, x, 0.56);
+    put(shins[i], box(0.065, 0.08, 0.05), R, x, 0.57, 0.06).rotation.x = 0.3;
+    put(thighs[i], prism(0.05, 0.045, 0.38), K, x, 0.77);
+    flat(put(thighs[i], prism(0.075, 0.055, 0.22, 8), R, x, 0.84), 0.8);
+    put(thighs[i], joint(0.055), K, 0.11 * side, 0.98);
+  }
+  // 腰と胴: 細い腹の上に、前後に薄い八角の胸
+  put(pelvis, box(0.24, 0.1, 0.15), K, 0, 1.0);
+  put(pelvis, box(0.08, 0.12, 0.035), R, 0, 0.96, 0.08).rotation.x = -0.12;
+  put(spine, prism(0.055, 0.07, 0.26, 8), K, 0, 1.18);
+  flat(put(spine, prism(0.09, 0.09, 0.03, 8), K, 0, 1.24), 0.8);
+  flat(put(spine, prism(0.2, 0.12, 0.34, 8), R, 0, 1.44), 0.62);
+  put(spine, box(0.12, 0.04, 0.03), K, 0, 1.52, 0.12).rotation.x = 0.12;
+  flat(put(spine, prism(0.09, 0.12, 0.04, 8), K, 0, 1.63), 0.8);
+  for (const side of [-1, 1]) {
+    const fin = put(spine, box(0.025, 0.34, 0.1), R, 0.07 * side, 1.5, -0.13);
+    fin.rotation.z = -0.22 * side;
+    fin.rotation.x = -0.15;
+    put(spine, prism(0.022, 0.028, 0.07), K, 0.05 * side, 1.3, -0.12);
+  }
+  // 頭: 縦長の八角のヘルメットに目の帯と、前から後ろへ流れるトサカ
+  put(neck, prism(0.04, 0.05, 0.1), K, 0, 1.69);
+  flat(put(neck, prism(0.085, 0.095, 0.17, 8), R, 0, 1.83), 1.15);
+  flat(put(neck, prism(0.098, 0.098, 0.035, 8), K, 0, 1.85), 1.15);
+  flat(put(neck, prism(0.08, 0.055, 0.06, 8), R, 0, 1.73, 0.01), 1.15);
+  flat(put(neck, prism(0.055, 0.085, 0.03, 8), R, 0, 1.93), 1.15);
+  put(neck, box(0.02, 0.07, 0.24), R, 0, 1.97, -0.02).rotation.x = -0.12;
+  // 腕: 肩を原点にした上腕と、肘を原点にした前腕（骨の座標のまま置く）
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(0.23 * side * k, 1.6 * k, 0).sub(gunRig.userData.origin);
+    gunRig.add(arm);
+    body.arms.push(arm);
+    const forearm = new THREE.Group();
+    forearm.position.set(0, -0.36 * k, 0);
+    arm.add(forearm);
+    body.forearms.push(forearm);
+    put(arm, joint(0.055), K, 0, 0);
+    flat(put(arm, prism(0.05, 0.075, 0.08, 8), R, 0.015 * side, 0.03)).rotation.z = -0.35 * side;
+    put(arm, prism(0.04, 0.035, 0.3), K, 0, -0.18);
+    flat(put(arm, prism(0.05, 0.045, 0.1, 8), R, 0, -0.12));
+    put(forearm, joint(0.045), K, 0, 0);
+  }
+  // 刃の腕（右）: 手は無く、太めの装甲から刃が伸びる。左は細い前腕と黒い拳
+  const [bladeArm, freeArm] = body.forearms;
+  flat(put(bladeArm, prism(0.075, 0.05, 0.3, 8), R, 0, -0.17));
+  put(bladeArm, prism(0.035, 0.035, 0.06), K, 0, -0.34);
+  flat(put(freeArm, prism(0.06, 0.045, 0.26, 8), R, 0, -0.16));
+  put(freeArm, box(0.05, 0.08, 0.07), K, 0, -0.36);
+  // 刃は幅を x、長さを -y に描いた輪郭の板。前腕の前後の向きに幅を取る。縁は少し厚い白い板を重ねる
+  const edgeMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f4, emissive: 0xffffff, emissiveIntensity: 0.15, flatShading: true });
+  body.edgeMat = edgeMat;
+  const plate = (pts: number[][], thick: number) => {
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y))), { depth: thick, bevelEnabled: false });
+    return g.translate(0, 0, -thick / 2).scale(k, k, k);
+  };
+  const blade = new THREE.Group();
+  blade.position.set(0, -0.36 * k, 0);
+  blade.rotation.y = Math.PI / 2;
+  bladeArm.add(blade);
+  blade.add(new THREE.Mesh(plate([[-0.03, 0], [0.03, 0], [0.035, -0.5], [0, -0.72], [-0.025, -0.55]], 0.016), K));
+  blade.add(new THREE.Mesh(plate([[-0.018, -0.04], [-0.012, -0.54], [0, -0.68], [0, -0.725], [-0.026, -0.55], [-0.031, -0.04]], 0.022), edgeMat));
+  return body;
+}

@@ -13,7 +13,7 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
   handgun: [
     { label: '射撃', keys: [{ input: 'attack' }] },
     { label: 'リロード', keys: [{ input: 'reload' }] },
-    { label: 'デッドアイ', keys: [{ input: 'aim', hold: true }] },
+    { label: 'デッドアイ', keys: [{ input: 'aim' }] },
   ],
   sword: [
     { label: '斬る', keys: [{ input: 'attack' }] },
@@ -31,7 +31,6 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
     { label: '打ち上げ', keys: [{ input: 'attack', hold: true }] },
     { label: '突き飛ばし', keys: [{ input: 'wheel' }], padKeys: [{ input: 'dash' }, { input: 'aim' }] },
   ],
-  chakram: [], // 技はまだ無い
 };
 // マウス: 押すボタンの側を塗る
 const mouseIcon = (side: 'left' | 'right') =>
@@ -61,6 +60,8 @@ const CONTROL_ICONS: Record<ControlInput, [string, string]> = {
   dash: [keyIcon('⇧'), keyIcon('L3')],
 };
 const controlsHud = document.getElementById('controls')!;
+const focusKey = document.getElementById('focuskey')!; // 一閃・デッドアイのゲージの左のアイコン
+const hookKey = document.getElementById('hookkey')!; // 鎖鎌のゲージの左のアイコン
 let controlsHudKey = '';
 export function updateControlsHud(shownWeapon: WeaponId, usingPad: boolean) {
   const key = `${shownWeapon}:${usingPad}`;
@@ -68,6 +69,7 @@ export function updateControlsHud(shownWeapon: WeaponId, usingPad: boolean) {
   const weaponChanged = !controlsHudKey.startsWith(`${shownWeapon}:`);
   controlsHudKey = key;
   const pad = usingPad ? 1 : 0;
+  focusKey.innerHTML = hookKey.innerHTML = CONTROL_ICONS.aim[pad];
   controlsHud.innerHTML = WEAPON_CONTROLS[shownWeapon]
     .map(({ label, keys, padKeys }) => {
       const icons = (usingPad && padKeys ? padKeys : keys)

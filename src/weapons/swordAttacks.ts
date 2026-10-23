@@ -44,6 +44,7 @@ export interface SwordAttackDef extends HitDef {
   dip?: number; // 振り下ろしで体ごと沈む強さ
   reach?: number; // 届く距離
   hitUntil?: number; // impact で当たらなくても、この時間までは毎フレーム当たりを確かめる（踏み込みながら斬る技用）
+  fromFirstKey?: boolean; // 今の構えからではなく、最初の key の形から始める（鞘から抜く抜刀用）
 }
 
 export const SWORD_TIP = SWORD_TIP_Y; // 原点（握る位置）から切っ先まで
@@ -333,7 +334,40 @@ export const SWORD_CHARGE_SLASH = makeSwordAttack({
   fx: 1.8,
 });
 
+// 抜刀: 持ち替えたときの取り出し。左腰の鞘から抜きざまに右上へ斬り上げ、そのまま右肩から左下へ斬り返し、
+// 正面で刃を下に立てて素早く 2 回転させ、握り直して構える。当たりも弾きも出さない（impact に届かない）
+export const SWORD_DRAW = makeSwordAttack({
+  keys: [
+    { t: 0, pos: [-0.32, -0.2, 0.08], tip: [-0.55, -0.12, 0.83], edge: [0.1, 1, 0], ease: easeInQuad }, // 左腰の鞘に納めた形（画面の外）
+    { t: 0.045, pos: [-0.26, -0.06, -0.05], tip: [-0.95, -0.1, -0.3], ease: linear }, // 鞘から抜き出す
+    { t: 0.075, pos: [-0.04, 0.05, -0.17], tip: [0.02, 0.12, -1], ease: linear }, // 正面を通過
+    { t: 0.11, pos: [0.15, 0.17, -0.1], tip: [0.85, 0.5, -0.18], ease: easeOutCubic }, // 右上へ斬り上げる
+    { t: 0.15, pos: [0.13, 0.27, 0.06], tip: [0.42, 0.68, 0.6], ease: easeInQuad }, // 右肩の上で刃を返す
+    { t: 0.18, pos: [0.01, 0.15, -0.14], tip: [-0.18, 0.62, -0.78], ease: linear }, // 正面の上を通過
+    { t: 0.215, pos: [-0.22, 0.02, -0.15], tip: [-0.85, -0.32, -0.42], ease: easeOutCubic }, // 左下へ斬り下ろす
+    { t: 0.3, pos: [-0.06, 0.0, -0.1], tip: [-0.05, -0.25, -1], edge: [0, -1, 0.25], ease: easeOutCubic },
+    { t: 0.54, pos: [0.03, 0.03, -0.1], tip: [0.06, -0.2, -1], edge: [0, -1, 0.2], spin: -720 },
+    { t: 0.66, spin: -720 },
+  ],
+  fromFirstKey: true,
+  trails: [[0.03, 0.13], [0.15, 0.25], [0.3, 0.5]],
+  impact: Infinity,
+  kick: [0, 0, 0],
+  lunge: 0,
+  cancel: 0.11,
+  grips: [0.58],
+  rings: [[0.11, 1.2], [0.22, 1], [0.3, 1.1]],
+  swishes: [
+    { at: 0.03, dur: 0.16, f0: 320, f1: 1600, gain: 0.5 },
+    { at: 0.04, dur: 0.12, f0: 900, f1: 3200, gain: 0.12 },
+    { at: 0.15, dur: 0.14, f0: 300, f1: 1500, gain: 0.45 },
+    { at: 0.3, dur: 0.12, f0: 600, f1: 2200, gain: 0.18 }, // 回したときの風切り
+    { at: 0.41, dur: 0.12, f0: 550, f1: 1900, gain: 0.14 },
+  ],
+});
+
 export const SWORD_ATTACKS: Record<string, SwordAttackDef> = {
+  draw: SWORD_DRAW,
   charge: SWORD_CHARGE_SLASH,
   issen: SWORD_ISSEN,
   kesa: SWORD_KESA,

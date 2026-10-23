@@ -36,7 +36,7 @@ export const PAD_WEAPONS: [number, WeaponId][] = [
   [PAD.DOWN, 'sword'],
   [PAD.LEFT, 'sickle'],
 ];
-export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'chakram']; // LB / RB で順に回す
+export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 export const PAD_MENU_KEYS: [number, string][] = [
   [PAD.A, 'Enter'],

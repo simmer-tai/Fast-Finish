@@ -5,10 +5,15 @@ import { type EnemyBody } from './body.js';
 import { type WeaponId } from '../weapons/ids.js';
 import { type Scar } from '../fx/scars.js';
 
+// 敵の種類: 銃撃役（間合いを保って撃つ）と、ストライカー（刃の腕で斬りかかってくる近接型。体と動きは enemy/striker.ts）
+export type EnemyKind = 'gunner' | 'striker';
+export type StrikePhase = 'chase' | 'windup' | 'slash' | 'recover' | 'drop';
+
 // ---- 敵 1 体分の状態 ----
 // 体の部品・よろめきのばね・足・体力・切り跡・破片・銃口を 1 体ずつ持つ。敵を扱う関数は「いま扱っている敵」en に対して働く。
 // 毎フレーム全員について en を切り替えて進め、攻撃が当たったときは当たった敵を en にしてから当たりを処理する
 export interface Enemy extends EnemyBody {
+  kind: EnemyKind;
   gun: THREE.Group;
   muzzle: THREE.Object3D;
   muzzleFx: THREE.Object3D; // 撃ったときのマズルフラッシュ
@@ -49,6 +54,7 @@ export interface Enemy extends EnemyBody {
   walk: number; // 歩く足の動きの強さ (0..1)
   walkPhase: number;
   walkDir: THREE.Vector3; // 足を振る向き（体の座標）
+  stride: number; // 1 歩で進む距離（足を前後に振る幅）。ストライカーは走るので大きい
   airY: number; // 打ち上げられて足もと（baseY）から浮いている高さ
   airVel: number; // 打ち上げられているときの上下の速さ
   airTilt: THREE.Vector3; // 打ち上げで体ごと回っている角度（x: 前後、z: 左右。体の座標、rad）
@@ -71,6 +77,19 @@ export interface Enemy extends EnemyBody {
   stumble: number; // 踏ん張りの強さ (0..1)
   stumbling: boolean; // 大きく滑っている最中か（止まりきった瞬間に揺り戻すため）
   skidT: number; // 次に床をこする火花を出すまで
+  // ストライカーの斬りかかり（銃撃役では使わない）
+  strikePhase: StrikePhase;
+  strikeT: number; // 今の段に入ってからの時間
+  strikeHit: boolean; // この振りで当たりを調べたか
+  strikePose: number[]; // 今の腕と上体の姿勢（STRIKER_POSES と同じ並び）。狙う姿勢へばねで追いかける
+  strikePoseVel: number[]; // 姿勢の変わる速さ
+  turnVel: number; // 体の向きを変える角速度 (rad/s)
+  // 高い所から飛び降りる（ストライカー）
+  dropCell: number; // 飛び降りようとしている縁のマス（-1 = 降りない）
+  dropFrom: THREE.Vector3; // 縁を選んだ間はその縁の中心、跳んだ後は踏み切った所
+  dropTo: THREE.Vector3; // 降りる先の足もと
+  dropT: number; // 踏み切ってからの時間
+  dropDur: number; // 降りる先へ着くまでの時間
   // 倒すまでの過程（とどめのスコアに足す）。出てくるたびに戻す
   hits: number; // この敵に当てた数
   lastHitAt: number; // この敵に最後に当てた時刻（実時間）

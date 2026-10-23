@@ -39,6 +39,22 @@ const CHORD = 0.5; // 上弦材の太さ
 const TRUSS_STEP = 8;
 const SKYLIGHT = 4; // トラスの間のうち、天窓にする長さ（残りが屋根板）
 
+// 天井クレーン: 両側の壁ぎわの走行レールに載った橋桁が、手前の荷さばきの広場から奥の中二階の前まで往復する。
+// 橋桁の真ん中に吊った巻き上げ機から、真ん中の通路の上へ荷を吊る。
+// 橋桁は、棚の天板に立った頭（9.3m）の上を通り、トラスと照明の下に収める。上に立っていると、トラスの下を通るときにはじき落とされる。
+// 吊り荷は、真ん中の通路のフォークリフトや荷の山の上を通る高さに吊る。橋桁と吊り荷は当たり判定を持ち、上に乗ると一緒に運ばれる
+const CRANE_Z0 = 4; // 橋桁の中心 (z) の、手前の端
+const CRANE_Z1 = -91; // 奥の端。吊り荷の奥の縁が、中二階の縁から 1.5m の所で止まる
+const CRANE_TIME = 24; // 片道にかかる時間 (s)
+const CRANE_PAUSE = 3; // 端で止まる時間 (s)
+const GIRDER_Y0 = 9.5;
+const GIRDER_Y1 = 10.1;
+const HOIST_Y0 = 8.7; // 巻き上げ機の底面
+const LOAD_Y0 = 5; // 吊り荷の底面（フォークリフトの頭上の囲いより上）
+const LOAD_PALLET = 0.3;
+const LOAD_Y1 = 6.5; // 吊り荷の上面（中二階の床からよじ登れる高さ）
+const LOAD_HALF = 1.5;
+
 // 明るさ（0 が黒）。高いもの・重いものほど暗くする
 const LIGHT_WALL = 0.72;
 const LIGHT_PILASTER = 0.6;
@@ -62,6 +78,11 @@ const LIGHT_LAMP = 0.22;
 const LIGHT_LIFT_BODY = 0.4;
 const LIGHT_LIFT_DARK = 0.18;
 const LIGHT_LIFT_MAST = 0.26;
+const LIGHT_RUNWAY = 0.3;
+const LIGHT_GIRDER = 0.34;
+const LIGHT_SADDLE = 0.22;
+const LIGHT_HOIST = 0.2;
+const LIGHT_WIRE = 0.12;
 
 export function buildWarehouse(): StageLayout {
   const boxes: StageBox[] = [];
@@ -236,17 +257,38 @@ export function buildWarehouse(): StageLayout {
     if (z0 <= FAR) continue;
     for (let x = -HALF_W + 5; x < HALF_W; x += 5) deco(x - 0.1, x + 0.1, z0, Math.max(z0 - SKYLIGHT, FAR), ROOF_Y0, ROOF_Y1, LIGHT_TRUSS);
   }
-  // 照明: トラスから吊った水銀灯。通路の真上に、1 本おきのトラスに下げる（頭より高いので見た目だけ）
+  // 照明: トラスから吊った水銀灯。通路の真上に、1 本おきのトラスに下げる（頭より高いので見た目だけ）。
+  // クレーンの橋桁が下を通れるよう、トラスのすぐ下に短く吊る
   trussZ.forEach((z, i) => {
     if (i % 2 === 1) return;
     for (const x of [0, -12, 12, -21, 21]) {
-      deco(x - 0.05, x + 0.05, z - 0.05, z + 0.05, TRUSS_Y0 - 1, TRUSS_Y0, LIGHT_LAMP);
-      deco(x - 0.5, x + 0.5, z - 0.5, z + 0.5, TRUSS_Y0 - 1.5, TRUSS_Y0 - 1, LIGHT_LAMP);
+      deco(x - 0.05, x + 0.05, z - 0.05, z + 0.05, TRUSS_Y0 - 0.4, TRUSS_Y0, LIGHT_LAMP);
+      deco(x - 0.5, x + 0.5, z - 0.5, z + 0.5, TRUSS_Y0 - 0.8, TRUSS_Y0 - 0.4, LIGHT_LAMP);
     }
   });
 
+  // ---- 天井クレーン ----
+  // 走行レール: 側壁の柱型の内側の面に沿わせる（見た目だけ。壁走りの邪魔をしない）
+  for (const s of [-1, 1]) deco(s * (HALF_W - 1.5), s * (HALF_W - 1), NEAR, FAR, GIRDER_Y0 - 0.5, GIRDER_Y0, LIGHT_RUNWAY);
+  const craneBoxes: StageBox[] = [];
+  const craneDecor: StageBox[] = [];
+  // 橋桁の中心からの位置で置く
+  const crane = (list: StageBox[], x0: number, x1: number, z0: number, z1: number, y0: number, h: number, light: number) =>
+    list.push({ ...rect(x0, x1, CRANE_Z0 + z0, CRANE_Z0 + z1), y0: y0 || undefined, h, light, look: 'struct' });
+  // 橋桁（乗れて、鎖鎌も掛かる）と、両端でレールに載る脚（サドル）
+  crane(craneBoxes, -(HALF_W - 2.5), HALF_W - 2.5, -0.75, 0.75, GIRDER_Y0, GIRDER_Y1, LIGHT_GIRDER);
+  for (const s of [-1, 1]) crane(craneDecor, s * (HALF_W - 2.5), s * (HALF_W - 1), -2, 2, GIRDER_Y0, GIRDER_Y1 + 0.2, LIGHT_SADDLE);
+  // 巻き上げ機: 橋桁の真ん中の下に吊る
+  crane(craneDecor, -1.25, 1.25, -1, 1, HOIST_Y0, GIRDER_Y0, LIGHT_HOIST);
+  // ワイヤー: 巻き上げ機から吊り荷の四隅の内側へ
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) crane(craneDecor, sx * 0.9, sx * 0.95, sz * 0.9, sz * 0.95, LOAD_Y1, HOIST_Y0, LIGHT_WIRE);
+  // 吊り荷: パレットに載せた木箱（どちらも乗れる）
+  crane(craneBoxes, -LOAD_HALF, LOAD_HALF, -LOAD_HALF, LOAD_HALF, LOAD_Y0, LOAD_Y0 + LOAD_PALLET, LIGHT_PALLET);
+  crane(craneBoxes, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, LOAD_Y0 + LOAD_PALLET, LOAD_Y1, LIGHT_CARGO_MAX);
+
   return {
     boxes,
+    movers: [{ boxes: craneBoxes, decor: craneDecor, axis: 'z', travel: CRANE_Z1 - CRANE_Z0, time: CRANE_TIME, pause: CRANE_PAUSE }],
     decor,
     colliders,
     scenery: [],
@@ -262,6 +304,7 @@ export function buildWarehouse(): StageLayout {
       ...[[7.5, -30], [-16.5, -70], [25.5, -20], [-7.5, -62]].map(([x, z]) => ({ x, y: RACK_H, z })),
       { x: -18, y: RACK_H, z: -102 },
     ],
+    lead: 'striker', // 棚の陰や角から、近い距離で飛び出してくる
     // 入口の左の荷の山の上あたりから、真ん中の通路と左右の棚が奥の中二階まで続くのを見る
     view: { eye: { x: -9, y: 9, z: 9 }, target: { x: 4, y: 3, z: -50 } },
   };

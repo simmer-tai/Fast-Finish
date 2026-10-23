@@ -11,7 +11,7 @@ import { buildParking } from './parking.js';
 import { STAGE_TITLE_END, createStageTitle } from './stageTitle.js';
 import { WEAPON_KEYS } from './weapons/ids.js';
 import { rand } from './random.js';
-import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody } from './enemy/body.js';
+import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody, buildStrikerBody } from './enemy/body.js';
 import { updateControlsHud } from './ui/controlsHud.js';
 import { GROUND_REVEAL_ALL, groundReveal, riseOrigin, withGroundReveal } from './world/reveal.js';
 import {
@@ -19,9 +19,11 @@ import {
   resetArenaRiseEnd, riseDelayAt, riseLines, riseMeshes, risers,
 } from './world/rise.js';
 import {
-  STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, floorAt, gridMaterial,
+  STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, floorAt, gridMaterial, octagonXGeo, octagonZGeo,
   rampMatrix, rampUpDir, ramps, wedgeGeo, type Block,
 } from './world/blocks.js';
+import { castWorld } from './world/raycast.js';
+import { addMover, clearMovers, updateMovers } from './world/movers.js';
 import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, playBounds } from './world/arena.js';
 import {
   HEAVY_FX, hitFxVisible, impact, initHitFx, spawnFinaleFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles,
@@ -32,12 +34,15 @@ import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selecte
 import { loadBest, saveBest } from './records.js';
 import { env, initEnemyEnv } from './enemy/env.js';
 import {
-  DEFAULT_KNOCK, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, type Enemy,
+  DEFAULT_KNOCK, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, type Enemy, type EnemyKind,
 } from './enemy/state.js';
+import {
+  STRIKER_HP, STRIKER_STRIDE, poseStriker, resetStriker, resetStrikerNav, strikerRestPose, updateStrikerFace, updateStrikerMove,
+} from './enemy/striker.js';
 import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
 import {
-  AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, playerEye, playerLook, poseEnemyTumble,
+  AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_STRIDE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, playerEye, playerLook, poseEnemyTumble,
   updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble,
 } from './enemy/motion.js';
 import { DEG, UP, wrapAngle } from './math.js';
@@ -52,7 +57,7 @@ import {
   dashDir, forward, lookEuler, player, position, right, velocity, wallNormal, wallTangent, wish,
 } from './player/state.js';
 import {
-  RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, initMovement, moveToward,
+  RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, initMovement, moveToward, underLowBox,
   rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantleBox, tryStartWallRun,
   updateMantle,
 } from './player/movement.js';
@@ -79,9 +84,9 @@ import {
 } from './weapons/swordCombat.js';
 import {
   BULLET_HIT, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS,
-  applyGunSpin, deadEyeMarks, endDeadEye, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder,
+  applyGunSpin, deadEyeMarks, endDeadEye, endGunDraw, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder,
   gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, startReload, updateBullets, updateCasings,
-  updateDeadEye, updateSlideSpin, updateTwirl,
+  updateDeadEye, updateGunDraw, updateSlideSpin, updateTwirl,
 } from './weapons/handgunCombat.js';
 import {
   GRAPPLE_STICK_HIT, HOOK_CHARGES, SICKLE_DAMAGE_SCALE, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT,
@@ -848,6 +853,9 @@ function update(dt: number) {
   // 鎖鎌が掛かっている間は、ここまでの速度を引き寄せる向きへ置き換える
   if (sickleState.grapple?.phase === 'pull') updateGrapplePull(dt);
 
+  // 動く物を先に動かし、上に立っていれば一緒に運ぶ（世界だけのスローは前のフレームの値を使う）
+  updateMovers(dt * kunaiState.worldSlow);
+
   // ---- 移動と当たり判定 ----
   const wasOnGround = player.onGround;
   player.landImpact = 0;
@@ -884,6 +892,11 @@ function update(dt: number) {
 
     if (player.wallRunning && !canKeepWallRun()) endWallRun();
     if (player.onGround) player.hasLastWall = false;
+
+    // 低い浮いた箱（車）の下に入っているか。スライディング中は、少し先（0.25 秒後の位置）が下なら視点を先に下げ始める
+    player.underCover = underLowBox(position.x, position.z, position.y);
+    player.lowEye = player.underCover
+      || (player.sliding && underLowBox(position.x + velocity.x * 0.25, position.z + velocity.z * 0.25, position.y));
 
     // よじ登れる縁があればそちらを優先し、なければ壁走りを試す
     if (locked && !player.onGround && swordState.rushTime < 0) {
@@ -1193,9 +1206,14 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
 }
 
 function respawnDummy() {
+  if (stageRun) {
+    const kind = pickEnemyKind();
+    if (kind !== en.kind) rebuildEnemy(kind);
+    if (kind === stageLead) stageRun.leads++;
+  }
   if (enemySpawns.length > 0) placeDummy(pickSpawn());
   en.alive = true;
-  en.hp = DUMMY_MAX_HP;
+  en.hp = enemyMaxHp(en.kind);
   en.airY = 0;
   en.airVel = 0;
   en.airTilt.set(0, 0, 0);
@@ -1217,6 +1235,7 @@ function respawnDummy() {
   en.comboKept = true;
   en.parried = en.spun = en.hitPlayer = false;
   en.weapons.clear();
+  if (en.kind === 'striker') resetStriker();
   // 足元から小さく光を散らして、現れたことを知らせる
   spawnSparks(respawnAt.set(en.root.position.x, en.root.position.y + 0.05, en.root.position.z), UP, 14, 1.2, 0.8);
 }
@@ -1233,6 +1252,21 @@ const SPAWN_APART = 4; // ほかの敵からこれより近い出現位置は使
 const STAGE_ENEMY_COUNT = { easy: 2, normal: 3, hard: 4 } as const;
 const STAGE_SPAWN_FIRST = 0.6; // 操作を返してから最初の敵が現れるまで
 const STAGE_SPAWN_GAP = 0.8; // 次の敵が現れるまでの間
+// ステージの主役の敵（StageLayout の lead）を、倒す数のうちどれだけ混ぜるかと、同時に何体まで出すか。
+// easy でも 1 体だけ出して、そのステージの特徴を見せる。normal は 2 割、hard は 3〜4 割
+const STAGE_LEAD_COUNT = { easy: 1, normal: 3, hard: 7 } as const;
+const STAGE_LEAD_AT_ONCE = { easy: 1, normal: 1, hard: 2 } as const;
+let stageLead: EnemyKind | undefined; // 今のステージの主役（無ければ銃撃役だけ）
+// 次に出す敵の種類。残りの出番に主役の残りを散らして混ぜ、終わりまでに数が揃うようにする
+function pickEnemyKind(): EnemyKind {
+  if (!stageRun || !stageLead) return 'gunner';
+  const difficulty = DIFFICULTIES[difficultyIndex];
+  const left = STAGE_LEAD_COUNT[difficulty] - stageRun.leads;
+  const alive = enemies.filter((e) => e.alive);
+  if (left <= 0 || alive.filter((e) => e.kind === stageLead).length >= STAGE_LEAD_AT_ONCE[difficulty]) return 'gunner';
+  const turns = stageRun.quota - stageRun.kills - alive.length; // この 1 体を含めた残りの出番
+  return Math.random() * turns < left ? stageLead : 'gunner';
+}
 
 // ---- ステージのクリア ----
 // 難易度で決まる数を倒したら終わり。時間は操作を返してから最後の 1 体を倒すまでの実時間で測る（一時停止の間は数えない）。
@@ -1247,6 +1281,7 @@ interface StageRun {
   kills: number;
   time: number;
   damage: number; // 受けたダメージの合計（1 で耐えた分も、受けた量のまま数える）
+  leads: number; // 出した主役の敵の数
   running: boolean; // 時間を測っている間
   clearedT: number; // 倒しきってからの実時間。-1 = まだ / もう結果を出した
 }
@@ -1257,7 +1292,7 @@ const runTime = runHud.querySelector<HTMLElement>('.time')!;
 const remainHud = document.getElementById('remain')!;
 const remainNum = remainHud.querySelector<HTMLElement>('.num')!;
 function beginStageRun() {
-  stageRun = { quota: STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]], kills: 0, time: 0, damage: 0, running: false, clearedT: -1 };
+  stageRun = { quota: STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]], kills: 0, time: 0, damage: 0, leads: 0, running: false, clearedT: -1 };
   runTime.textContent = fmtTime(0);
   runHud.hidden = false;
   remainNum.textContent = String(stageRun.quota);
@@ -1324,6 +1359,17 @@ function showStageResult(run: StageRun) {
   pauseGame();
 }
 let enemySpawns: StageLayout['enemySpawns'] = [];
+const STRIKER_SPAWN_FAR = 32; // ストライカーを隠れた所から出すときは、これより近い所から選ぶ
+const spawnEye = new THREE.Vector3();
+const spawnDir = new THREE.Vector3();
+// 出現位置 i に立った敵の胸が、プレイヤーの目から壁に隠れているか
+function spawnHidden(i: number) {
+  const s = enemySpawns[i];
+  camera.getWorldPosition(spawnEye);
+  spawnDir.set(s.x, s.y + 1.3, s.z).sub(spawnEye);
+  const d = spawnDir.length();
+  return castWorld(spawnEye, spawnDir.divideScalar(d), d) < d - 0.5;
+}
 // en を出す出現位置を選ぶ
 function pickSpawn(): number {
   const off = (i: number) => {
@@ -1337,6 +1383,11 @@ function pickSpawn(): number {
   if (cands.length === 0) cands = all.filter((i) => i !== en.spawnIndex);
   if (cands.length === 0) cands = all;
   const good = cands.filter((i) => off(i) <= 0);
+  // ストライカーは、プレイヤーから見えない所（棚の陰）を選んで、近くから飛び出させる
+  if (en.kind === 'striker') {
+    const hidden = good.filter((i) => spawnHidden(i) && Math.hypot(enemySpawns[i].x - position.x, enemySpawns[i].z - position.z) < STRIKER_SPAWN_FAR);
+    if (hidden.length > 0) return hidden[Math.floor(Math.random() * hidden.length)];
+  }
   if (good.length > 0) return good[Math.floor(Math.random() * good.length)];
   // 程よい所が無ければ、程よい距離に一番近い所
   return cands.reduce((a, b) => (off(b) < off(a) ? b : a));
@@ -1366,7 +1417,6 @@ function finishMarkHp(): number {
     case 'sword': return hitDamage(SWORD_KESA, 'sword');
     case 'sickle': return hitDamage(SICKLE_KESA_HIT, 'sword') * SICKLE_DAMAGE_SCALE;
     case 'axe': return hitDamage(AXE_KESA, 'axe');
-    case 'chakram': return 0; // 技がまだ無いので印は出さない
   }
 }
 const FINISH_MARK_PAD = 6; // 体のまわりに空ける余白 (px)
@@ -1410,7 +1460,7 @@ function updateThreatMarks() {
     // （後ろの敵の高さで上を指すと、上を見ればいいように見えてしまう）
     const angle = threatPos.z < 0 ? Math.atan2(threatPos.x, threatPos.y) : Math.atan2(threatPos.x, -threatPos.z);
     const near = 1 - THREE.MathUtils.clamp((dist - THREAT_NEAR) / (THREAT_FAR - THREAT_NEAR), 0, 1);
-    const aiming = e.cooldown < THREAT_AIMING;
+    const aiming = e.kind === 'striker' ? e.strikePhase === 'windup' || e.strikePhase === 'slash' : e.cooldown < THREAT_AIMING;
     el.style.opacity = String(aiming ? 1 : 0.3 + 0.55 * near);
     el.style.transform = `rotate(${angle}rad) translateY(${-THREAT_RADIUS}px) scale(${aiming ? 1.4 : 1})`;
   }
@@ -1564,11 +1614,19 @@ initEnemyEnv({
 const finishTemplate = document.getElementById('finish')!;
 const threatsEl = document.getElementById('threats')!;
 
-function createEnemy(mobile: boolean): Enemy {
-  const body = buildEnemyBody();
-  const gun = attachEnemyGun(body);
-  const muzzle = gun.userData.muzzle as THREE.Object3D;
-  const muzzleFx = muzzleFlash.clone();
+// 敵を作って場に出す
+function createEnemy(mobile: boolean, kind: EnemyKind = 'gunner'): Enemy {
+  const e = buildEnemy(mobile, kind);
+  enemies.push(e);
+  return e;
+}
+// 敵を 1 体組む（場の一覧には入れない）。ストライカーは銃を持たないので、銃と銃口は空の入れ物にする
+function buildEnemy(mobile: boolean, kind: EnemyKind): Enemy {
+  const striker = kind === 'striker';
+  const body = striker ? buildStrikerBody() : buildEnemyBody();
+  const gun = striker ? new THREE.Group() : attachEnemyGun(body);
+  const muzzle = striker ? new THREE.Object3D() : (gun.userData.muzzle as THREE.Object3D);
+  const muzzleFx = striker ? new THREE.Object3D() : muzzleFlash.clone();
   muzzleFx.visible = false;
   muzzle.add(muzzleFx);
   const springs = [spring(55, 8), spring(150, 12), spring(110, 10), spring(240, 14), spring(180, 13)];
@@ -1578,6 +1636,7 @@ function createEnemy(mobile: boolean): Enemy {
   const threatEl = threatsEl.appendChild(document.createElement('i'));
   const e: Enemy = {
     ...body,
+    kind,
     gun,
     muzzle,
     muzzleFx,
@@ -1603,7 +1662,7 @@ function createEnemy(mobile: boolean): Enemy {
     yaw: 0,
     aimYaw: 0,
     aimPitch: 0,
-    hp: DUMMY_MAX_HP,
+    hp: enemyMaxHp(kind),
     alive: true,
     deadTime: 0,
     riseTime: Infinity,
@@ -1623,6 +1682,7 @@ function createEnemy(mobile: boolean): Enemy {
     walk: 0,
     walkPhase: 0,
     walkDir: new THREE.Vector3(0, 0, 1),
+    stride: striker ? STRIKER_STRIDE : ENEMY_STRIDE,
     airY: 0,
     airVel: 0,
     airTilt: new THREE.Vector3(),
@@ -1642,6 +1702,17 @@ function createEnemy(mobile: boolean): Enemy {
     stumble: 0,
     stumbling: false,
     skidT: 0,
+    strikePhase: 'chase',
+    strikeT: 0,
+    strikeHit: false,
+    strikePose: strikerRestPose(),
+    strikePoseVel: strikerRestPose().map(() => 0),
+    turnVel: 0,
+    dropCell: -1,
+    dropFrom: new THREE.Vector3(),
+    dropTo: new THREE.Vector3(),
+    dropT: 0,
+    dropDur: 0,
     hits: 0,
     lastHitAt: -Infinity,
     comboKept: true,
@@ -1651,11 +1722,12 @@ function createEnemy(mobile: boolean): Enemy {
     weapons: new Set(),
   };
   scene.add(e.root);
-  enemies.push(e);
   return e;
 }
+const enemyMaxHp = (kind: EnemyKind) => (kind === 'striker' ? STRIKER_HP : DUMMY_MAX_HP);
 
-function removeEnemy(e: Enemy) {
+// 敵を場から片付ける（一覧からは外さない）
+function disposeEnemy(e: Enemy) {
   setEn(e);
   for (const t of thrown) if (t.phase === 'stuck' && isOnDummy(t.mesh)) startReturn(t);
   clearDebris();
@@ -1663,7 +1735,23 @@ function removeEnemy(e: Enemy) {
   e.root.removeFromParent();
   e.finishEl.remove();
   e.threatEl.remove();
+}
+function removeEnemy(e: Enemy) {
+  disposeEnemy(e);
   enemies.splice(enemies.indexOf(e), 1);
+}
+// 倒されて出番を待っている en を、別の種類の体に作り替える（一覧の同じ場所に入れ、en を新しい方にする）
+function rebuildEnemy(kind: EnemyKind) {
+  const old = en;
+  disposeEnemy(old);
+  const e = buildEnemy(old.mobile, kind);
+  e.alive = false;
+  e.spawnIndex = old.spawnIndex;
+  e.riseDelay = old.riseDelay;
+  e.baseY = old.baseY;
+  e.root.position.copy(old.root.position);
+  enemies[enemies.indexOf(old)] = e;
+  setEn(e);
 }
 
 // 敵を全員ぶん進め、飛んでいる敵の弾を進める
@@ -1685,10 +1773,13 @@ function updateDummy(dt: number) {
     if (en.airY > 0 || en.airVel > 0) updateEnemyAir(dt);
     updateEnemyTumble(dt);
     updateEnemyKnock(dt);
-    updateEnemyMove(dt);
+    if (en.kind === 'striker') updateStrikerMove(dt);
+    else updateEnemyMove(dt);
     updateEnemyGait(dt);
-    updateDummyAim(dt);
+    if (en.kind === 'striker') updateStrikerFace(dt);
+    else updateDummyAim(dt);
     updateDummyStagger(dt);
+    if (en.kind === 'striker') poseStriker(dt);
   } else {
     en.deadTime += dt;
     updateDebris(dt);
@@ -1707,7 +1798,7 @@ function updateDummy(dt: number) {
   const fade = THREE.MathUtils.clamp((en.flashT - FLASH_HOLD) / FLASH_FADE, 0, 1);
   for (const m of en.mats) m.emissiveIntensity = (1 - fade) * (1 - fade);
 
-  updateEnemyFire(dt);
+  if (en.kind === 'gunner') updateEnemyFire(dt);
 }
 
 // ---- 床と壁への叩きつけ ----（当たりの処理を呼ぶので本体に置く。敵の動きは enemy/motion.ts）
@@ -1835,6 +1926,7 @@ function updateGun(dt: number) {
     // 持ち替えたら装填は最初からやり直す（薬莢を落とした後なら弾は空のまま）
     if (gunState.gunReloading) endReload();
     if (gunState.twirlT >= 0) endTwirl(false);
+    if (gunState.drawT >= 0) endGunDraw();
     endSlideSpin();
     gunState.fireQueued = false;
     gunState.reloadQueued = false;
@@ -1862,8 +1954,8 @@ function updateGun(dt: number) {
     if (gunState.gunAmmo > 0) fireGun();
     else startReload();
   }
-  // 撃ち尽くしたら、反動が収まったところで自動で装填する
-  if (gunReady() && !gunState.gunReloading && gunState.gunAmmo === 0 && gunState.gunCooldown <= 0) startReload();
+  // 撃ち尽くしたら、反動が収まったところで自動で装填する（取り出しの途中なら終わるのを待つ）
+  if (gunReady() && !gunState.gunReloading && gunState.gunAmmo === 0 && gunState.gunCooldown <= 0 && gunState.drawT < 0) startReload();
 
   // シリンダーは撃つたびに次の薬室へ素早く回す。弾いたときは惰性で回り続ける
   if (gunState.cylinderSpin > 0) {
@@ -1875,6 +1967,7 @@ function updateGun(dt: number) {
     gunCylinder.rotation.z += (gunState.cylinderTarget - gunCylinder.rotation.z) * Math.min(1, dt * 14);
   }
 
+  updateGunDraw(dt);
   updateTwirl(dt);
   updateSlideSpin(dt);
   applyGunSpin(dt);
@@ -2080,6 +2173,33 @@ function runStageDebug(params: URLSearchParams) {
   });
 }
 
+// ストライカーの姿勢を確かめる: ?striker=ready / windup / slash（その姿勢で止める）&yaw=40（正面から右へ回り込んで見る角度）
+// &t=0.1 は段に入ってからの時間（振りかぶりの刃の縁の光り方が変わる）。訓練場の的をストライカーに作り替えて、動かさずに置く。
+// &run=7.5 で、その速さでその場を走らせ、t 秒走ったところで止める（走りの足の運びを確かめる）
+function runStrikerDebug(params: URLSearchParams) {
+  overlay.classList.add('hidden');
+  document.body.classList.remove('on-title');
+  setEn(enemies[0]);
+  rebuildEnemy('striker');
+  en.alive = true;
+  resetStriker();
+  const phase = params.get('striker');
+  const yaw = Number(params.get('yaw') ?? 0) * DEG;
+  const at = en.root.position;
+  position.set(at.x, 0, at.z + 3.5); // 敵はこちらを向くので、プレイヤーは正面に置き、カメラだけを回り込ませる
+  const step = 1 / 120;
+  for (let i = 0; i < 30; i++) update(step);
+  if (phase === 'windup' || phase === 'slash') en.strikePhase = phase;
+  const run = Number(params.get('run') ?? 0);
+  en.strikeT = Number(params.get('t') ?? 0.3);
+  en.vel.set(0, 0, run);
+  for (let i = 0; i < (run ? en.strikeT / step : 60); i++) update(step);
+  setViewModelsVisible(false);
+  camera.position.set(at.x + Math.sin(yaw) * 3.2, 1.3, at.z + Math.cos(yaw) * 3.2);
+  camera.lookAt(at.x, 1.0, at.z);
+  renderer.setAnimationLoop(() => composer.render(0));
+}
+
 function runFocusDebug(params: URLSearchParams) {
   overlay.classList.add('hidden');
   document.body.classList.remove('on-title');
@@ -2101,6 +2221,25 @@ function runFocusDebug(params: URLSearchParams) {
     for (let t = 0; t < Number(params.get('rush')); t += step) tick();
   }
   controls.isLocked = false;
+  updateSpeedFx(0);
+  renderer.setAnimationLoop(() => {
+    applyCameraOffset();
+    composer.render(0);
+    camera.quaternion.copy(savedQuat);
+  });
+}
+
+// 鎖鎌の取り出しを確かめる: ?sickleDraw&t=0.2（クナイから持ち替えて、取り出し始めてからその時間で止める）
+function runSickleDrawDebug(params: URLSearchParams) {
+  overlay.classList.add('hidden');
+  document.body.classList.remove('on-title');
+  game.wantWeapon = game.shownWeapon = 'kunai';
+  const step = 1 / 120;
+  for (let i = 0; i < 30; i++) update(step);
+  game.wantWeapon = 'sickle';
+  while (sickleState.drawT === Infinity) update(step);
+  const tEnd = Number(params.get('t') ?? 0.2);
+  while (sickleState.drawT + step <= tEnd) update(step);
   updateSpeedFx(0);
   renderer.setAnimationLoop(() => {
     applyCameraOffset();
@@ -2287,15 +2426,17 @@ function mergeBoxes(list: Block[]): Block[] {
 }
 
 const stageLooks = { terrain: TERRAIN_GRID, struct: STRUCT_GRID } as const;
-type StageLook = Pick<StageBox, 'look' | 'gridOrigin'>;
-const stageMaterial = (b: StageLook) =>
-  b.look === 'plain' ? new THREE.MeshLambertMaterial({ color: 0xffffff }) : gridMaterial(stageLooks[b.look], b.gridOrigin);
-// 線の引き方と格子の起点が同じ箱ごとに分ける（1 つのメッシュにまとめる単位）
+type StageLook = Pick<StageBox, 'look' | 'gridOrigin'> & { shape?: StageBox['shape'] };
+// local なら格子を面に付けたまま動かせる（動く物に使う）
+const stageMaterial = (b: StageLook, local = false) =>
+  b.look === 'plain' ? new THREE.MeshLambertMaterial({ color: 0xffffff }) : gridMaterial(stageLooks[b.look], b.gridOrigin, local);
+const stageGeo = (b: StageLook) => (b.shape === 'octagonZ' ? octagonZGeo : b.shape === 'octagonX' ? octagonXGeo : boxGeo);
+// 線の引き方と格子の起点、形が同じ箱ごとに分ける（1 つのメッシュにまとめる単位）
 function groupStageBoxes<T extends StageLook>(list: readonly T[]) {
   const groups = new Map<string, T[]>();
   for (const b of list) {
     const o = b.gridOrigin;
-    const key = `${b.look}|${o ? `${o.x},${o.y},${o.z}` : ''}`;
+    const key = `${b.look}|${o ? `${o.x},${o.y},${o.z}` : ''}|${b.shape ?? ''}`;
     groups.set(key, [...(groups.get(key) ?? []), b]);
   }
   return [...groups.values()];
@@ -2315,6 +2456,7 @@ function enterStage(id: StageId) {
   scene.remove(arenaRoot);
   blocks.length = 0;
   ramps.length = 0;
+  clearMovers();
   risers.length = 0;
   riseMeshes.clear();
   riseLines.length = 0;
@@ -2329,6 +2471,7 @@ function enterStage(id: StageId) {
   // 出現位置の無いステージ（作りかけ）では敵を出さず、時間も測らずに歩き回るだけにする
   while (enemies.length > 0) removeEnemy(enemies[0]);
   enemySpawns = layout.enemySpawns;
+  stageLead = layout.lead;
   const hasEnemies = enemySpawns.length > 0;
   for (let i = 0; hasEnemies && i < STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]]; i++) {
     setEn(createEnemy(true));
@@ -2349,11 +2492,18 @@ function enterStage(id: StageId) {
   if (hasEnemies) beginStageRun();
   // 見た目の箱は、線の引き方と格子の起点ごとに 1 つのメッシュにまとめる。遠景は操作を返すのを待たないので別にする
   for (const [list, inArena] of [[[...layout.boxes, ...layout.decor], true], [layout.scenery, false]] as const) {
-    for (const group of groupStageBoxes(list)) addBoxes(group, stageMaterial(group[0]), (b) => b.light, root, inArena);
+    for (const group of groupStageBoxes(list)) addBoxes(group, stageMaterial(group[0]), (b) => b.light, root, inArena, stageGeo(group[0]));
   }
   for (const group of groupStageBoxes(layout.ramps ?? [])) addRamps(group, stageMaterial(group[0]), root);
   blocks.push(...mergeBoxes([...layout.boxes, ...layout.colliders]));
   ramps.push(...(layout.ramps ?? []));
+  // 動く物: 物ごとに親を分けて、親ごと動かす
+  for (const m of layout.movers ?? []) {
+    const moverRoot = new THREE.Group();
+    root.add(moverRoot);
+    for (const group of groupStageBoxes([...m.boxes, ...m.decor])) addBoxes(group, stageMaterial(group[0], true), (b) => b.light, moverRoot, true, stageGeo(group[0]));
+    addMover(m, moverRoot);
+  }
   for (const line of addStageLines(layout, root)) riseLines.push(line);
   // 前後の端（線路が続いていく先）に、近づくと浮かぶ境界の壁を立てる
   const width = bounds.maxX - bounds.minX;
@@ -2362,6 +2512,8 @@ function enterStage(id: StageId) {
     wall.position.set((bounds.minX + bounds.maxX) / 2, BORDER_HEIGHT / 2, z);
     root.add(wall);
   }
+  // ストライカーの道のりは、床と出現位置の高さの分を入る前（暗転の間）に調べておく（遊んでいる途中で調べると引っかかる）
+  resetStrikerNav(stageLead === 'striker' ? [...new Set([0, ...enemySpawns.map((s) => s.y)])] : []);
   applyStageRise(-Infinity);
 }
 
@@ -2401,8 +2553,10 @@ function getStagePreview(id: StageId) {
   if (p) return p;
   const layout = STAGE_BUILDERS[id]();
   const root = new THREE.Group();
-  for (const group of groupStageBoxes([...layout.boxes, ...layout.decor, ...layout.scenery])) {
-    const mesh = new THREE.InstancedMesh(boxGeo, stageMaterial(group[0]), group.length);
+  // 動く物は動き出す前の位置に置いておく
+  const movers = (layout.movers ?? []).flatMap((m) => [...m.boxes, ...m.decor]);
+  for (const group of groupStageBoxes([...layout.boxes, ...layout.decor, ...layout.scenery, ...movers])) {
+    const mesh = new THREE.InstancedMesh(stageGeo(group[0]), stageMaterial(group[0]), group.length);
     group.forEach((b, i) => {
       const y0 = b.y0 ?? 0;
       mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));
@@ -2622,10 +2776,14 @@ if (debugAttack) {
   runAxeDebug(debugAxe, debugParams);
 } else if ((debugParams.get('stage') ?? '') in STAGE_BUILDERS) {
   runStageDebug(debugParams);
+} else if (debugParams.has('striker')) {
+  runStrikerDebug(debugParams);
 } else if (debugParams.has('focus')) {
   runFocusDebug(debugParams);
 } else if (debugParams.has('grapple')) {
   runGrappleDebug(debugParams);
+} else if (debugParams.has('sickleDraw')) {
+  runSickleDrawDebug(debugParams);
 } else {
   // スコアの演出を確かめる: ?score で、倒し方の組み合わせを変えながら繰り返し出す
   if (debugParams.has('score')) {

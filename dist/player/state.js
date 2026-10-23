@@ -30,6 +30,8 @@ export const player = {
     sliding: false,
     slideLock: false, // スライディングが止まった後、C を離すまで再開しない
     slideBoostCooldown: 0,
+    underCover: false, // 低い浮いた箱（車など）の下に入っている。頭を低くしたまま動く
+    lowEye: false, // 低い浮いた箱の下に入っている、またはスライディングで入りかけている。視点をさらに下げる
     mantleTime: -1, // よじ登り中の経過時間。負ならよじ登っていない
     mantleDuration: 0,
     mantleExitSpeed: 0,

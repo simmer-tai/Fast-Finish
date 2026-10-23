@@ -1,16 +1,18 @@
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { DEG } from '../math.js';
+import { easeOutBack } from '../ease.js';
 import { SICKLE_VIEW_MODEL_POS } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './battleAxe.js';
-import { CHAKRAM_VIEW_MODEL_POS } from './chakram.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './sword.js';
-import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, chakramViewModel, gunViewModel, leftViewModel, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
-import { axeState } from './axeCombat.js';
-import { swordState } from './swordCombat.js';
-import { gunState, reloadPosOff, reloadRotOff } from './handgunCombat.js';
-import { sickleBodyPos, sickleBodyRot, sickleState } from './sickleCombat.js';
-import { kunaiState, pendingThrows } from './kunaiCombat.js';
+import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, gunViewModel, leftViewModel, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
+import { axeState, startAxeAttack } from './axeCombat.js';
+import { AXE_DRAW } from './axeAttacks.js';
+import { startSwordAttack, swordState } from './swordCombat.js';
+import { SWORD_DRAW } from './swordAttacks.js';
+import { gunState, reloadPosOff, reloadRotOff, startGunDraw } from './handgunCombat.js';
+import { sickleBodyPos, sickleBodyRot, sickleState, startSickleDraw } from './sickleCombat.js';
+import { DRAW_SPIN_END, KUNAI_DRAW_TIME, kunaiState, pendingThrows, startKunaiDraw } from './kunaiCombat.js';
 import { cameraFx, landShakeAmount } from '../fx/camera.js';
 import { player, velocity } from '../player/state.js';
 import { SPRINT_SPEED, WALK_SPEED } from '../player/config.js';
@@ -44,9 +46,10 @@ let leftEmpty = 0;
 export function updateWeaponSwitch(dt) {
     // 振りや溜め、投げの途中では持ち替えず、終わるのを待つ
     const kunaiBusy = kunaiState.attack !== null || kunaiState.charging || pendingThrows.length > 0;
-    const swordBusy = swordState.swordAttack !== null || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
+    // 抜刀・斧の取り出しの途中なら持ち替えてよい
+    const swordBusy = (swordState.swordAttack !== null && swordState.swordAttack !== SWORD_DRAW) || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
     const busy = (game.shownWeapon === 'kunai' && kunaiBusy) || (game.shownWeapon === 'sword' && swordBusy) || sickleState.grapple !== null
-        || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null);
+        || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null && axeState.axeAttack !== AXE_DRAW);
     if (isDown()) {
         game.holster = Math.min(1, game.holster + game.realDt / (HOLSTER_TIME * 2)); // 倒れたら武器を画面の下へ落とす
     }
@@ -55,6 +58,30 @@ export function updateWeaponSwitch(dt) {
         if (game.holster === 1) {
             game.shownWeapon = game.wantWeapon;
             sfx.playEquip(game.shownWeapon);
+            // 刀は下から持ち上げず、鞘から抜く動きで構える。クナイは指で回しながら振り上げて構える
+            if (game.shownWeapon === 'sword') {
+                game.holster = 0;
+                startSwordAttack(SWORD_DRAW);
+            }
+            else if (game.shownWeapon === 'kunai') {
+                game.holster = 0;
+                startKunaiDraw();
+            }
+            else if (game.shownWeapon === 'axe') {
+                // 斧は右肩の後ろから引き抜き、頭上を回して振り下ろしてから構える
+                game.holster = 0;
+                startAxeAttack(AXE_DRAW);
+            }
+            // リボルバーもホルスターから抜いて、指で回しながら構える
+            if (game.shownWeapon === 'handgun') {
+                game.holster = 0;
+                startGunDraw();
+            }
+            // 鎖鎌は頭を鎖で回しながら振り上げ、握りへ組み戻して構える
+            if (game.shownWeapon === 'sickle') {
+                game.holster = 0;
+                startSickleDraw();
+            }
         }
     }
     else if (game.wantWeapon === game.shownWeapon) {
@@ -67,7 +94,6 @@ export function updateWeaponSwitch(dt) {
     swordViewModel.visible = game.shownWeapon === 'sword';
     sickleViewModel.visible = game.shownWeapon === 'sickle';
     axeViewModel.visible = game.shownWeapon === 'axe';
-    chakramViewModel.visible = game.shownWeapon === 'chakram';
 }
 export const handJoltPos = new THREE.Vector3();
 export function updateViewModel(dt) {
@@ -150,10 +176,6 @@ export function updateViewModel(dt) {
     axeViewModel.position.set(AXE_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.016 * aBob - axeSwayX * 0.5 + aSlide * 0.03, AXE_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.016 * aBob - Math.min(velocity.y, 0) * 0.002
         + axeSwayY * 0.5 + cameraFx.landDip * 0.35 - aPull * 0.04 - aSlide * 0.03 - mantlePose * 0.12, AXE_VIEW_MODEL_POS.z + aPull * 0.1 + speedBack);
     axeViewModel.rotation.set(-aPull * 0.35 + axeSwayY * 2 - mantlePose * 0.5, -axeSwayX * 2, aSlide * 0.35 + cameraFx.roll);
-    // チャクラムもハンドガンと同じ揺れ方をさせる
-    chakramViewModel.position.set(CHAKRAM_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - viewState.lookSwayX * 0.5 + slidePose * 0.03, CHAKRAM_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
-        + viewState.lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, CHAKRAM_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
-    chakramViewModel.rotation.set(-dashPull * 0.35 + viewState.lookSwayY * 2 - mantlePose * 0.5, -viewState.lookSwayX * 2, slidePose * 0.35 + cameraFx.roll);
     // 高いところからの着地で、手元も画面と一緒に強く揺らす
     const ls = landShakeAmount();
     if (ls > 0) {
@@ -161,13 +183,13 @@ export function updateViewModel(dt) {
         handJoltPos.set(ls * 0.025 * Math.sin(t * 83.9 + 1.7), -ls * 0.05 * Math.abs(Math.sin(t * 95.3 + 0.9)), ls * 0.02 * Math.sin(t * 77.1 + 4.4));
         const rx = -ls * 0.25 * Math.abs(Math.sin(t * 88.7 + 2.6));
         const rz = ls * 0.18 * Math.sin(t * 101.3 + 0.2);
-        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, chakramViewModel]) {
+        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
             vm.position.add(handJoltPos);
             vm.rotation.x += rx;
             vm.rotation.z += rz;
         }
     }
-    // 撃った反動で手前へ跳ね上げる。装填中は装填の動き（キーフレーム）を足す
+    // 撃った反動で手前へ跳ね上げる。装填中と取り出し中はその動き（キーフレーム）を足す
     gunViewModel.position.z += gunState.gunRecoil * 0.1;
     gunViewModel.position.y += gunState.gunRecoil * 0.02;
     gunViewModel.rotation.x += gunState.gunRecoil * 0.6;
@@ -177,8 +199,30 @@ export function updateViewModel(dt) {
     gunViewModel.rotation.z += reloadRotOff.z * DEG;
     // 持ち替え中は手元を画面の下へ下げる
     const h = game.holster * game.holster * (3 - 2 * game.holster);
-    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, chakramViewModel]) {
+    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
         vm.position.y -= h * 0.25;
         vm.rotation.x -= h * 0.9;
+    }
+    // クナイの取り出し: 両手を外へひねった形で下から振り上げ、少し行き過ぎてから構えに収める。左手は少し遅れて上げる。
+    // 右手は握り込んだ瞬間に切っ先を前へ小さく突き出す
+    const dt0 = kunaiState.drawTime;
+    if (dt0 < KUNAI_DRAW_TIME) {
+        const rise = (t) => 1 - easeOutBack(THREE.MathUtils.clamp(t / 0.32, 0, 1));
+        const r = rise(dt0);
+        const g = (dt0 - DRAW_SPIN_END) / 0.16;
+        const snap = g > 0 && g < 1 ? Math.sin(g * Math.PI) * (1 - g) : 0;
+        viewModel.position.x += r * 0.06;
+        viewModel.position.y -= r * 0.22;
+        viewModel.position.z += r * 0.05 - snap * 0.025;
+        viewModel.rotation.x -= r * 1.1 + snap * 0.3;
+        viewModel.rotation.y += r * 0.4;
+        viewModel.rotation.z -= r * 0.8;
+        const l = rise(dt0 - 0.07);
+        leftViewModel.position.x -= l * 0.06;
+        leftViewModel.position.y -= l * 0.22;
+        leftViewModel.position.z += l * 0.05;
+        leftViewModel.rotation.x -= l * 1.1;
+        leftViewModel.rotation.y -= l * 0.4;
+        leftViewModel.rotation.z += l * 0.8;
     }
 }
