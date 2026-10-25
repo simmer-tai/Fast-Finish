@@ -5,8 +5,9 @@ import { type EnemyBody } from './body.js';
 import { type WeaponId } from '../weapons/ids.js';
 import { type Scar } from '../fx/scars.js';
 
-// 敵の種類: 銃撃役（間合いを保って撃つ）と、ストライカー（刃の腕で斬りかかってくる近接型。体と動きは enemy/striker.ts）
-export type EnemyKind = 'gunner' | 'striker';
+// 敵の種類: 銃撃役（間合いを保って撃つ）、ストライカー（刃の腕で斬りかかってくる近接型。体と動きは enemy/striker.ts）、
+// 狙撃手（動かずに照準線を出して溜め、重い一発を撃つ。enemy/sniper.ts）
+export type EnemyKind = 'gunner' | 'striker' | 'sniper';
 export type StrikePhase = 'chase' | 'windup' | 'slash' | 'recover' | 'drop';
 
 // ---- 敵 1 体分の状態 ----
@@ -51,6 +52,7 @@ export interface Enemy extends EnemyBody {
   vel: THREE.Vector3; // 歩く速さ（水平）
   knockVel: THREE.Vector3; // 斧で吹き飛ばされている速さ（水平）
   flung: boolean; // 斧の突進で前へ吹き飛ばされている（このまま壁に当たると叩きつけ）
+  batFlung: boolean; // バットのチャージで吹き飛ばされている（ほかの敵に当たると巻き込む）
   walk: number; // 歩く足の動きの強さ (0..1)
   walkPhase: number;
   walkDir: THREE.Vector3; // 足を振る向き（体の座標）
@@ -68,10 +70,8 @@ export interface Enemy extends EnemyBody {
   brace: number; // 撃つ前に腰を落として構えている度合い (0..1)
   idleT: number; // 立っている間の呼吸と重心の揺れの時刻
   speedMul: number; // 歩く速さの個体差
-  // 狙われたときの横っ飛び
-  aimedAt: number; // プレイヤーに狙われ続けている時間
-  dodgeT: number; // 横へ跳んでいる残りの時間
-  dodgeCool: number; // 次に跳べるまでの時間
+  // 車をよけて走る
+  dodgeT: number; // よけて走っている残りの時間
   dodgeVel: THREE.Vector3;
   // 吹き飛ばされて床を滑っている間の踏ん張り
   stumble: number; // 踏ん張りの強さ (0..1)
@@ -90,6 +90,9 @@ export interface Enemy extends EnemyBody {
   dropTo: THREE.Vector3; // 降りる先の足もと
   dropT: number; // 踏み切ってからの時間
   dropDur: number; // 降りる先へ着くまでの時間
+  // 狙撃手の溜め（ほかの敵では使わない）
+  charge: number; // 狙い始めてからの時間（-1 = 狙っていない）
+  laser: THREE.Line | null; // 照準線
   // 倒すまでの過程（とどめのスコアに足す）。出てくるたびに戻す
   hits: number; // この敵に当てた数
   lastHitAt: number; // この敵に最後に当てた時刻（実時間）

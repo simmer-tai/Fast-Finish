@@ -4,7 +4,7 @@ import { DEG, UP, wrapAngle } from '../math.js';
 import { camera } from '../core.js';
 import { env } from './env.js';
 import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en, enemies, hitDir, type StrikePhase } from './state.js';
-import { ENEMY_KNOCK_STOP, LEG_FWD_X, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, knockEnemy } from './motion.js';
+import { ENEMY_KNOCK_STOP, LEG_FWD_X, carEvadeDir, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, knockEnemy } from './motion.js';
 import { addImpulse, solveDummyLegs, staggerDummy } from './stagger.js';
 import { floorAt } from '../world/blocks.js';
 import { GRAVITY } from '../player/config.js';
@@ -536,6 +536,14 @@ export function updateStrikerMove(dt: number) {
       const d = Math.hypot(ox, oz);
       if (d < STRIKER_APART && d > 1e-3) want.addScaledVector(sepTmp.set(ox / d, 0, oz / d), STRIKER_APART_PUSH * (1 - d / STRIKER_APART));
     }
+  }
+  // 走ってくる車からは、構えも斬りかかりもやめて逃げる
+  const evade = halted ? null : carEvadeDir();
+  if (evade) {
+    if (en.strikePhase === 'windup' || (en.strikePhase === 'slash' && !en.strikeHit)) setPhase('chase');
+    want.copy(evade).multiplyScalar(STRIKER_RUN_SPEED);
+    accel = 25;
+    en.waitT = 0; // 逃げきったら行き先を選び直す
   }
   en.vel.lerp(want, 1 - Math.exp(-accel * dt));
   const nx = p.x + en.vel.x * dt;

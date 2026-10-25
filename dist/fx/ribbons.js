@@ -31,6 +31,7 @@ export function makeRibbonMaterial(style) {
             uEdge: { value: style?.edge ?? 0 },
             uCore: { value: style?.core ?? 0 },
             uBody: { value: new THREE.Vector2(...(style?.body ?? [0, 0])) },
+            uFlight: { value: new THREE.Vector2(2, 0.85) }, // 飛ぶ筋の消え方（fade の何乗か, 濃さ）
         },
         defines: style ? {} : { SYMMETRIC: '' },
         vertexShader: /* glsl */ `
@@ -52,12 +53,13 @@ export function makeRibbonMaterial(style) {
       uniform float uEdge;
       uniform float uCore;
       uniform vec2 uBody;
+      uniform vec2 uFlight;
       varying float vFade;
       varying float vSide;
       void main() {
       #ifdef SYMMETRIC
         // 飛んでいるクナイの筋: 中央が濃く、両側へ抜ける
-        float a = vFade * vFade * (1.0 - abs(vSide * 2.0 - 1.0)) * 0.85;
+        float a = pow(vFade, uFlight.x) * (1.0 - abs(vSide * 2.0 - 1.0)) * uFlight.y;
         gl_FragColor = vec4(uEdgeColor, a);
       #else
         // 斬撃・回転の軌跡: 透けて薄れるのではなく、古いほど根元側から境目のくっきりした線で削れる。
@@ -87,6 +89,9 @@ export function makeRibbonMaterial(style) {
 }
 export const spinRibbonMat = makeRibbonMaterial(KUNAI_RIBBON);
 export const flightRibbonMat = makeRibbonMaterial();
+// 矢の筋: クナイより濃く、ゆっくり薄れて長く残る
+export const arrowRibbonMat = makeRibbonMaterial();
+arrowRibbonMat.uniforms.uFlight.value.set(0.8, 1);
 export class Ribbon {
     max;
     life;

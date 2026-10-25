@@ -3,6 +3,7 @@ import * as sfx from '../audio.js';
 import { DEG } from '../math.js';
 import { camera, scene } from '../core.js';
 import { swordState } from '../weapons/swordCombat.js';
+import { batState } from '../weapons/batCombat.js';
 import { SWORD_DRAW } from '../weapons/swordAttacks.js';
 import { bullets, tracerGeo } from '../weapons/handgunCombat.js';
 import { kunaiState } from '../weapons/kunaiCombat.js';
@@ -62,6 +63,7 @@ export const parryAt = new THREE.Vector3();
 export const parryAim = new THREE.Vector3();
 export const parryRay = new THREE.Line3();
 export const inParryWindow = (t, [a, b]) => t >= a - PARRY_EARLY && t <= b + PARRY_LATE;
+const batParrying = () => batState.attack !== null && game.shownWeapon === 'bat';
 export function parryActive() {
     // クナイは指先で回す細い軌跡を除いた、本当に振っている間だけ
     if (kunaiState.attack && game.shownWeapon === 'kunai')
@@ -69,6 +71,9 @@ export function parryActive() {
     // 剣は持ち替えの抜刀では弾かない
     if (swordState.swordAttack && swordState.swordAttack !== SWORD_DRAW && game.shownWeapon === 'sword')
         return swordState.swordAttack.trails.some((w) => inParryWindow(swordState.swordTime, w));
+    // バットは振り抜いている間、弾を打ち返す
+    if (batParrying())
+        return batState.attack.trails.some((w) => inParryWindow(batState.time, w));
     return false;
 }
 // enemyPath（この 1 歩で弾が進む線分）が入っている前提で呼ぶ
@@ -91,6 +96,7 @@ export function tryParry(b) {
     // 弾いた所: 間合いの縁まで来ていればそこ、まだ手前ならこの 1 歩の中で胸に最も近い所
     if (b.pos.distanceTo(parryChest) <= PARRY_RANGE)
         parryAt.copy(b.pos);
+    const bat = batParrying(); // バットで打ち返した弾は打球にする（handgunCombat.ts）
     const dir = new THREE.Vector3();
     const shooter = b.from;
     if (shooter?.alive)
@@ -104,7 +110,7 @@ export function tryParry(b) {
     const mesh = new THREE.Mesh(tracerGeo, parryTracerMat);
     mesh.frustumCulled = false;
     scene.add(mesh);
-    bullets.push({ pos: parryAt.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, parried: true });
+    bullets.push({ pos: parryAt.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, parried: true, batted: bat });
     // 演出: 一瞬止めて火花を散らし、金属の「キン」
     game.hitStop = Math.max(game.hitStop, PARRY_HIT_STOP);
     game.hitStopTotal = game.hitStop;
@@ -112,7 +118,9 @@ export function tryParry(b) {
     parryState.parryFxAge = 0;
     spawnSparks(parryAt, parryAim.copy(dir), 12 + Math.floor(Math.random() * 5), 0.8, 0.7);
     sfx.playParry(PARRY_HIT_STOP);
-    hooks.addTrauma(0.15);
+    if (bat)
+        sfx.playHit(1.3, 'bat'); // 芯で捉えた「ゴッ」を重ねる
+    hooks.addTrauma(bat ? 0.25 : 0.15);
     kickVel.x += 0.8 * DEG * 22;
     return true;
 }

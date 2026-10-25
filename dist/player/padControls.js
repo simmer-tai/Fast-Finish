@@ -7,6 +7,7 @@ import { axeState } from '../weapons/axeCombat.js';
 import { swordState } from '../weapons/swordCombat.js';
 import { gunState } from '../weapons/handgunCombat.js';
 import { sickleState } from '../weapons/sickleCombat.js';
+import { bowState } from '../weapons/bowCombat.js';
 import { viewState } from '../weapons/viewModelMotion.js';
 import { options } from '../ui/options.js';
 import { overlay } from '../ui/overlay.js';
@@ -32,7 +33,7 @@ export const PAD_WEAPONS = [
     [PAD.DOWN, 'sword'],
     [PAD.LEFT, 'sickle'],
 ];
-export const WEAPON_ORDER = ['kunai', 'handgun', 'sword', 'sickle', 'axe']; // LB / RB で順に回す
+export const WEAPON_ORDER = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'bow']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 export const PAD_MENU_KEYS = [
     [PAD.A, 'Enter'],
@@ -128,7 +129,7 @@ export function updatePad(dt) {
     if (pad.down[PAD.RT])
         game.attackPressed = game.attackHeld = true;
     if (pad.down[PAD.LT])
-        game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = true;
+        game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = true;
     if (pad.down[PAD.X])
         gunState.reloadQueued = sickleState.tossPressed = true;
     const cycle = (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);

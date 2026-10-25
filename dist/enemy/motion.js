@@ -11,6 +11,7 @@ import { GRAVITY } from '../player/config.js';
 import { position } from '../player/state.js';
 import { rand } from '../random.js';
 import { spawnSparks } from '../fx/hitFx.js';
+import { moverThreat } from '../world/movers.js';
 // ---- 打ち上げられた敵 ----
 // 斧の打ち上げで真上へ飛び、プレイヤーと同じ重力で落ちる。浮いている間は歩かず撃たない。
 // 叩きつけられて速く落ちてきたら、地面で重く鳴って小さく跳ねる
@@ -180,8 +181,32 @@ export function knockEnemy(dir, knock) {
     en.dodgeT = 0;
     en.waitT = Math.max(en.waitT, rand(ENEMY_WAIT_MIN, ENEMY_WAIT_MAX) * 0.5);
 }
+// バットのチャージで吹き飛ばした敵が、ほかの敵に当たったら巻き込む
+export const BODY_SLAM_GAP = 0.15; // 体どうしがこれだけ近づいたら当たり (m)
+export const BODY_SLAM_KEEP = 0.3; // ぶつかった後に、ぶつけた側に残す速さの割合
+function flungInto() {
+    const p = en.root.position;
+    const k = en.knockVel;
+    for (const e of enemies) {
+        if (e === en || !e.alive || e.riseTime < RESPAWN_RISE_TIME)
+            continue;
+        const q = e.root.position;
+        if (Math.abs(q.y + e.airY - (p.y)) > DUMMY_HEIGHT)
+            continue;
+        const dx = q.x - p.x;
+        const dz = q.z - p.z;
+        if (dx * dx + dz * dz > (DUMMY_RADIUS * 2 + BODY_SLAM_GAP) ** 2)
+            continue;
+        if (dx * k.x + dz * k.z <= 0)
+            continue; // 離れていく向きの相手は除く
+        return e;
+    }
+    return null;
+}
 export function updateEnemyKnock(dt) {
     const k = en.knockVel;
+    if (!en.flung)
+        en.batFlung = false;
     if (k.lengthSq() === 0)
         return;
     if (env.isHeld()) {
@@ -195,6 +220,13 @@ export function updateEnemyKnock(dt) {
     if (enemyCanStand(nx, nz)) {
         p.x = nx;
         p.z = nz;
+        if (en.batFlung) {
+            const other = flungInto();
+            if (other && env.slamIntoEnemy(other))
+                k.multiplyScalar(BODY_SLAM_KEEP);
+            if (!en.alive)
+                return;
+        }
         // 浮いている間は踏ん張れないので、ほとんど速さが落ちない
         k.multiplyScalar(Math.exp(-(en.airY > 0 ? ENEMY_KNOCK_AIR_FRICTION : en.flung ? ENEMY_KNOCK_FLUNG_FRICTION : ENEMY_KNOCK_FRICTION) * dt));
         if (k.lengthSq() < ENEMY_KNOCK_STOP ** 2) {
@@ -262,51 +294,25 @@ export function pickMoveTarget() {
     }
     return false;
 }
-// ---- 狙われたときの横っ飛び ----
-// プレイヤーの照準が少しの間この敵に重なり続けたら、構えを解いて横へ素早く跳ぶ。近くにいるとき（刃の間合い）は跳ばない
-export const ENEMY_DODGE_CONE = 4 * DEG; // 視線と敵の胸の向きのずれがこれ以内なら狙われているとみなす
-export const ENEMY_DODGE_NOTICE = 0.5; // これだけ狙われ続けたら跳ぶ
-export const ENEMY_DODGE_NEAR = 6; // プレイヤーがこれより近ければ跳ばない
-export const ENEMY_DODGE_DIST = 2.4; // 跳ぶ距離 (m)
-export const ENEMY_DODGE_SPEED = 8; // m/s
-export const ENEMY_DODGE_ACCEL = 25;
-export const ENEMY_DODGE_COOL_MIN = 2.5;
-export const ENEMY_DODGE_COOL_MAX = 4.5;
+export const ENEMY_DODGE_ACCEL = 25; // 車をよけて走るときの加速
 export const ENEMY_RETREAT_NEAR = 4; // プレイヤーがこれより近いと、立ち止まる時間を縮めてすぐ下がり始める
 export const ENEMY_MOVE_LEAN = 0.025; // 速さ 1 m/s あたりに上体を傾ける角度 (rad)
 export const ENEMY_ACCEL_LEAN = 0.012; // 加速 1 m/s² あたりに上体を傾ける角度 (rad)
 export const ENEMY_MAX_MOVE_LEAN = 0.25;
-export const playerEye = new THREE.Vector3();
-export const playerLook = new THREE.Vector3();
-export const dodgeTo = new THREE.Vector3();
 export const leanWant = new THREE.Vector3();
-export function updateEnemyAimed(dt) {
-    dodgeTo.set(en.root.position.x, en.root.position.y + en.airY + 1.2, en.root.position.z).sub(playerEye);
-    const dist = dodgeTo.length();
-    const aimed = dist > ENEMY_DODGE_NEAR && playerLook.angleTo(dodgeTo) < ENEMY_DODGE_CONE;
-    en.aimedAt = aimed ? en.aimedAt + dt : Math.max(0, en.aimedAt - dt * 2);
-}
-export function tryDodge() {
+// ---- 走ってくる車をよける ----
+// 車の道のりを少し先まで読み、通る所にいたら車の進む向きと直角に、車から離れる側へ走って逃げる（その側に立てなければ逆へ）
+export const CAR_LOOK = 1.2; // これだけ先までに車が来る所にいたら、よける (s)
+export const CAR_MARGIN = 0.5; // 車とこれだけは離れる
+export const CAR_EVADE_SPEED = 7; // よける速さ (m/s)
+const evadeDir = new THREE.Vector3();
+export function carEvadeDir() {
     const p = en.root.position;
-    const toPlayer = Math.atan2(position.x - p.x, position.z - p.z);
-    const first = Math.random() < 0.5 ? -1 : 1;
-    for (const side of [first, -first]) {
-        const a = toPlayer + side * (Math.PI / 2) + rand(-20, 20) * DEG;
-        const x = p.x + Math.sin(a) * ENEMY_DODGE_DIST;
-        const z = p.z + Math.cos(a) * ENEMY_DODGE_DIST;
-        if (!enemyCanStand(x, z) || !enemyApartAt(x, z) || !enemyPathClear(x, z))
-            continue;
-        en.dodgeVel.set(Math.sin(a), 0, Math.cos(a)).multiplyScalar(ENEMY_DODGE_SPEED);
-        en.dodgeT = ENEMY_DODGE_DIST / ENEMY_DODGE_SPEED;
-        en.dodgeCool = rand(ENEMY_DODGE_COOL_MIN, ENEMY_DODGE_COOL_MAX);
-        en.aimedAt = 0;
-        en.moving = false;
-        en.cooldown = Math.max(en.cooldown, 0.5); // 跳んですぐは撃たない
-        en.pelvisSpring.v.y -= 0.8; // 膝を沈めて踏み切る
-        return true;
-    }
-    en.dodgeCool = 0.6; // 跳べる所が無ければ、少し待って探し直す
-    return false;
+    if (!moverThreat(p.x, p.z, p.y, DUMMY_HEIGHT, DUMMY_RADIUS + CAR_MARGIN, CAR_LOOK, evadeDir))
+        return null;
+    if (!enemyCanStand(p.x + evadeDir.x, p.z + evadeDir.z))
+        evadeDir.negate();
+    return evadeDir;
 }
 export function updateEnemyMove(dt) {
     if (!en.mobile)
@@ -315,12 +321,14 @@ export function updateEnemyMove(dt) {
     moveWant.set(0, 0, 0);
     const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || env.isHeld() || env.playerHp() <= 0 || en.airY > 0
         || en.knockVel.lengthSq() > ENEMY_KNOCK_STOP ** 2;
-    en.dodgeCool -= dt;
-    updateEnemyAimed(dt);
     if (halted)
         en.dodgeT = 0;
-    else if (en.dodgeT <= 0 && en.dodgeCool <= 0 && en.aimedAt > ENEMY_DODGE_NOTICE)
-        tryDodge();
+    const evade = halted ? null : carEvadeDir();
+    if (evade) {
+        en.dodgeVel.copy(evade).multiplyScalar(CAR_EVADE_SPEED);
+        en.dodgeT = Math.max(en.dodgeT, 0.15); // 車が来なくなるまで、毎フレーム延ばす
+        en.moving = false;
+    }
     const playerDist = Math.hypot(position.x - p.x, position.z - p.z);
     if (en.dodgeT > 0) {
         en.dodgeT -= dt;

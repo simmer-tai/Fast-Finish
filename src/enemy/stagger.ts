@@ -265,7 +265,6 @@ export function resetDummyStagger() {
   en.prevVel.set(0, 0, 0);
   en.brace = 0;
   en.dodgeT = 0;
-  en.aimedAt = 0;
   en.stumble = 0;
   en.stumbling = false;
   for (const f of en.footState) {

@@ -27,6 +27,7 @@ export const player = {
     dashCharges: DASH_CHARGES,
     dashRecharge: 0,
     dashSpeedBefore: 0,
+    airJump: true, // 二段ジャンプが残っているか。着地・壁走り・よじ登り・撃破で戻る
     sliding: false,
     slideLock: false, // スライディングが止まった後、C を離すまで再開しない
     slideBoostCooldown: 0,

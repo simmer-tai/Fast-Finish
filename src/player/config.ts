@@ -2,8 +2,10 @@
 export const EYE_HEIGHT = 1.6;
 export const WALK_SPEED = 8;
 export const SPRINT_SPEED = 15;
-export const JUMP_SPEED = 7;
+export const JUMP_SPEED = 7.5;
+export const AIR_JUMP_SPEED = 4.5; // 二段目のジャンプ（弱め。約 0.5m）
 export const GRAVITY = 20;
+export const PLAYER_GRAVITY = 18; // プレイヤーだけ少し弱め（敵は GRAVITY）
 export const GROUND_ACCEL = 90; // 地上での加減速
 export const GROUND_FRICTION = 60; // 入力がないときの地上での減速
 export const GROUND_TURN_RATE = 14; // 地上で進行方向を曲げる速さ (rad/s)

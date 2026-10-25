@@ -235,7 +235,8 @@
       #overlay .rv-row {
         position: relative; display: flex; align-items: baseline; gap: calc(18 * var(--u)); padding: calc(12 * var(--u)) 0 calc(10 * var(--u)); border-bottom: 1px solid var(--ink-faint);
       }
-      #overlay .rv-row small { flex: none; width: 7.5em; font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.34em; color: var(--ink-soft); }
+      #overlay .rv-row[hidden] { display: none; }
+      #overlay .rv-row small { flex: none; width: 8.5em; font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.34em; color: var(--ink-soft); }
       #overlay .rv-row i { flex: 1; align-self: center; height: 0; border-top: 2px dotted rgba(51, 51, 51, 0.25); }
       #overlay .rv-row b { order: 3; font-weight: 600; font-size: calc(52 * var(--u)); line-height: 0.9; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
       #overlay .rv-row b.lock, #overlay .rv-score b.lock { animation: rv-lock 0.32s cubic-bezier(0.2, 0.9, 0.3, 1); }
@@ -306,6 +307,8 @@
       }
       /* SS は 2 文字なので、少し小さく詰めて同じ幅に収める */
       #overlay .rv-letter[data-rank="SS"] { font-size: calc(var(--size) * 0.74); letter-spacing: -0.04em; }
+      /* Cheater? は長いので、ずっと小さくして 1 行に収める */
+      #overlay .rv-letter[data-rank="Cheater?"] { font-size: calc(var(--size) * 0.45); letter-spacing: -0.04em; white-space: nowrap; }
       #overlay .rv-rank.show .rv-letter { animation: rv-rank-slam 0.42s cubic-bezier(0.3, 0, 0.2, 1) both; }
       #overlay .rv-rank.show .rv-letter::before { animation: rv-rank-echo 0.9s 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
       @keyframes rv-rank-slam {
@@ -673,7 +676,8 @@
       #overlay .sw-win-head { grid-column: 1 / -1; margin-bottom: calc(26 * var(--u)); }
       #overlay .sw-win-head h3 { margin: calc(10 * var(--u)) 0 0; font-weight: 600; font-size: calc(64 * var(--u)); line-height: 0.85; letter-spacing: 0.02em; }
       /* 行: 番号・小さな台・名前。カーソルは墨の斜めの枠で囲んで右へ出し、左に太い帯。持ち込んでいる武器には印 */
-      #overlay .sw-rows { display: flex; flex-direction: column; gap: calc(10 * var(--u)); }
+      /* 行の列は決定のボタンの段まで通す（右の列より長くても窓が縦に伸びないように） */
+      #overlay .sw-rows { grid-row: span 2; display: flex; flex-direction: column; gap: calc(10 * var(--u)); }
       #overlay .sw-rows button {
         position: relative; display: grid; grid-template-columns: 2.2ch calc(58 * var(--u)) 1fr; align-items: center; gap: calc(18 * var(--u));
         padding: calc(8 * var(--u)) calc(24 * var(--u)) calc(8 * var(--u)) calc(26 * var(--u)); border: 0; background: none; cursor: pointer; isolation: isolate;
@@ -709,6 +713,18 @@
         content: "EQUIPPED"; position: absolute; right: calc(22 * var(--u)); top: calc(8 * var(--u)); padding: calc(3 * var(--u)) calc(8 * var(--u)) calc(2 * var(--u));
         font-size: max(9px, calc(11 * var(--u))); line-height: calc(13 * var(--u)); letter-spacing: 0.24em; color: #fff; background: var(--ink); transform: skewX(-24deg);
       }
+      /* 選んだ（EQUIPPED の）行は墨で塗りつぶして白抜きにし、乗せただけの行（枠だけ）と見分ける。印は白地に反転 */
+      #overlay .sw-rows button.equipped { color: #fff; transform: translateX(calc(12 * var(--u))); }
+      #overlay .sw-rows button.equipped::before { background: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+      #overlay .sw-rows button.equipped::after { transform: skewX(-24deg) scaleY(1); }
+      #overlay .sw-rows button.equipped .sw-plate { opacity: 1; }
+      #overlay .sw-rows button.equipped .sw-plate .ic .cut { stroke: var(--ink); }
+      #overlay .sw-rows button.equipped .sw-name::after { color: var(--ink); background: #fff; }
+      /* 押した瞬間: 行が一度押し込まれ、外へ墨の輪が広がって消える */
+      #overlay .sw-rows button.pick-now { animation: sw-pick-press 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      #overlay .sw-rows button.pick-now::before { animation: sw-pick-ring 0.36s ease-out; }
+      @keyframes sw-pick-press { 0% { scale: 0.96; } 100% { scale: 1; } }
+      @keyframes sw-pick-ring { 0% { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 0 rgba(51, 51, 51, 0.5); } 100% { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 calc(14 * var(--u)) rgba(51, 51, 51, 0); } }
       /* 右: 上に 16:9 のプレビュー動画、下にカーソルの武器の台と名前。動かしたら、下へは下から・上へは上から差し込む */
       #overlay .sw-video {
         position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: var(--ink);
@@ -747,7 +763,10 @@
       @keyframes sw-in-smear { 0% { translate: 0 calc(var(--sw-from) * 1.3); } 22%, 100% { translate: 0 0; } }
       /* アイコンも透かさずに差し込み、名前と同じ時刻に着いて白い尾を巻き取る */
       @keyframes sw-in-ic { 0% { translate: 0 calc(var(--sw-from) * 0.9); } 22%, 100% { translate: 0 0; } }
-      /* 下の操作の案内。DECIDE と BACK は押しても効く */
+      /* 決定のボタン。右の列の下に、START より一回り小さく置く */
+      #overlay .menu.si-go.sw-go { grid-column: 2; margin-top: calc(30 * var(--u)); }
+      #overlay .menu.si-go.sw-go button { min-width: 56%; font-size: calc(44 * var(--u)); }
+      /* 下の操作の案内。BACK は押しても効く */
       #overlay .sw-keys {
         grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: calc(28 * var(--u)); margin-top: calc(30 * var(--u));
         font-size: max(10px, calc(13 * var(--u))); letter-spacing: 0.26em; color: var(--ink-soft);
@@ -759,6 +778,7 @@
       @media (max-width: 900px) {
         #overlay .sw-win { width: calc(100vw - 48px); grid-template-columns: 1fr; }
         #overlay .sw-preview, #overlay .sw-win > .si-frame .code, #overlay .sw-win > .si-frame .slash { display: none; }
+        #overlay .menu.si-go.sw-go { grid-column: 1; }
         #overlay .sw-win > .si-frame { inset: calc(-40 * var(--u)) -12px calc(-24 * var(--u)); }
       }
       @media (max-width: 900px) {
@@ -828,6 +848,30 @@
       #crosshair .track, #crosshair .gauge { fill: none; stroke-width: 2; stroke-linecap: round; }
       #crosshair .track { stroke: rgba(51, 51, 51, 0.2); }
       #crosshair .gauge { stroke: #333; }
+      /* 弓の引き具合（クロスヘアの下）: 斜めに切った帯を左から右へ溜める */
+      #bowgauge {
+        position: fixed; left: 50%; top: calc(50% + 36px); width: 84px; height: 9px; pointer-events: none;
+        margin-left: -42px; opacity: 0; transform-origin: 50% 50%;
+      }
+      body.on-title #bowgauge { visibility: hidden; }
+      #bowgauge .bar { position: absolute; inset: 0; overflow: hidden; background: rgba(51, 51, 51, 0.16); transform: skewX(-24deg); }
+      #bowgauge .f { position: absolute; inset: 0; background: rgba(51, 51, 51, 0.5); transform-origin: 0 50%; transform: scaleX(0); }
+      /* 弓の跳弾矢の残り（引き具合の帯の下）: 菱形を 3 つ並べ、残っている分を濃い墨で塗る。
+         敵を倒して戻ると白く光って膨らみ、残りが無いのに引こうとすると枠が浮いて横に震える */
+      #bowstock {
+        position: fixed; left: 50%; top: calc(50% + 52px); display: flex; gap: 8px; pointer-events: none;
+        transform: translateX(-50%); opacity: 0; transition: opacity 0.2s;
+      }
+      body.on-title #bowstock { visibility: hidden; }
+      #bowstock.show { opacity: 1; }
+      #bowstock i { position: relative; display: block; width: 7px; height: 7px; background: rgba(51, 51, 51, 0.16); transform: rotate(45deg); }
+      #bowstock i.ready { background: #333; }
+      #bowstock i::after { content: ""; position: absolute; inset: 0; background: #fff; opacity: 0; }
+      #bowstock i.gain { animation: stock-gain 0.32s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      #bowstock i.gain::after { animation: hook-gain-flash 0.32s ease-out; }
+      #bowstock.empty { animation: hook-empty 0.35s linear; }
+      #bowstock.empty i { box-shadow: inset 0 0 0 1.5px #333; }
+      @keyframes stock-gain { from { transform: rotate(45deg) scale(1.7); } to { transform: rotate(45deg); } }
       /* 画面外の敵の印: 見えていない敵の向き（後ろの敵は下半分）に、クロスヘアを中心にした円（半径 64px）の上で外向きの小さなくさびを出す。
          近い敵ほど濃く、撃つ直前の敵は大きくする。向きと濃さは JS で決める */
       #threats { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
@@ -1190,6 +1234,12 @@
         <path class="gauge" pathLength="100" d="M 29 30.72 A 14 14 0 0 0 29 9.28" />
       </svg>
     </div>
+    <!-- 弓の引き具合: クロスヘアの下の帯 -->
+    <div id="bowgauge">
+      <div class="bar"><div class="f"></div></div>
+    </div>
+    <!-- 弓の跳弾矢の残り: 引き具合の帯の下に菱形を 3 つ -->
+    <div id="bowstock"><i></i><i></i><i></i></div>
     <div id="threats"></div>
     <!-- 鎖鎌の引き寄せの残り回数: クロスヘアの下に、斜めに切った帯を 2 本 -->
     <div id="hookgauge">
@@ -1299,6 +1349,21 @@
             <svg data-w="axe" viewBox="0 0 120 40">
               <path d="M23.5 16.5 L111.1 16.8 L113.5 17.6 L113.7 20.8 L112.3 26.2 L110.1 25.4 L108.7 22.2 L75.1 22.0 L72.9 25.6 L70.3 25.6 L69.1 21.8 L23.5 21.5 Z" />
               <path d="M13.5 1.1 L17.6 14.8 L24.4 16.4 L24.4 21.4 L19.1 22.2 L19.7 29.4 L25.8 37.4 L23.2 39.0 L12.5 38.6 L4.2 35.5 L8.2 22.2 L10.4 14.8 Z" />
+            </svg>
+            <!-- 弓: 横に寝かせたリカーブボウ。巻いた握りの柄、先で反り返るリム、まっすぐな弦 -->
+            <svg data-w="bow" viewBox="0 0 120 40">
+              <g transform="translate(0 4)">
+                <rect x="7" y="29.2" width="106" height="1.2" />
+                <path d="M51 7 C36 8 22 15 13 26 L10 31 L4 29.5 L4.5 27.5 L8.5 28.5 L10.5 24 C20 12 35 4 51 3.5 Z" />
+                <path d="M69 7 C84 8 98 15 107 26 L110 31 L116 29.5 L115.5 27.5 L111.5 28.5 L109.5 24 C100 12 85 4 69 3.5 Z" />
+                <path d="M50 2.5 L70 2.5 L72 4.5 L72 8 L66 9 L66 13 L54 13 L54 9 L48 8 L48 4.5 Z" />
+                <path d="M56.5 9.5 v3 M59 9.5 v3 M61.5 9.5 v3 M64 9.5 v3" class="cut" />
+              </g>
+            </svg>
+            <!-- バット: 横に寝かせた金属バット。先へ太る胴、テープを巻いた細い握り、柄尻のノブ -->
+            <svg data-w="bat" viewBox="0 0 120 40">
+              <path d="M7 16.5 Q4 16.5 4 20 Q4 23.5 7 23.5 L44 23.5 L66 21.6 L106 21.6 L106 24.5 L112 25 L112 15 L106 15.5 L106 18.4 L66 18.4 L44 16.5 Z" />
+              <path d="M84 18.4 v3.2 M89 18.4 v3.2 M94 18.4 v3.2 M99 18.4 v3.2" class="cut" />
             </svg>
           </div>
           <div class="name"><span>KUNAI</span></div>
@@ -1425,6 +1490,7 @@
               <button type="button" data-weapon="sword" data-name="SWORD" data-ja="刀"><span class="no">03</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">SWORD</b><span class="ja">刀</span></span></button>
               <button type="button" data-weapon="sickle" data-name="CHAIN SICKLE" data-ja="鎖鎌"><span class="no">04</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">CHAIN SICKLE</b><span class="ja">鎖鎌</span></span></button>
               <button type="button" data-weapon="axe" data-name="BATTLE AXE" data-ja="バトルアックス"><span class="no">05</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">BATTLE AXE</b><span class="ja">バトルアックス</span></span></button>
+              <button type="button" data-weapon="bow" data-name="BOW" data-ja="弓"><span class="no">06</span><span class="sw-plate"><span class="ic"></span></span><span class="sw-name"><b class="nm">BOW</b><span class="ja">弓</span></span></button>
             </div>
             <div class="sw-preview">
               <!-- 16:9 のプレビュー動画。previews/<武器>.mp4 を流し、無ければ NO SIGNAL の画面を出す -->
@@ -1444,9 +1510,13 @@
                 <div class="sw-name"><b class="nm"></b><span class="ja"></span></div>
               </div>
             </div>
+            <!-- 決定: クリックで選んだ（EQUIPPED の）武器を持ち込んで閉じる。ステージ選択の START と同じ形 -->
+            <div class="menu si-go sw-go">
+              <button type="button" data-action="weapon-decide"><span>DECIDE</span><em class="chev"><b></b><b></b><b></b></em><small>ENTER</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+            </div>
             <div class="sw-keys">
               <span><kbd>↑</kbd><kbd>↓</kbd>SELECT</span>
-              <button type="button" data-action="weapon-decide"><kbd>ENTER</kbd>DECIDE</button>
+              <span><kbd>CLICK</kbd>EQUIP</span>
               <button type="button" data-action="weapon-close"><kbd>ESC</kbd>BACK</button>
             </div>
             <div class="si-frame" aria-hidden="true">
@@ -1469,9 +1539,8 @@
             <h1 class="rv-title"><span class="s1">STAGE</span><span class="s2">CLEAR</span></h1>
             <div class="rule rv-rule"></div>
             <div class="rv-rows">
-              <div class="rv-row" data-row="time"><small>TIME</small><i></i><b>0:00.00</b><em class="rv-tag" data-tag="time">NEW RECORD</em></div>
-              <div class="rv-row" data-row="kills"><small>KILLS</small><i></i><b>0</b></div>
-              <div class="rv-row" data-row="damage"><small>DAMAGE</small><i></i><b>0</b><em class="rv-tag" data-tag="damage">NO DAMAGE</em></div>
+              <div class="rv-row" data-row="time"><small>TIME</small><i></i><b>0:00.00</b><em class="rv-tag" data-tag="time">NEW RECORD</em></div>              <div class="rv-row" data-row="damage"><small>DAMAGE</small><i></i><b>0</b><em class="rv-tag" data-tag="damage">NO DAMAGE</em></div>
+              <div class="rv-row" data-row="headshot" hidden><small>HEADSHOT</small><i></i><b>0%</b></div>
             </div>
             <div class="rv-score"><small>SCORE</small><div class="val"><b>0</b><em class="rv-tag" data-tag="score">NEW RECORD</em></div><div class="rv-meter"><div class="fill"></div></div></div>
             <div class="menu rv-menu">

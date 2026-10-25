@@ -13,13 +13,21 @@ export const debrisBox = new THREE.Box3();
 export const debrisSize = new THREE.Vector3();
 export const debrisInv = new THREE.Matrix4();
 export const debrisRot = new THREE.Quaternion();
-// heavy = true（斧）なら、散らばりを抑えて攻撃の向き（と刃の振り抜けた向き）へまとめて吹き飛ばす
+export const DEBRIS_LAUNCH_GRAVITY = 0.65; // かっ飛ばした部品の重力の倍率（滞空を長く見せる）
+export const DEBRIS_LAUNCH_BOUNCE = 0.5;
 export const debrisPush = new THREE.Vector3();
-export function breakDummy(dir, heavy = false, swing) {
+export function breakDummy(dir, style = 'normal', swing) {
     clearDebris();
+    const heavy = style === 'heavy';
+    const launch = style === 'launch';
     debrisPush.copy(dir);
-    if (heavy && swing && swing.lengthSq() > 1e-6)
-        debrisPush.addScaledVector(swing.clone().normalize(), 0.7).normalize();
+    if ((heavy || launch) && swing && swing.lengthSq() > 1e-6) {
+        debrisPush.addScaledVector(swing.clone().normalize(), launch ? 1 : 0.7);
+        debrisPush.y = 0; // 叩きつけで下へ振っても、床へ潜らせず前へ飛ばす
+        if (debrisPush.lengthSq() < 1e-6)
+            debrisPush.copy(dir);
+        debrisPush.normalize();
+    }
     en.root.updateMatrixWorld(true);
     // 部品を、いちばん近い塊の根元ごとに分ける
     const groups = new Map();
@@ -57,7 +65,11 @@ export function breakDummy(dir, heavy = false, swing) {
         const vel = new THREE.Vector3(obj.position.x - en.root.position.x, 0, obj.position.z - en.root.position.z);
         if (vel.lengthSq() < 1e-6)
             vel.set(Math.random() - 0.5, 0, Math.random() - 0.5);
-        if (heavy) {
+        if (launch) {
+            vel.normalize().multiplyScalar(rand(2, 5)).addScaledVector(debrisPush, rand(11, 17));
+            vel.y = rand(6, 10) + (obj.position.y - en.root.position.y) * 1.5;
+        }
+        else if (heavy) {
             vel.normalize().multiplyScalar(rand(0.4, 1.2)).addScaledVector(debrisPush, rand(6, 10));
             vel.y = Math.max(vel.y, 0) + rand(1.5, 3.5) + (obj.position.y - en.root.position.y) * 0.6;
         }
@@ -69,8 +81,10 @@ export function breakDummy(dir, heavy = false, swing) {
             obj,
             vel,
             axis: new THREE.Vector3().randomDirection(),
-            spin: rand(6, 16) * (Math.random() < 0.5 ? -1 : 1),
+            spin: (launch ? rand(14, 26) : rand(6, 16)) * (Math.random() < 0.5 ? -1 : 1),
             radius: Math.min(debrisSize.x, debrisSize.y, debrisSize.z) * 0.5,
+            gravity: launch ? DEBRIS_GRAVITY * DEBRIS_LAUNCH_GRAVITY : DEBRIS_GRAVITY,
+            bounce: launch ? DEBRIS_LAUNCH_BOUNCE : DEBRIS_BOUNCE,
         });
     }
 }
@@ -83,7 +97,7 @@ export function updateDebris(dt) {
     const shrink = THREE.MathUtils.clamp((RESPAWN_TIME - en.deadTime) / DEBRIS_SHRINK, 0, 1);
     for (const d of en.debris) {
         const p = d.obj.position;
-        d.vel.y -= DEBRIS_GRAVITY * dt;
+        d.vel.y -= d.gravity * dt;
         p.addScaledVector(d.vel, dt);
         d.obj.quaternion.premultiply(debrisRot.setFromAxisAngle(d.axis, d.spin * dt));
         // 床で跳ねて、転がりながら止まる
@@ -91,7 +105,7 @@ export function updateDebris(dt) {
         if (p.y < floor) {
             p.y = floor;
             if (d.vel.y < 0)
-                d.vel.y *= -DEBRIS_BOUNCE;
+                d.vel.y *= -d.bounce;
             if (d.vel.y < 0.5)
                 d.vel.y = 0;
             d.vel.x *= 0.7;

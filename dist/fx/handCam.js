@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { SICKLE_VIEW_MODEL_POS } from '../weapons/chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from '../weapons/battleAxe.js';
+import { BOW_VIEW_MODEL_POS } from '../weapons/bow.js';
+import { BAT_VIEW_MODEL_POS } from '../weapons/bat.js';
 import { SWORD_VIEW_MODEL_POS } from '../weapons/sword.js';
-import { GUN_VIEW_MODEL_POS, VIEW_MODEL_POS, axeRest, axeViewModel, gunTwirl, gunViewModel, kunaiRest, sickleViewModel, swordRest, swordViewModel, viewModel, } from '../weapons/viewModels.js';
+import { GUN_VIEW_MODEL_POS, VIEW_MODEL_POS, axeRest, axeViewModel, batRest, batViewModel, bowRest, bowViewModel, gunTwirl, gunViewModel, kunaiRest, sickleViewModel, swordRest, swordViewModel, viewModel, } from '../weapons/viewModels.js';
 import { reloadPosOff } from '../weapons/handgunCombat.js';
 import { grappleHooks, sickleBodyPos } from '../weapons/sickleCombat.js';
 import { game } from '../game/state.js';
@@ -26,6 +28,8 @@ export const HAND_PROBE_SWORD = new THREE.Vector3(0, 0.35, 0);
 export const HAND_PROBE_GUN = new THREE.Vector3(0, 0, -0.1);
 export const HAND_PROBE_SICKLE = new THREE.Vector3(0, 0.1, 0);
 export const HAND_PROBE_AXE = new THREE.Vector3(0, 0.6, 0);
+export const HAND_PROBE_BOW = new THREE.Vector3(0, 0.1, 0);
+export const HAND_PROBE_BAT = new THREE.Vector3(0, 0.3, 0);
 // frame 座標の点 local を、root の手前まで親をたどって root の座標へ移す（root 自身の揺れは入れない）
 export function probeToRoot(frame, root, local, out) {
     out.copy(local);
@@ -51,6 +55,10 @@ export function measureHand(out) {
             return out.add(SICKLE_VIEW_MODEL_POS).add(sickleBodyPos);
         case 'axe':
             return probeToRoot(axeRest, axeViewModel, HAND_PROBE_AXE, out).add(AXE_VIEW_MODEL_POS);
+        case 'bow':
+            return probeToRoot(bowRest, bowViewModel, HAND_PROBE_BOW, out).add(BOW_VIEW_MODEL_POS);
+        case 'bat':
+            return probeToRoot(batRest, batViewModel, HAND_PROBE_BAT, out).add(BAT_VIEW_MODEL_POS);
     }
 }
 export function updateHandCam(dt) {

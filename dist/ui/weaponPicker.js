@@ -5,8 +5,9 @@ import { options } from './options.js';
 const overlay = document.getElementById('overlay');
 // 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく
 const LOADOUT_STORE = 'fast-finish.weapon';
-// 詳細の欄には今の武器を 1 行で出し、押すと武器の選択画面を開く。選択画面では上下でカーソルを動かして右に大きく見せ、
-// 決めたら詳細の欄へ戻す。名前と和名は選択画面の行から写す
+// 詳細の欄には今の武器を 1 行で出し、押すと武器の選択画面を開く。選択画面では上下・マウスを乗せる・ホイールでカーソルを動かして
+// 行を選択状態にする。クリックで持ち替えて（EQUIPPED の印が移る）右に大きく見せる。決定で詳細の欄へ戻す。
+// 上下のキーはカーソルと持ち替えを一緒に動かす。名前と和名は選択画面の行から写す
 const loadoutSlot = overlay.querySelector('.sw-slot');
 const picker = overlay.querySelector('.sw-picker');
 const pickerRows = [...picker.querySelectorAll('.sw-rows [data-weapon]')];
@@ -29,6 +30,7 @@ const setName = (el, i) => {
 };
 let loadoutIndex = 0; // 持ち込むと決めた武器
 let pickerIndex = 0; // 選択画面のカーソル
+let pickedIndex = 0; // 選択画面で選んだ武器。右に大きく見せ、決定したら持ち込む（BACK なら捨てる）
 try {
     const saved = LOADOUT_IDS.indexOf(localStorage.getItem(LOADOUT_STORE));
     if (saved >= 0)
@@ -134,13 +136,21 @@ function smearPicker(dir) {
     };
     requestAnimationFrame(step);
 }
-// カーソルを動かして右に大きく見せる。dir: 動いた向き（1 = 下へ, -1 = 上へ, 0 = 動きなし）。その向きから差し込む
-function movePicker(i, dir = Math.sign(i - pickerIndex)) {
+// カーソル（選択状態）だけを動かす。右の見せ方は変えない
+function moveCursor(i) {
     pickerIndex = i;
-    pickerRows.forEach((b, j) => {
-        b.classList.toggle('active', j === i);
-        b.classList.toggle('equipped', j === loadoutIndex);
-    });
+    pickerRows.forEach((b, j) => b.classList.toggle('active', j === i));
+}
+// 持ち替えて右に大きく見せる。dir: 動いた向き（1 = 下へ, -1 = 上へ, 0 = 動きなし）。その向きから差し込む
+function pickWeapon(i, dir = Math.sign(i - pickedIndex)) {
+    pickedIndex = i;
+    pickerRows.forEach((b, j) => b.classList.toggle('equipped', j === i));
+    if (dir) {
+        // 押した行を一度押し込む（続けて押しても頭から流し直す）
+        pickerRows[i].classList.remove('pick-now');
+        void pickerRows[i].offsetWidth;
+        pickerRows[i].classList.add('pick-now');
+    }
     showIcon(previewIcons, i);
     setName(pickerPreview, i);
     showPickerVideo(LOADOUT_IDS[i]);
@@ -151,30 +161,34 @@ function movePicker(i, dir = Math.sign(i - pickerIndex)) {
         smearPicker(dir);
     }
 }
-// 端まで行ったら反対の端へ回る
-function stepPicker(dir) {
+// 端まで行ったら反対の端へ回る。pick: キーのときは持ち替えも一緒に（ホイールはカーソルだけ）
+function stepPicker(dir, pick) {
     sfx.playUiHover();
-    movePicker((pickerIndex + dir + LOADOUT_IDS.length) % LOADOUT_IDS.length, dir);
+    const i = (pickerIndex + dir + LOADOUT_IDS.length) % LOADOUT_IDS.length;
+    moveCursor(i);
+    if (pick)
+        pickWeapon(i, dir);
 }
 export function openPicker() {
     sfx.playUiOpen();
     overlay.classList.add('pick-weapon');
-    movePicker(loadoutIndex, 0);
+    moveCursor(loadoutIndex);
+    pickWeapon(loadoutIndex, 0);
     resumePickerVideo();
 }
-// decide: カーソルの武器に決めて閉じる。false なら選び直さずに閉じる
+// decide: 選んだ武器に決めて閉じる。false なら選び直さずに閉じる
 function closePicker(decide) {
     if (!pickerOpen())
         return;
     if (decide) {
         sfx.playUiSelect();
-        selectLoadout(pickerIndex);
+        selectLoadout(pickedIndex);
     }
     else {
         sfx.playUiBack();
     }
     overlay.classList.remove('pick-weapon');
-    pausePickerVideos(); // 閉じている間は流さない（開いたら movePicker で続きから）
+    pausePickerVideos(); // 閉じている間は流さない（開いたら pickWeapon で続きから）
 }
 // 開き直したとき、同じ武器の動画は読み直さずに再開する
 function resumePickerVideo() {
@@ -183,7 +197,7 @@ function resumePickerVideo() {
 }
 // 行に乗ったらカーソルをそこへ（音はメニュー共通の乗ったときの音が鳴る）
 for (const [i, b] of pickerRows.entries())
-    b.addEventListener('mouseenter', () => i !== pickerIndex && movePicker(i));
+    b.addEventListener('mouseenter', () => i !== pickerIndex && moveCursor(i));
 // 選択画面の上でホイールを回しても上下に動かす。トラックパッドの細かい連続を 1 つずつに均すため、動かしたら少し待つ
 let pickerWheelAt = 0;
 picker.addEventListener('wheel', (e) => {
@@ -191,13 +205,18 @@ picker.addEventListener('wheel', (e) => {
     if (!e.deltaY || e.timeStamp - pickerWheelAt < 160)
         return;
     pickerWheelAt = e.timeStamp;
-    stepPicker(Math.sign(e.deltaY));
+    stepPicker(Math.sign(e.deltaY), false);
 }, { passive: false });
 export function onPickerClick(target) {
     const row = target.closest('.sw-rows [data-weapon]');
+    // 行を押したら持ち替える（閉じずに、決定を待つ）
     if (row) {
-        movePicker(pickerRows.indexOf(row));
-        return closePicker(true);
+        const i = pickerRows.indexOf(row);
+        if (i === pickedIndex)
+            return;
+        sfx.playUiSelect();
+        moveCursor(i);
+        return pickWeapon(i);
     }
     if (target.closest('[data-action="weapon-decide"]'))
         return closePicker(true);
@@ -219,17 +238,18 @@ export function onPickerKey(e) {
         case 'KeyW':
         case 'PageUp':
             e.preventDefault();
-            return stepPicker(-1);
+            return stepPicker(-1, true);
         case 'ArrowDown':
         case 'KeyS':
         case 'PageDown':
             e.preventDefault();
-            return stepPicker(1);
+            return stepPicker(1, true);
     }
     const n = WEAPON_KEYS[e.code] ? LOADOUT_IDS.indexOf(WEAPON_KEYS[e.code]) : -1;
-    if (n >= 0 && n !== pickerIndex) {
+    if (n >= 0 && n !== pickedIndex) {
         sfx.playUiHover();
-        movePicker(n);
+        moveCursor(n);
+        pickWeapon(n);
     }
 }
 // 選択画面を閉じたままにする（ステージ選択を出し入れしたとき）

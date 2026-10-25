@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { camera, renderer, scene } from '../core.js';
 import { SICKLE_VIEW_MODEL_POS, createHeldSickle } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
+import { BOW_VIEW_MODEL_POS, createHeldBow } from './bow.js';
+import { BAT_VIEW_MODEL_POS, createHeldBat } from './bat.js';
 import { REST_TIP, createKunai } from './kunai.js';
 import { createRevolver } from './revolver.js';
 import { SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './sword.js';
@@ -127,3 +129,23 @@ export const axeRest = heldAxe.userData.rest;
 export const heldAxeModel = heldAxe.userData.axe;
 axeViewModel.add(heldAxe);
 axeViewModel.visible = false;
+// ---- 武器: 弓 ----
+// 柄はクナイと同じ黒光り、リムは剣の柄の色、握りの巻きは鎖鎌の巻きの色。弦は明るいグレーにして柄から浮かせる
+export const bowViewModel = new THREE.Group();
+bowViewModel.position.copy(BOW_VIEW_MODEL_POS);
+camera.add(bowViewModel);
+export const heldBow = createHeldBow({ riser: kunaiMat, limb: weaponMats.swordHilt, grip: weaponMats.sickleWrap, string: weaponMats.lead });
+export const bowRest = heldBow.userData.rest;
+export const bowModel = heldBow.userData.bow;
+bowViewModel.add(heldBow);
+bowViewModel.visible = false;
+// ---- 武器: バット ----
+// 胴はクナイと同じ黒光り、グリップテープは鎖鎌の巻きと同じ暗い色。右手で握る
+export const batViewModel = new THREE.Group();
+batViewModel.position.copy(BAT_VIEW_MODEL_POS);
+camera.add(batViewModel);
+export const heldBat = createHeldBat({ metal: kunaiMat, grip: weaponMats.sickleWrap });
+export const batRest = heldBat.userData.rest;
+export const batModel = heldBat.userData.bat;
+batViewModel.add(heldBat);
+batViewModel.visible = false;

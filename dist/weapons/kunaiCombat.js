@@ -9,6 +9,7 @@ import { COMBO_RESET, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLIDE_UP, THROW_SW
 import { LEFT_FAN_ANGLES, attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, weaponMats, } from './viewModels.js';
 import { axeState } from './axeCombat.js';
 import { swordState } from './swordCombat.js';
+import { batState } from './batCombat.js';
 import { SLIDE_SPIN_SWISH, TAU, gunState } from './handgunCombat.js';
 import { sickleState } from './sickleCombat.js';
 import { KUNAI_RIBBON, Ribbon, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase, } from '../fx/ribbons.js';
@@ -68,6 +69,7 @@ export const WORLD_SLOW_COOLDOWN = 0.5; // 明けてからこの間は、刺さ�
 export const WORLD_SLOW_RING_TIME = 0.3; // 入った瞬間の歪みの輪が画面の端まで広がる時間
 export const SPIN_START = Math.PI / 2 + 0.3; // 回し始めの切っ先の向き（真上から見て、前のやや右）
 export const SPIN_PHASES = [0.4, 0, -0.4]; // 回すときの各クナイの角度のずれ（重なってよいので少しだけ開く）
+export const SPIN_SPEED_BASE = 14; // 1 段目で回す速さ (rad/s)。1 段溜まるごとに 10 ずつ速める
 export const SPIN_JITTER = 0.0015; // 回している間の震えの大きさ（1 段目、ローカル座標）
 export const SPIN_TRAIL_STEP = 0.08; // 回転の軌跡を取る角度の刻み (rad)
 export const SPIN_TRAIL_LIFE = 0.12;
@@ -516,6 +518,7 @@ export function updateThrow(dt) {
         chargeTime = 0;
         chargeStage = 1;
         fanSpin = 0;
+        fanSpinSpeed = SPIN_SPEED_BASE; // 押した瞬間から 1 段目の速さで回す
         sfx.playCharge(0);
     }
     if (kunaiState.charging) {
@@ -531,8 +534,8 @@ export function updateThrow(dt) {
             releaseThrow();
     }
     // 溜めるほど速く回す。輪が半周するたびに小さく鳴らす
-    spinBlend += ((kunaiState.charging ? 1 : 0) - spinBlend) * Math.min(1, dt * 35);
-    const spinTarget = kunaiState.charging ? 14 + 10 * (chargeStage - 1) : 0;
+    spinBlend += ((kunaiState.charging ? 1 : 0) - spinBlend) * Math.min(1, dt * 60);
+    const spinTarget = kunaiState.charging ? SPIN_SPEED_BASE + 10 * (chargeStage - 1) : 0;
     fanSpinSpeed += (spinTarget - fanSpinSpeed) * Math.min(1, dt * 20);
     const prevSpin = fanSpin;
     fanSpin += fanSpinSpeed * dt;
@@ -549,7 +552,7 @@ export function updateThrow(dt) {
         }
     }
     // 回転の軌跡: 1 フレームで大きく回るので、角度を細かく刻んで弧を滑らかにする
-    const spinning = spinBlend > 0.3 && fanSpinSpeed > 3;
+    const spinning = spinBlend > 0.15 && fanSpinSpeed > 3;
     const steps = spinning ? Math.max(1, Math.ceil((fanSpin - prevSpin) / SPIN_TRAIL_STEP)) : 0;
     for (const [i, ribbon] of spinRibbons.entries()) {
         if (!spinning || !leftKunais[i].visible) {
@@ -695,6 +698,8 @@ export function updateAttack(dt) {
                 sickleState.sicklePressed = true;
             else if (game.shownWeapon === 'axe')
                 axeState.axePressed = true;
+            else if (game.shownWeapon === 'bat')
+                batState.pressed = true;
         }
         else if (!kunaiState.attack)
             startAttack(chooseAttack());

@@ -214,5 +214,42 @@
  "key_up": [
   "key_up_0.ogg",
   "key_up_1.ogg"
+ ],
+ "bow_draw": [
+  "bow_draw_0.ogg",
+  "bow_draw_1.ogg",
+  "bow_draw_2.ogg",
+  "bow_draw_3.ogg"
+ ],
+ "bow_shoot": [
+  "bow_shoot_0.ogg",
+  "bow_shoot_1.ogg",
+  "bow_shoot_2.ogg",
+  "bow_shoot_3.ogg",
+  "bow_shoot_4.ogg",
+  "bow_shoot_5.ogg"
+ ],
+ "bow_thump": [
+  "bow_thump_0.ogg",
+  "bow_thump_1.ogg",
+  "bow_thump_2.ogg",
+  "bow_thump_3.ogg",
+  "bow_thump_4.ogg"
+ ],
+ "arrow_pass": [
+  "arrow_pass_0.ogg",
+  "arrow_pass_1.ogg",
+  "arrow_pass_2.ogg",
+  "arrow_pass_3.ogg",
+  "arrow_pass_4.ogg",
+  "arrow_pass_5.ogg"
+ ],
+ "bow_nock": [
+  "bow_nock_0.ogg",
+  "bow_nock_1.ogg",
+  "bow_nock_2.ogg",
+  "bow_nock_3.ogg",
+  "bow_nock_4.ogg",
+  "bow_nock_5.ogg"
  ]
 }

@@ -11,6 +11,7 @@ import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady,
 import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js';
 import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, tossOnDash, twirlSickles, } from '../weapons/sickleCombat.js';
 import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js';
+import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js';
 import { handCam } from './handCam.js';
 import { player, position, right, velocity, wallNormal } from '../player/state.js';
 import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js';
@@ -151,9 +152,9 @@ export function updateCamera(dt) {
     // 速いほど視野を広げる
     game.fovKick = moveToward(game.fovKick, 0, dt * 30);
     const speedT = THREE.MathUtils.clamp((hSpeed - WALK_SPEED) / (FOV_SPEED_MAX - WALK_SPEED), 0, 1);
-    // 居合の構えの間はズームする（スロー中でも実時間の速さで寄せる）
+    // 居合の構えの間と、弓を引いている間はズームする（スロー中でも実時間の速さで寄せる）
     const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + game.fovKick - swordState.focusZoom * FOCUS_ZOOM - swordState.swordChargeBlend * CHARGE_ZOOM
-        - gunState.deadEyeBlend * DEADEYE_ZOOM;
+        - gunState.deadEyeBlend * DEADEYE_ZOOM - bowState.draw * BOW_ZOOM * (1 - 0.6 * bowState.sidePose); // 3 本射ちはあまり寄せない
     camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
     camera.updateProjectionMatrix();
     // 着地の沈み込み（ばねで戻す）

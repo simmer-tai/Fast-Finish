@@ -695,8 +695,8 @@ export function updateCasings(dt) {
 export function updateBullets(dt) {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
-        const step = (b.parried ? PARRY_RETURN_SPEED : BULLET_SPEED) * dt;
-        const maxTail = b.parried ? PARRY_TRACER_LEN : TRACER_LEN;
+        const step = (b.batted ? BAT_RETURN_SPEED : b.parried ? PARRY_RETURN_SPEED : BULLET_SPEED) * dt;
+        const maxTail = b.batted ? BAT_TRACER_LEN : b.parried ? PARRY_TRACER_LEN : TRACER_LEN;
         if (b.hit) {
             // 当たった後は、頭を当たった所に止めたまま尾だけを縮めて消す
             b.tail -= step;
@@ -710,7 +710,7 @@ export function updateBullets(dt) {
             const moved = b.pos.distanceTo(castHit.point);
             b.tail = Math.min(maxTail, b.tail + moved);
             b.pos.copy(castHit.point);
-            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye);
+            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye, b.batted);
         }
         else if (b.aimEnemy?.alive && b.traveled + step >= b.aimDist) {
             // 狙った所まで来た: クロスヘアが捉えていた敵に当てる
@@ -718,7 +718,7 @@ export function updateBullets(dt) {
             const moved = b.aimDist - b.traveled;
             b.tail = Math.min(maxTail, b.tail + moved);
             b.pos.addScaledVector(b.dir, moved);
-            onBulletHit(b.pos.clone(), b.dir, b.aimEnemy, b.parried, b.deadEye);
+            onBulletHit(b.pos.clone(), b.dir, b.aimEnemy, b.parried, b.deadEye, b.batted);
         }
         else {
             b.pos.addScaledVector(b.dir, step);
@@ -733,18 +733,21 @@ export function updateBullets(dt) {
         // 尾は頭から後ろへ伸ばす
         b.mesh.position.copy(b.pos);
         b.mesh.quaternion.setFromUnitVectors(TRACER_AXIS, bulletBack.copy(b.dir).negate());
-        const width = b.parried ? PARRY_TRACER_WIDTH : TRACER_WIDTH;
+        const width = b.batted ? BAT_TRACER_WIDTH : b.parried ? PARRY_TRACER_WIDTH : TRACER_WIDTH;
         b.mesh.scale.set(width, width, b.tail);
     }
 }
-export function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false) {
+export function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false, batted = false) {
     if (onDummy) {
         setEn(onDummy);
         hitDir.set(dir.x, 0, dir.z);
         if (hitDir.lengthSq() < 1e-6)
             hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
         hitDir.normalize();
-        hooks.applyHit(parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT, at, 'bullet');
+        if (batted)
+            hooks.applyHit(BAT_RETURN_HIT, at, 'bat'); // 打球は当たった敵をバットで倒したときのようにかっ飛ばす
+        else
+            hooks.applyHit(parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT, at, 'bullet');
         if (parried)
             game.parryReturnAge = 0;
     }
@@ -759,3 +762,9 @@ export const PARRY_RETURN_SPEED = 60; // m/s（スローの間は目で追える
 export const PARRY_TRACER_LEN = 4;
 export const PARRY_TRACER_WIDTH = 0.05;
 export const PARRY_RETURN_HIT = { kick: [-1.6, 0, 0], knock: 420, hitStop: 0.12, fx: 1.6 };
+// バットで打ち返した弾（打球）: 普通のパリィより速く太く飛び、当たれば敵の体力をまるごと削る
+export const BAT_RETURN_SPEED = 85;
+export const BAT_TRACER_LEN = 6;
+export const BAT_TRACER_WIDTH = 0.09;
+export const BAT_RETURN_HIT = { kick: [-2.2, 0, 0], knock: 600, hitStop: 0.16, fx: 1.8, dmg: 6 }; // バットの 20 × 6 = 120
+export const isParryReturn = (def) => def === PARRY_RETURN_HIT || def === BAT_RETURN_HIT;

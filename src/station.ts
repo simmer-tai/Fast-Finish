@@ -137,11 +137,16 @@ export function buildStation(): StageLayout {
     // 擁壁の内側と、線路が続く範囲の中だけを動ける
     bounds: { minX: -TRACK_OUTER, maxX: TRACK_OUTER, minZ: LINE_FAR, maxZ: LINE_NEAR },
     start: { x: 0, y: PLATFORM_H, z: 4 },
-    // 敵の出る所: ホームの上の、柱・ベンチ・階段の囲い・売店を避けた所と、電車の屋根の上（車両の真ん中）
+    // 敵の出る所: ホームの上の、柱・ベンチ・階段の囲い・売店を避けた所と、電車の屋根の上（車両の真ん中）。
+    // 狙撃手だけは、残りの車両の屋根と、階段の囲いと売店の上にも出る（どれもホームからよじ登れる高さ）
     enemySpawns: [
       ...[[-4, -16], [3, -30], [-8, -48], [9, -58], [-6, -85], [9, -92], [4, -118], [-3, -142]].map(([x, z]) => ({ x, y: PLATFORM_H, z })),
       ...[1, 3].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2 })),
+      ...[0, 2, 4].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2, perch: true })),
+      { x: 0, y: PLATFORM_H + 2.5, z: -70, perch: true },
+      { x: 0, y: PLATFORM_H + 2.5, z: -99, perch: true },
     ],
+    lead: 'sniper', // 長いホームの奥や電車の屋根から、見通しを通して撃ってくる
     // ホームの手前の先、左の線路の上から、屋根の下に柱が並んで奥へ続き、右に電車が止まっているのを見る
     view: { eye: { x: -14, y: 8, z: 12 }, target: { x: 6, y: 2.5, z: -40 } },
   };

@@ -1,4 +1,5 @@
 import { HOOK_RECHARGE, sickleState } from '../weapons/sickleCombat.js';
+import { BOW_RICOCHET_STOCK, bowState } from '../weapons/bowCombat.js';
 import { weaponHud } from './weaponHud.js';
 import { hudImpulse } from './hudSway.js';
 import { PLAYER_MAX_HP } from '../player/config.js';
@@ -28,6 +29,33 @@ export function updateHookHud() {
         }
     }
     hookShown = sickleState.hookCharges;
+}
+// ---- HUD: 弓の引き具合（クロスヘアの下の帯）。引いている間だけ出す ----
+// その下に跳弾矢の残りを菱形で出す（弓を構えている間ずっと）
+const bowHud = document.getElementById('bowgauge');
+const bowFill = bowHud.querySelector('.f');
+const stockHud = document.getElementById('bowstock');
+const stockPips = [...stockHud.querySelectorAll('i')].slice(0, BOW_RICOCHET_STOCK);
+let stockShown = -1; // 表示に反映済みの残り
+export function updateBowHud() {
+    const shown = game.shownWeapon === 'bow';
+    bowHud.style.opacity = bowState.drawing && shown ? '1' : '0';
+    bowFill.style.transform = `scaleX(${bowState.draw.toFixed(3)})`;
+    stockHud.classList.toggle('show', shown);
+    stockHud.classList.toggle('empty', bowState.ricochetEmptyFlash > 0);
+    const stock = bowState.ricochetStock;
+    if (stock === stockShown)
+        return;
+    for (let i = 0; i < stockPips.length; i++) {
+        stockPips[i].classList.toggle('ready', i < stock);
+        // 戻った菱形を光らせる（最初の表示では光らせない）
+        if (stockShown >= 0 && i >= stockShown && i < stock) {
+            stockPips[i].classList.remove('gain');
+            void stockPips[i].offsetWidth;
+            stockPips[i].classList.add('gain');
+        }
+    }
+    stockShown = stock;
 }
 // ---- HUD: 体力（左下の斜めのバー。削れた分は白く残り、少し遅れて減る） ----
 export const HP_CHIP_HOLD = 0.45; // 白い残りが減り始めるまでの時間

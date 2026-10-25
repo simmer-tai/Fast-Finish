@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
-import { playGrip, playSwish } from '../audio.js';
+import { playAxeGrip, playSwish } from '../audio.js';
 import { rand } from '../random.js';
 import { easeInOutCubic, easeOutCubic } from '../ease.js';
 import { DEG } from '../math.js';
@@ -833,7 +833,7 @@ export function updateAxeAttack(dt: number) {
           axeState.axeTime = AXE_LAUNCH_COCK;
           if (!axeCocked) {
             axeCocked = true;
-            playGrip();
+            playAxeGrip();
             hooks.addTrauma(0.06);
           }
         }
@@ -851,7 +851,7 @@ export function updateAxeAttack(dt: number) {
     const grips = def.grips ?? [];
     while (axeFiredGrips < grips.length && axeState.axeTime >= grips[axeFiredGrips]) {
       axeFiredGrips++;
-      playGrip();
+      playAxeGrip();
     }
     const kicks = def.kicks ?? [];
     while (axeFiredKicks < kicks.length && axeState.axeTime >= kicks[axeFiredKicks][0]) {

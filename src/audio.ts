@@ -439,7 +439,7 @@ export interface SwishParams {
   f1: number;
   gain: number;
 }
-export type SwishKind = 'kunai' | 'sword' | 'gun' | 'sickle' | 'axe';
+export type SwishKind = 'kunai' | 'sword' | 'gun' | 'sickle' | 'axe' | 'bat';
 
 // 風切り音: ノイズを帯域フィルタに通し、振りの速さに合わせて高さと音量を山なりに動かす。
 // そこへ録音の振り音を、合成の山に合わせて少し遅らせて重ねる。剣は刃が空気を裂く「シュイン」も足す。
@@ -449,12 +449,13 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   const t0 = ctx.currentTime;
   const sickle = kind === 'sickle';
   const axe = kind === 'axe';
-  const v = rand(0.9, 1.1) * (sickle ? 1.6 : axe ? 0.55 : 1);
+  const bat = kind === 'bat';
+  const v = rand(0.9, 1.1) * (sickle ? 1.6 : axe ? 0.55 : bat ? 0.7 : 1);
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer;
   const bp = ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.Q.value = sickle ? 2.2 : axe ? 0.8 : 1.2;
+  bp.Q.value = sickle ? 2.2 : axe || bat ? 0.8 : 1.2;
   bp.frequency.setValueAtTime(s.f0 * v, t0);
   bp.frequency.exponentialRampToValueAtTime(s.f1 * v, t0 + s.dur * 0.45);
   bp.frequency.exponentialRampToValueAtTime(s.f0 * 0.7 * v, t0 + s.dur);
@@ -482,6 +483,10 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
     sample('swish', { gain: Math.min(0.8, s.gain * 1.4), rate: swishRate, delay: swishAt, lp: 2200, reverb: 0.1, cut: end - swishAt });
     sample('blade', { gain: Math.min(0.4, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.8, lp: 3000, cut: end - at * 0.8 });
     noise('lowpass', 500, 260, Math.min(0.3, s.gain * 0.5), s.dur * 1.1, { attack: s.dur * 0.35 });
+  } else if (bat) {
+    // バットは丸い筒が空気を押しのける「ブン」。斧より軽く高く、刃の鳴りは入れない
+    sample('swish', { gain: Math.min(0.8, s.gain * 1.5), rate: 0.75 * speed, delay: at, lp: 3500, reverb: 0.06, cut: s.dur * 1.2 });
+    noise('lowpass', 700, 300, Math.min(0.25, s.gain * 0.4), s.dur, { attack: s.dur * 0.35 });
   } else if (sickle) {
     sample('blade_hi', { gain: Math.min(0.85, s.gain * 1.5), rate: 1.15 * speed, delay: at * 0.5, hp: 1500, reverb: 0.1 });
     sample('blade', { gain: Math.min(0.5, s.gain * 0.8), rate: 1.3 * speed, delay: at * 0.7, hp: 2500, reverb: 0.08 });
@@ -494,7 +499,7 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   }
 }
 
-export type HitKind = 'kunai' | 'sword' | 'throw' | 'bullet' | 'axe';
+export type HitKind = 'kunai' | 'sword' | 'throw' | 'bullet' | 'axe' | 'bat';
 
 // ヒット音: 「ザシュッ」（刃が入る録音と高い帯域のノイズ）に、「ドン」（殴打の録音と音程を下げるサイン波）、
 // 頭の「カッ」（ごく短い高音のノイズ）を重ねる。power が大きいほど低く長く、重い打撃と残響も足す
@@ -517,6 +522,12 @@ export function playHit(power: number, kind: HitKind) {
     sample('thud_heavy', { gain: 0.6, rate: 0.85, out, reverb: 0.15 });
     sample('clash', { gain: 0.16, rate: 0.5, lp: 3500, out, reverb: verb });
     sample('plank', { gain: 0.3, rate: 0.7, lp: 4000, out }); // 割れる「バキッ」
+  } else if (kind === 'bat') {
+    // バット: 金属の筒が体を叩く「ゴッ」。重い殴打に、中空の金属の鈍い鳴りを短く添える（刃が入る音は入れない）
+    sample('punch_heavy', { gain: 0.85, rate: 0.9 - 0.1 * heavy, out, reverb: verb });
+    sample('thud_heavy', { gain: 0.6, rate: 1, out, reverb: 0.12 });
+    sample('metal_small', { gain: 0.3, rate: 0.7, lp: 4000, out, reverb: verb });
+    sample('clash', { gain: 0.1, rate: 0.6, lp: 2500, out });
   } else {
     const blade = kind === 'sword';
     sample('slice', { gain: blade ? 0.7 : 0.55, rate: (blade ? 0.85 : 1.1) * (1 - 0.15 * heavy), out, reverb: verb });
@@ -531,7 +542,7 @@ export function playHit(power: number, kind: HitKind) {
 
   // 斬撃のノイズ
   const slashDur = 0.12 + 0.1 * heavy;
-  noise('bandpass', 5200 * v, 1400 * v, kind === 'bullet' ? 0.2 : 0.4, slashDur, { q: 0.9, attack: 0.004, out });
+  noise('bandpass', 5200 * v, 1400 * v, kind === 'bullet' || kind === 'bat' ? 0.2 : 0.4, slashDur, { q: 0.9, attack: 0.004, out });
   // 頭の鋭い当たり
   noise('highpass', 3000, 3000, 0.4, 0.025, { attack: 0.001, out });
   // 低い衝撃
@@ -722,8 +733,25 @@ export function playGrip() {
   sample('metal_tick', { gain: 0.18, rate: 1.4, delay: 0.025 });
 }
 
+// 斧を握り直したときの「ガチャッ」: 厚い鉄の頭と柄がぶつかる、低く鈍い金属音。
+// 金属音は低く短くして高い帯域を落とし、握り込んだ手応えの鈍い打音を下に敷く
+export function playAxeGrip() {
+  playRing(0.75, 0.6, 0.05);
+  setTimeout(() => playRing(0.55, 0.8, 0.09), 30);
+  sample('metal_small', { gain: 0.4, rate: 0.6, lp: 3500 });
+  sample('metal_tick', { gain: 0.22, rate: 0.7, lp: 3000, delay: 0.03 });
+  sample('thud_heavy', { gain: 0.35, rate: 0.9, lp: 900 });
+}
+
+// バットを構えに収めて握り直したときの「ガチッ」: 中が空の金属の胴が短く鳴る「キン」を、握り込んだ鈍い打音に重ねる
+export function playBatGrip() {
+  playRing(1.05, 0.45, 0.16);
+  sample('metal_tick', { gain: 0.3, rate: 0.8, lp: 4000 });
+  sample('thud_heavy', { gain: 0.25, rate: 1.1, lp: 1200, delay: 0.01 });
+}
+
 // 武器を持ち替えた: 武器ごとに抜く音を変える
-export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe') {
+export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'bow' | 'bat') {
   sample('gear', { gain: 0.35 });
   sample('cloth', { gain: 0.2, rate: 1.2 });
   if (weapon === 'kunai') {
@@ -731,7 +759,9 @@ export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'ax
   } else if (weapon === 'handgun') {
     sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
     sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
-  } else {
+  } else if (weapon === 'bat') {
+    sample('metal_tick', { gain: 0.25, rate: 0.6, lp: 3000, delay: 0.04 }); // バットは鞘から抜かないので、握り直す小さな音だけ
+  } else if (weapon !== 'bow') { // 弓は金物の音を鳴らさない
     // 斧は重いので低く遅く
     sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : 1, delay: 0.02, reverb: 0.15 });
     playRing(weapon === 'sickle' ? 1.6 : weapon === 'axe' ? 0.8 : 1.2, 0.4, 0.4);
@@ -795,6 +825,98 @@ export function playCharge(stage: number) {
     playRing(0.8 + 0.25 * stage, 1.4, 0.3);
     sample('glass', { gain: 0.12 + 0.05 * stage, rate: 0.9 + 0.15 * stage });
   }
+}
+
+// ---- 弓 ----
+// 録音の弓（ロングボウの引き・射ち・つがえ、クロスボウの射ち、重い矢の風切り）を、乾いて低い方へ寄せて重ねる
+
+// 弦を引き始めた: 弓がしなる「ギィ…」を、離すかやめるまで鳴らす。返した関数を呼ぶと素早く絞って止める
+export function playBowDraw(): () => void {
+  if (!ctx) return () => {};
+  sample('cloth', { gain: 0.16, rate: 0.9 });
+  sample('bow_nock', { gain: 0.14, rate: 0.8, lp: 3000 }); // 指が弦に掛かる小さな「カッ」
+  const buf = pick('bow_draw');
+  if (!buf) return () => {};
+  const c = ctx;
+  const t0 = c.currentTime;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 0.85 * rand(0.96, 1.04) * (1 - 0.35 * slowAmt);
+  const g = c.createGain();
+  // 引き始めは小さく、引くほど張りつめて大きくなる
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.12);
+  g.gain.linearRampToValueAtTime(0.42, t0 + 0.9);
+  src.connect(filter('highpass', 180)).connect(filter('lowpass', 4200)).connect(g).connect(bus);
+  src.start(t0);
+  src.stop(t0 + buf.duration / src.playbackRate.value + 0.05);
+  return () => {
+    const t = c.currentTime;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    src.stop(t + 0.06);
+  };
+}
+
+// 射った: 弦が戻る「ビン」と、弓の胴が受ける鈍い「ドッ」、矢が離れていく風切りを重ねる。
+// 深く引くほど重く速い
+export function playBowRelease(draw: number) {
+  if (!ctx) return;
+  sample('bow_shoot', { gain: 0.35 + 0.45 * draw, rate: 1.05 - 0.15 * draw, lp: 6000 });
+  sample('bow_thump', { gain: 0.25 + 0.45 * draw, rate: 0.8 - 0.1 * draw, lp: 2200 });
+  sample('arrow_pass', { gain: 0.15 + 0.35 * draw, rate: 0.9 + 0.35 * draw, hp: 300, delay: 0.015, cut: 0.25 + 0.2 * draw });
+  tone(140 - 40 * draw, 45, 0.25 + 0.3 * draw, 0.12 + 0.08 * draw, { attack: 0.003 });
+}
+
+// 矢が敵に刺さった: 当たりの音（playHit）に重ねる、肉に深く入る鈍い「ドスッ」
+export function playArrowHit() {
+  if (!ctx) return;
+  sample('wood', { gain: 0.35, rate: 0.7, lp: 2500 });
+  sample('bow_thump', { gain: 0.3, rate: 0.6, lp: 1200 });
+}
+
+// 矢が壁や床に刺さった: 乾いた「トッ」と、刺さった矢柄が震える短い「ビィン」
+export function playArrowStick() {
+  if (!ctx) return;
+  sample('wood', { gain: 0.5, rate: 0.95 });
+  sample('plank', { gain: 0.18, rate: 1.1, lp: 3500, cut: 0.15 });
+  const t0 = ctx.currentTime;
+  for (const f of [182, 189]) { // わずかにずらした 2 本で、震えのうなりを作る
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(f * (1 - 0.35 * slowAmt), t0);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+    osc.connect(g).connect(bus);
+    osc.start(t0);
+    osc.stop(t0 + 0.3);
+  }
+}
+
+// 矢が壁や床で跳ねた: 硬い面を鏃がかすめる短く乾いた「カッ」と、跳ねていく風切り
+export function playArrowRicochet() {
+  if (!ctx) return;
+  sample('wood', { gain: 0.3, rate: 1.4, lp: 4000, cut: 0.08 });
+  noise('bandpass', rand(3000, 3800), 1400, 0.12, 0.04, { q: 1.2, attack: 0.001 });
+  noise('bandpass', 1800, 700, 0.05, 0.16, { q: 0.8, attack: 0.01, delay: 0.015 });
+}
+
+// 次の矢をつがえた: 矢筈が弦に掛かる「カチッ」と、矢を抜く小さな擦れ
+export function playBowNock() {
+  if (!ctx) return;
+  sample('bow_nock', { gain: 0.45, rate: 0.95, lp: 6000 });
+  sample('cloth', { gain: 0.1, rate: 1.3, cut: 0.15 });
+}
+
+// 取り出しで回した弓を握り込んだ: 木の柄を掌で受ける乾いた「パシッ」と、揺れる弦の低い唸り
+export function playBowCatch() {
+  if (!ctx) return;
+  sample('wood', { gain: 0.4, rate: 1.3, lp: 5000 });
+  sample('punch', { gain: 0.15, rate: 1.4, lp: 2500 });
+  sample('bow_thump', { gain: 0.18, rate: 0.7, lp: 1500, delay: 0.01 });
 }
 
 // 居合の構え: 鯉口を切る「チャッ」と、空気を吸い込むような逆再生のうねり
@@ -888,6 +1010,26 @@ export function playStrikerLand(impact: number, volume = 1, pan = 0) {
 export function playStrikerCut() {
   sample('slice', { gain: 0.7, rate: 0.85, lp: 5000 });
   noise('highpass', 3000, 1500, 0.2, 0.06, { attack: 0.002 });
+}
+
+// ---- 狙撃手 ----
+// 狙い始め: ボルトを引く金属の「ガチャッ」。照準線が出る合図
+export function playSniperAim(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('gun_latch', { gain: 0.5 * volume, rate: 0.8, pan });
+  sample('metal_small', { gain: 0.25 * volume, rate: 0.6, pan, delay: 0.06 });
+}
+
+// 照準が止まった: 短く高い 2 回の「ピピッ」。この後すぐに撃つので、聞こえたら動く
+export function playSniperLock(volume = 1) {
+  tone(2400, 2400, 0.1 * volume, 0.05);
+  tone(2400, 2400, 0.1 * volume, 0.05, { delay: 0.08 });
+}
+
+// 撃った: 普通の銃声に、遠くまで響く低いうなりを重ねる
+export function playSniperShot(volume = 1, pan = 0) {
+  playGunshot(volume, pan);
+  sample('thud_heavy', { gain: 0.6 * volume, rate: 0.5, lp: 500, pan, reverb: 0.5 });
 }
 
 // ---- ハンドガンの装填 ----

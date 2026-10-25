@@ -31,6 +31,15 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
     { label: '打ち上げ', keys: [{ input: 'attack', hold: true }] },
     { label: '突き飛ばし', keys: [{ input: 'wheel' }], padKeys: [{ input: 'dash' }, { input: 'aim' }] },
   ],
+  bow: [
+    { label: '引いて射る', keys: [{ input: 'attack', hold: true }] },
+    { label: '跳弾矢', keys: [{ input: 'aim', hold: true }] },
+    { label: '3 本射ち', keys: [{ input: 'wheel', hold: true }], padKeys: [{ input: 'dash' }, { input: 'aim', hold: true }] },
+  ],
+  bat: [
+    { label: '攻撃', keys: [{ input: 'attack' }] },
+    { label: 'チャージ攻撃', keys: [{ input: 'attack', hold: true }] },
+  ],
 };
 // マウス: 押すボタンの側を塗る
 const mouseIcon = (side: 'left' | 'right') =>

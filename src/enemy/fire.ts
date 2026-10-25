@@ -23,7 +23,13 @@ import { closestSegmentPoints, tryParry } from '../combat/parry.js';
 // 弾は自分の銃より遅く、光の尾がはっきり見えるので、見てからかわせる
 export const ENEMY_TURN_RATE = 3; // 体が向き直る速さ（残りの角度に掛ける割合 /s）
 export const ENEMY_TURN_MAX = 2.5; // 体が向き直る最高の角速度 (rad/s)
-export const ENEMY_AIM_RATE = 6; // 銃が狙いへ追いつく速さ（大きいほど遅れが小さい）
+// 難易度ごとの狙いの精度。aimRate は銃が狙いへ追いつく速さ（大きいほど遅れが小さく、動いていても当たりやすい）、
+// spread は弾の散らばり。狙撃手も aimRate で照準線を追う（ロック後の弾は散らさない）
+export const ENEMY_ACCURACY = {
+  easy: { aimRate: 3.5, spread: 2.2 * DEG },
+  normal: { aimRate: 6, spread: 0.8 * DEG },
+  hard: { aimRate: 9, spread: 0.3 * DEG },
+} as const;
 export const ENEMY_AIM_YAW_MAX = 40 * DEG;
 export const ENEMY_AIM_PITCH_MAX = 40 * DEG;
 export const ENEMY_GUN_Y = 1.6; // 銃を構えている高さ（狙いの上下の角度の基準）
@@ -31,7 +37,6 @@ export const ENEMY_FIRST_SHOT = 1.2; // 現れてから最初に撃つまで
 export const ENEMY_FIRE_MIN = 1.1; // 撃つ間隔
 export const ENEMY_FIRE_MAX = 1.8;
 export const ENEMY_FIRE_CONE = 5 * DEG; // 銃口の向きと狙いのずれがこれ以内なら撃つ
-export const ENEMY_SPREAD = 0.8 * DEG;
 export const ENEMY_STAGGER_LIMIT = 0.12; // 銃がこれ以上跳ね上がっている間（よろめいている間）は撃たない (rad)
 export const ENEMY_LEAN_LIMIT = 6 * DEG; // 上体がこれ以上反っている間も撃たない
 export const ENEMY_RECOIL = 3.5; // 撃ったときに銃口を跳ね上げる角速度
@@ -85,7 +90,7 @@ export function updateDummyAim(dt: number) {
     -ENEMY_AIM_PITCH_MAX,
     ENEMY_AIM_PITCH_MAX,
   );
-  const k = 1 - Math.exp(-ENEMY_AIM_RATE * dt);
+  const k = 1 - Math.exp(-ENEMY_ACCURACY[game.difficulty].aimRate * dt);
   en.aimYaw += (yaw - en.aimYaw) * k;
   en.aimPitch += (pitch - en.aimPitch) * k;
 }
@@ -115,9 +120,10 @@ export function updateEnemyFire(dt: number) {
 
   // 狙いの遅れを残すため、プレイヤーへではなく銃口の向きへ撃つ
   const dir = enemyFwd.clone();
-  dir.x += (Math.random() * 2 - 1) * ENEMY_SPREAD;
-  dir.y += (Math.random() * 2 - 1) * ENEMY_SPREAD;
-  dir.z += (Math.random() * 2 - 1) * ENEMY_SPREAD;
+  const spread = ENEMY_ACCURACY[game.difficulty].spread;
+  dir.x += (Math.random() * 2 - 1) * spread;
+  dir.y += (Math.random() * 2 - 1) * spread;
+  dir.z += (Math.random() * 2 - 1) * spread;
   dir.normalize();
   const mesh = new THREE.Mesh(tracerGeo, enemyTracerMat);
   mesh.frustumCulled = false;
@@ -140,7 +146,7 @@ export function updateEnemyFire(dt: number) {
 export function updateEnemyBullets(dt: number) {
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const b = enemyBullets[i];
-    const step = ENEMY_BULLET_SPEED * dt;
+    const step = (b.speed ?? ENEMY_BULLET_SPEED) * dt;
     if (b.hit || b.traveled >= ENEMY_BULLET_RANGE) {
       b.tail -= step;
       if (!b.hit) b.pos.addScaledVector(b.dir, step);
@@ -159,20 +165,20 @@ export function updateEnemyBullets(dt: number) {
       closestSegmentPoints(enemyPath, enemyBody, enemyOnPath, enemyOnBody);
       if (game.playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS) {
         b.hit = true;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
+        b.tail = Math.min(b.tracerLen ?? ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
         b.pos.copy(enemyOnPath);
         if (b.from) b.from.hitPlayer = true;
-        onPlayerShot(b.dir);
+        onPlayerShot(b.dir, b.damage);
       } else if (wall < step) {
         b.hit = true;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + wall);
+        b.tail = Math.min(b.tracerLen ?? ENEMY_TRACER_LEN, b.tail + wall);
         b.pos.copy(enemyNext);
         spawnSparks(enemyNext, b.dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
         sfx.playRicochet();
       } else {
         b.pos.copy(enemyNext);
         b.traveled += step;
-        b.tail = Math.min(ENEMY_TRACER_LEN, b.tail + step);
+        b.tail = Math.min(b.tracerLen ?? ENEMY_TRACER_LEN, b.tail + step);
       }
     }
     if (b.tail <= 0) {
@@ -183,20 +189,22 @@ export function updateEnemyBullets(dt: number) {
     b.mesh.visible = true;
     b.mesh.position.copy(b.pos);
     b.mesh.quaternion.setFromUnitVectors(TRACER_AXIS, bulletBack.copy(b.dir).negate());
-    b.mesh.scale.set(ENEMY_TRACER_WIDTH, ENEMY_TRACER_WIDTH, b.tail);
+    const w = b.tracerWidth ?? ENEMY_TRACER_WIDTH;
+    b.mesh.scale.set(w, w, b.tail);
   }
 }
 
-// 撃たれた: 体力を削り、撃たれた向きへ視点を弾く
-export function onPlayerShot(dir: THREE.Vector3) {
-  hooks.damagePlayer(ENEMY_BULLET_DAMAGE);
+// 撃たれた: 体力を削り、撃たれた向きへ視点を弾く。重い弾ほど大きく揺らす
+export function onPlayerShot(dir: THREE.Vector3, damage = ENEMY_BULLET_DAMAGE) {
+  const heavy = damage / ENEMY_BULLET_DAMAGE;
+  hooks.damagePlayer(damage);
   sfx.playHurt();
-  hooks.addTrauma(0.35);
+  hooks.addTrauma(Math.min(0.7, 0.35 * Math.sqrt(heavy)));
   camera.getWorldDirection(enemyTo);
   // 正面から撃たれたら視点が上へ、横からなら撃たれた向きへねじれる
   const side = enemyTo.x * dir.z - enemyTo.z * dir.x;
-  kickVel.x += 2.5 * DEG * 22;
-  kickVel.z += side * 3 * DEG * 22;
+  kickVel.x += 2.5 * DEG * 22 * Math.sqrt(heavy);
+  kickVel.z += side * 3 * DEG * 22 * Math.sqrt(heavy);
 }
 
 // 敵に拳銃を両手で構えさせる（アイソセレス・スタンス）。
@@ -208,37 +216,39 @@ export function attachEnemyGun(body: EnemyBody) {
   gun.position.set(-0.04, 1.6, 0.6).sub(body.gunRig.userData.origin);
   gun.rotation.x = -0.03; // 銃口をわずかに上げて照準線を水平に
   body.gunRig.add(gun);
-  {
-    // グリップの握る所（銃の座標で後ろへ 0.04、下へ 0.06）を敵の座標へ
-    const grip = new THREE.Vector3(0, -0.06, 0.04).applyEuler(gun.rotation).add(gun.position);
-    const hands = [grip, grip.clone().add(new THREE.Vector3(0.04, -0.015, 0.012))];
-    const shoulder = new THREE.Vector3();
-    const toHand = new THREE.Vector3();
-    const bend = new THREE.Vector3();
-    const elbow = new THREE.Vector3();
-    const dir = new THREE.Vector3();
-    const DOWN = new THREE.Vector3(0, -1, 0);
-    const upperQ = new THREE.Quaternion();
-    const foreQ = new THREE.Quaternion();
-    for (let i = 0; i < 2; i++) {
-      const side = i === 0 ? -1 : 1;
-      const arm = body.arms[i];
-      shoulder.copy(arm.position);
-      toHand.subVectors(hands[i], shoulder);
-      const d = Math.min(toHand.length(), DUMMY_UPPER_ARM + DUMMY_FOREARM - 1e-3);
-      toHand.normalize();
-      // 余弦定理で肩の開き角を出し、肘を「下外側」の向きへ出す
-      const cosA = (DUMMY_UPPER_ARM ** 2 + d * d - DUMMY_FOREARM ** 2) / (2 * DUMMY_UPPER_ARM * d);
-      const a = Math.acos(THREE.MathUtils.clamp(cosA, -1, 1));
-      bend.set(0.6 * side, -1, -0.2);
-      bend.addScaledVector(toHand, -bend.dot(toHand)).normalize();
-      elbow.copy(shoulder).addScaledVector(toHand, Math.cos(a) * DUMMY_UPPER_ARM).addScaledVector(bend, Math.sin(a) * DUMMY_UPPER_ARM);
-      upperQ.setFromUnitVectors(DOWN, dir.subVectors(elbow, shoulder).normalize());
-      arm.quaternion.copy(upperQ);
-      // 前腕は肘から手へ。上腕の回転を打ち消してローカルの向きにする
-      foreQ.setFromUnitVectors(DOWN, dir.subVectors(hands[i], elbow).normalize());
-      body.forearms[i].quaternion.copy(upperQ.invert()).multiply(foreQ);
-    }
-  }
+  // グリップの握る所（銃の座標で後ろへ 0.04、下へ 0.06）を敵の座標へ
+  const grip = new THREE.Vector3(0, -0.06, 0.04).applyEuler(gun.rotation).add(gun.position);
+  reachHands(body, [grip, grip.clone().add(new THREE.Vector3(0.04, -0.015, 0.012))]);
   return gun;
+}
+
+// 両手（[右, 左]。敵の座標）を、肩からの 2 関節の IK で届かせる。肘は下外側へ逃がす。届かない所は腕を伸ばしきった先で止める
+export function reachHands(body: EnemyBody, hands: THREE.Vector3[]) {
+  const shoulder = new THREE.Vector3();
+  const toHand = new THREE.Vector3();
+  const bend = new THREE.Vector3();
+  const elbow = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  const DOWN = new THREE.Vector3(0, -1, 0);
+  const upperQ = new THREE.Quaternion();
+  const foreQ = new THREE.Quaternion();
+  for (let i = 0; i < 2; i++) {
+    const side = i === 0 ? -1 : 1;
+    const arm = body.arms[i];
+    shoulder.copy(arm.position);
+    toHand.subVectors(hands[i], shoulder);
+    const d = Math.min(toHand.length(), DUMMY_UPPER_ARM + DUMMY_FOREARM - 1e-3);
+    toHand.normalize();
+    // 余弦定理で肩の開き角を出し、肘を「下外側」の向きへ出す
+    const cosA = (DUMMY_UPPER_ARM ** 2 + d * d - DUMMY_FOREARM ** 2) / (2 * DUMMY_UPPER_ARM * d);
+    const a = Math.acos(THREE.MathUtils.clamp(cosA, -1, 1));
+    bend.set(0.6 * side, -1, -0.2);
+    bend.addScaledVector(toHand, -bend.dot(toHand)).normalize();
+    elbow.copy(shoulder).addScaledVector(toHand, Math.cos(a) * DUMMY_UPPER_ARM).addScaledVector(bend, Math.sin(a) * DUMMY_UPPER_ARM);
+    upperQ.setFromUnitVectors(DOWN, dir.subVectors(elbow, shoulder).normalize());
+    arm.quaternion.copy(upperQ);
+    // 前腕は肘から手へ。上腕の回転を打ち消してローカルの向きにする
+    foreQ.setFromUnitVectors(DOWN, dir.subVectors(hands[i], elbow).normalize());
+    body.forearms[i].quaternion.copy(upperQ.invert()).multiply(foreQ);
+  }
 }

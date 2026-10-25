@@ -30,12 +30,14 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - `?attack=slash1`（クナイ: slash1 / slash2 / finisher / slideUp / dashSlash）
 - `?sword=kesa`（剣: kesa / gyaku / karatake / sweep / charge / issen / thrust）
 - `?axe=kesa`（斧: draw / kesa / nagi / kabuto / sweep / air / launch / rush / drive）
+- `?bat=swing1`（バット: swing1 / swing2 / smash / charge）
 - `?striker=windup&yaw=70`（ストライカーの姿勢: ready / windup / slash。yaw は正面から回り込んで見る角度）
-- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?stage=station`（station / warehouse / parking）
+- `?sniper&t=1&yaw=50`（狙撃手の構えと照準線。t は狙い始めてからの時間で、1.45 を過ぎるとロックして線が点滅する）
+- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?bow`（弓の構え。`&t=0.3` で引いて止め、`&fly=0.1` で射ってから止める。`&volley` でホイールの 3 本射ち、`&ricochet` で右クリックの跳弾矢にする）、`?bowEquip&t=0.2`（弓の取り出し）、`?batEquip&t=0.2`（バットの取り出し）、`?stage=station`（station / warehouse / parking）
 
 ## 武器のプレビュー動画
 
-武器選択画面は `previews/<武器ID>.mp4` を音なしでループ再生する（`src/ui/weaponPicker.ts` の `showPickerVideo`）。武器ID は `index.html` の `data-weapon`（kunai / handgun / sword / sickle / axe）。
+武器選択画面は `previews/<武器ID>.mp4` を音なしでループ再生する（`src/ui/weaponPicker.ts` の `showPickerVideo`）。武器ID は `index.html` の `data-weapon`（kunai / handgun / sword / sickle / axe / bow）。
 
 ユーザーが編集済みの録画（ダウンロードフォルダに置かれることが多い）をプレビューにしたいと言ったら、以下の手順で作る。
 

@@ -4,8 +4,12 @@ import { DEG } from '../math.js';
 import { easeOutBack } from '../ease.js';
 import { SICKLE_VIEW_MODEL_POS } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './battleAxe.js';
+import { BOW_AIM_POS, BOW_AIM_UNCANT, BOW_SLIDE_TURN, BOW_VIEW_MODEL_POS } from './bow.js';
+import { BAT_VIEW_MODEL_POS } from './bat.js';
+import { batEquipOff, batState, startBatEquip } from './batCombat.js';
+import { BOW_EQUIP_SNAP, BOW_EQUIP_SPIN, BOW_EQUIP_TURN, bowState, startBowEquip } from './bowCombat.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './sword.js';
-import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, gunViewModel, leftViewModel, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
+import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, batViewModel, bowViewModel, gunViewModel, leftViewModel, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
 import { axeState, startAxeAttack } from './axeCombat.js';
 import { AXE_DRAW } from './axeAttacks.js';
 import { startSwordAttack, swordState } from './swordCombat.js';
@@ -32,6 +36,7 @@ export const HOLSTER_TIME = 0.14;
 // 構えの切り替え具合と、斧の重さで遅れる揺れ
 let swordRunPose = 0; // 0 = 縦に立てた構え, 1 = 走るときの前へ倒した構え
 let swordSlidePose = 0; // 1 = スライディング中の横に寝かせた構え
+let bowSlidePose = 0; // 1 = スライディング中の、弓を横に寝かせた構え
 let axeSwayX = 0;
 let axeSwayY = 0;
 let axeSwayVelX = 0;
@@ -49,7 +54,8 @@ export function updateWeaponSwitch(dt) {
     // 抜刀・斧の取り出しの途中なら持ち替えてよい
     const swordBusy = (swordState.swordAttack !== null && swordState.swordAttack !== SWORD_DRAW) || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
     const busy = (game.shownWeapon === 'kunai' && kunaiBusy) || (game.shownWeapon === 'sword' && swordBusy) || sickleState.grapple !== null
-        || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null && axeState.axeAttack !== AXE_DRAW);
+        || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null && axeState.axeAttack !== AXE_DRAW)
+        || (game.shownWeapon === 'bat' && (batState.attack !== null || batState.hold >= 0));
     if (isDown()) {
         game.holster = Math.min(1, game.holster + game.realDt / (HOLSTER_TIME * 2)); // 倒れたら武器を画面の下へ落とす
     }
@@ -82,6 +88,16 @@ export function updateWeaponSwitch(dt) {
                 game.holster = 0;
                 startSickleDraw();
             }
+            // 弓は寝かせたまま回しながら振り上げ、立てた所で握り込んでから矢をつがえる
+            if (game.shownWeapon === 'bow') {
+                game.holster = 0;
+                startBowEquip();
+            }
+            // バットは肩の後ろから頭の上を越えて前へ振り下ろし、正面を指してから手首で返して構える
+            if (game.shownWeapon === 'bat') {
+                game.holster = 0;
+                startBatEquip();
+            }
         }
     }
     else if (game.wantWeapon === game.shownWeapon) {
@@ -94,8 +110,11 @@ export function updateWeaponSwitch(dt) {
     swordViewModel.visible = game.shownWeapon === 'sword';
     sickleViewModel.visible = game.shownWeapon === 'sickle';
     axeViewModel.visible = game.shownWeapon === 'axe';
+    bowViewModel.visible = game.shownWeapon === 'bow';
+    batViewModel.visible = game.shownWeapon === 'bat';
 }
 export const handJoltPos = new THREE.Vector3();
+const bowBase = new THREE.Vector3();
 export function updateViewModel(dt) {
     const hSpeed = Math.hypot(velocity.x, velocity.z);
     const target = (player.onGround || player.wallRunning) && !player.sliding ? Math.min(hSpeed / SPRINT_SPEED, 1) : 0;
@@ -128,7 +147,7 @@ export function updateViewModel(dt) {
     // 左手は振りに加わらないので、移動の揺れだけ右手と左右対称に付ける
     // 溜めている間は少し前へ出して持ち上げ（水平に回すクナイが顔へ近づきすぎないように）、
     // 投げた瞬間は前へ突き出し、補充中は画面の下へ隠す
-    chargePose += ((kunaiState.charging ? 1 : 0) - chargePose) * Math.min(1, dt * 30);
+    chargePose += ((kunaiState.charging ? 1 : 0) - chargePose) * Math.min(1, dt * 45);
     kunaiState.throwPunch += -kunaiState.throwPunch * Math.min(1, dt * 9);
     const empty = kunaiState.reloading && pendingThrows.length === 0; // 最後の 1 本を放ってから下げる
     leftEmpty += ((empty ? 1 : 0) - leftEmpty) * Math.min(1, dt * (empty ? 6 : 14));
@@ -176,6 +195,23 @@ export function updateViewModel(dt) {
     axeViewModel.position.set(AXE_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.016 * aBob - axeSwayX * 0.5 + aSlide * 0.03, AXE_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.016 * aBob - Math.min(velocity.y, 0) * 0.002
         + axeSwayY * 0.5 + cameraFx.landDip * 0.35 - aPull * 0.04 - aSlide * 0.03 - mantlePose * 0.12, AXE_VIEW_MODEL_POS.z + aPull * 0.1 + speedBack);
     axeViewModel.rotation.set(-aPull * 0.35 + axeSwayY * 2 - mantlePose * 0.5, -axeSwayX * 2, aSlide * 0.35 + cameraFx.roll);
+    // 弓もハンドガンと同じ揺れ方をさせる。長い弓を伸ばした腕で持つので、ひねりは控えめにする。
+    // 弦を引くと照準の近くへ寄せて傾きを起こし、揺れを弱める。射った瞬間は弓が前へ小さく跳ねる
+    // スライディング中と 3 本射ちでは、上を右へ倒して弓を横に寝かせる（引いていても横のまま）
+    bowSlidePose += ((player.sliding ? 1 : 0) - bowSlidePose) * Math.min(1, dt * (player.sliding ? 12 : 8));
+    const side = Math.max(bowSlidePose, bowState.sidePose);
+    const bSlide = side * side * (3 - 2 * side);
+    const aim = bowState.aimPose * bowState.aimPose * (3 - 2 * bowState.aimPose);
+    const bCalm = 1 - aim * 0.7;
+    const bBob = bobAmount * bCalm;
+    bowBase.lerpVectors(BOW_VIEW_MODEL_POS, BOW_AIM_POS, aim);
+    bowViewModel.position.set(bowBase.x + Math.sin(bobPhase) * 0.012 * bBob - viewState.lookSwayX * 0.5 * bCalm + slidePose * 0.03, bowBase.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bBob - Math.min(velocity.y, 0) * 0.002
+        + viewState.lookSwayY * 0.5 * bCalm + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, bowBase.z + dashPull * 0.1 + speedBack - bowState.release * 0.03);
+    bowViewModel.rotation.set(-dashPull * 0.25 + viewState.lookSwayY * 1.2 * bCalm - mantlePose * 0.5 + bowState.release * 0.06, -viewState.lookSwayX * 1.2 * bCalm, cameraFx.roll + aim * BOW_AIM_UNCANT * (1 - bSlide) - bSlide * BOW_SLIDE_TURN);
+    // バットもハンドガンと同じ揺れ方をさせる
+    batViewModel.position.set(BAT_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - viewState.lookSwayX * 0.5 + slidePose * 0.03, BAT_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
+        + viewState.lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, BAT_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack).add(batEquipOff); // 取り出しの手の動き（向きは batCombat.ts で batRest に入れる）
+    batViewModel.rotation.set(-dashPull * 0.35 + viewState.lookSwayY * 2 - mantlePose * 0.5, -viewState.lookSwayX * 2, slidePose * 0.35 + cameraFx.roll);
     // 高いところからの着地で、手元も画面と一緒に強く揺らす
     const ls = landShakeAmount();
     if (ls > 0) {
@@ -183,7 +219,7 @@ export function updateViewModel(dt) {
         handJoltPos.set(ls * 0.025 * Math.sin(t * 83.9 + 1.7), -ls * 0.05 * Math.abs(Math.sin(t * 95.3 + 0.9)), ls * 0.02 * Math.sin(t * 77.1 + 4.4));
         const rx = -ls * 0.25 * Math.abs(Math.sin(t * 88.7 + 2.6));
         const rz = ls * 0.18 * Math.sin(t * 101.3 + 0.2);
-        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
+        for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, bowViewModel, batViewModel]) {
             vm.position.add(handJoltPos);
             vm.rotation.x += rx;
             vm.rotation.z += rz;
@@ -199,7 +235,7 @@ export function updateViewModel(dt) {
     gunViewModel.rotation.z += reloadRotOff.z * DEG;
     // 持ち替え中は手元を画面の下へ下げる
     const h = game.holster * game.holster * (3 - 2 * game.holster);
-    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel]) {
+    for (const vm of [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, bowViewModel, batViewModel]) {
         vm.position.y -= h * 0.25;
         vm.rotation.x -= h * 0.9;
     }
@@ -224,5 +260,20 @@ export function updateViewModel(dt) {
         leftViewModel.rotation.x -= l * 1.1;
         leftViewModel.rotation.y -= l * 0.4;
         leftViewModel.rotation.z += l * 0.8;
+    }
+    // 弓の取り出し: 握りを軸に画面の奥の軸まわりで回しながら、左下から振り上げる。回っている間は奥へ離して
+    // 長いリムが画面を塞がないようにし、回りが緩むにつれて手元へ引き寄せる。握り込んだら少し回り過ぎて戻り、前へ小さく突き出す
+    const et = bowState.equipT;
+    if (et < BOW_EQUIP_SPIN + BOW_EQUIP_SNAP) {
+        const u = THREE.MathUtils.clamp(et / BOW_EQUIP_SPIN, 0, 1);
+        const spin = (1 - u) ** 2; // 回りの残り（勢いよく回し始めて緩める）
+        const r = 1 - easeOutBack(THREE.MathUtils.clamp(et / 0.3, 0, 1));
+        const g = (et - BOW_EQUIP_SPIN) / BOW_EQUIP_SNAP;
+        const snap = g > 0 && g < 1 ? Math.sin(g * Math.PI) * (1 - g) : 0;
+        bowViewModel.position.x += r * 0.12;
+        bowViewModel.position.y -= r * 0.4;
+        bowViewModel.position.z -= spin * 0.35 + snap * 0.03;
+        bowViewModel.rotation.x += r * 0.5 + snap * 0.12;
+        bowViewModel.rotation.z += spin * BOW_EQUIP_TURN - snap * 0.25;
     }
 }

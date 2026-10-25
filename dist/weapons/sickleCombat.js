@@ -16,7 +16,7 @@ import { en, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js';
 import { blocks, ramps } from '../world/blocks.js';
 import { rayBox, rayRamp } from '../world/raycast.js';
 import { player, position, velocity } from '../player/state.js';
-import { GRAVITY, JUMP_SPEED } from '../player/config.js';
+import { PLAYER_GRAVITY, JUMP_SPEED } from '../player/config.js';
 import { endWallRun, hasHeadroom } from '../player/movement.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
@@ -171,7 +171,7 @@ export function castBlocks(origin, dir, far) {
 export function startThrow() {
     sickleState.grapple = {
         phase: 'fly', target: new THREE.Vector3(), block: null, enemy: null, struck: false, aimed: false,
-        pullTime: 0, zipFrom: new THREE.Vector3(), zipTo: new THREE.Vector3(), zipDur: 0, speedBefore: 0,
+        pullTime: 0, zipFrom: new THREE.Vector3(), zipTo: new THREE.Vector3(), zipDur: 0, speedBefore: 0, pulled: false,
     };
     for (const h of grappleHooks)
         h.launchIn = QUICK_AIM_TIME + (h.side > 0 ? 0 : HOOK_STAGGER);
@@ -334,7 +334,7 @@ export function arriveGrapple(g) {
     const topOpen = !!b && hasHeadroom(THREE.MathUtils.clamp(g.target.x, b.minX, b.maxX), THREE.MathUtils.clamp(g.target.z, b.minZ, b.maxZ), b.h);
     if (b && topOpen && b.h - position.y < VAULT_REACH) {
         // 上面が近い: 縁を越える高さまで跳び、建物の方へ進んで上に乗る
-        velocity.y = Math.sqrt(2 * GRAVITY * Math.max(0.3, b.h - position.y + VAULT_CLEAR));
+        velocity.y = Math.sqrt(2 * PLAYER_GRAVITY * Math.max(0.3, b.h - position.y + VAULT_CLEAR));
         velocity.x += pullDir.x * VAULT_FORWARD;
         velocity.z += pullDir.z * VAULT_FORWARD;
         sfx.playMantleStart();
@@ -439,6 +439,7 @@ export function updateGrapple(dt) {
     if (sickleState.grapple?.phase === 'fly' && grappleHooks.every((h) => h.thrown && h.stuckTime >= 0)) {
         // 2 本とも刺さった: 次のフレームから、掛かった所へ一気に飛ぶ
         sickleState.grapple.phase = 'pull';
+        sickleState.grapple.pulled = true;
         if (player.wallRunning)
             endWallRun();
         sfx.playStick();

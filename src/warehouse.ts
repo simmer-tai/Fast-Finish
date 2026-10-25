@@ -1,9 +1,9 @@
 // ---- ステージ: WAREHOUSE（物流倉庫） ----
 // 天井の高い倉庫の中。手前（入口のシャッターの前）は荷さばきの広場で、その奥に背の高い棚（パレットラック）が -Z の方へ列になって並ぶ。
-// 棚は真ん中の広い通路を挟んで左右 3 列ずつ、途中の横通路で前後 2 つに分ける。一番奥は 2 階の中二階（メザニン）で、上に事務所が載る。
+// 棚は真ん中の広い通路を挟んで左右 3 列ずつ、途中の横通路で前後 2 つに分ける。一番奥は棚の無い広い床。
 // 屋根は 8m おきのトラスに載せ、屋根板と天窓を交互に並べて、床に光の縞を落とす。
 // 高い所へは、よじ登り（3m まで）・壁走り・鎖鎌で上がる。段差を自動で上る仕組みは無いので、階段は置かず、
-// 積んだパレットを足場にして中二階へ、中二階から棚の上へと、どこも 3m 以内の段で上がれるようにする。
+// 積んだパレットや棚の段を足場にして、どこも 3m 以内の段で上がれるようにする。
 // 走る速さに合わせて、実際の倉庫より 1.5 倍ほど大きく作る。当たり判定のある箱はすべて 0.5m のグリッドに合わせる
 import type { StageLayout, StageBox } from './stage.js';
 
@@ -13,7 +13,7 @@ const FAR = -108; // 奥の内壁 (z)
 const WALL_T = 1.5; // 壁の厚さ
 const WALL_H = 15;
 
-// 棚: 背中合わせの 2 連（幅 3m）。段は 2.5m おきで、天板は 7.5m（中二階からよじ登れる高さ）
+// 棚: 背中合わせの 2 連（幅 3m）。段は 2.5m おきで、天板は 7.5m（上の段の板からよじ登れる高さ）
 const RACK_W = 3;
 const RACK_ROWS = [6, 15, 24]; // 棚の列の内側の端 (|x|)。真ん中の通路は 12m、列の間は 6m、壁ぎわは 3m
 const RACK_BLOCKS: [number, number][] = [[-10, -46], [-54, -90]]; // 棚の並ぶ範囲 (z)。間が横通路
@@ -23,11 +23,6 @@ const LEVELS = 3;
 const RACK_H = LEVEL * LEVELS; // 天板の上面
 const BEAM = 0.5; // 段の梁の太さ
 const RACK_DEPTH = 1; // 荷を載せる奥行き（片側）。真ん中の 1m は空ける
-
-// 中二階: 奥の壁ぎわ一面。床の上面は 4.5m（2m の荷の上からよじ登れ、ここから棚の天板へもよじ登れる）
-const MEZZ_FRONT = -94;
-const MEZZ_Y0 = 4;
-const MEZZ_Y = 4.5;
 
 // 屋根: 屋根板は 14m。トラスは下弦材（11〜11.5m、上に立てる）と上弦材（屋根板の真下）を束でつなぐ。
 // 下弦材の上から屋根板の裏までは 2.5m 空けて、上に立っても頭が屋根にめり込まないようにする。壁は屋根より少し高く立ち上げる
@@ -39,20 +34,20 @@ const CHORD = 0.5; // 上弦材の太さ
 const TRUSS_STEP = 8;
 const SKYLIGHT = 4; // トラスの間のうち、天窓にする長さ（残りが屋根板）
 
-// 天井クレーン: 両側の壁ぎわの走行レールに載った橋桁が、手前の荷さばきの広場から奥の中二階の前まで往復する。
-// 橋桁の真ん中に吊った巻き上げ機から、真ん中の通路の上へ荷を吊る。
+// 天井クレーン: 両側の壁ぎわの走行レールに載った橋桁が、奥と手前に走る。橋桁に吊った巻き上げ機は、橋桁に沿って左右に走り、荷を吊って運ぶ。
+// 吊り荷は棚の天板より低いので、棚の間では真ん中の通路の上だけを通り、左右へは棚の無い所（手前の荷さばきの広場、横通路、奥の広い床）でだけ動く。
 // 橋桁は、棚の天板に立った頭（9.3m）の上を通り、トラスと照明の下に収める。上に立っていると、トラスの下を通るときにはじき落とされる。
-// 吊り荷は、真ん中の通路のフォークリフトや荷の山の上を通る高さに吊る。橋桁と吊り荷は当たり判定を持ち、上に乗ると一緒に運ばれる
-const CRANE_Z0 = 4; // 橋桁の中心 (z) の、手前の端
-const CRANE_Z1 = -91; // 奥の端。吊り荷の奥の縁が、中二階の縁から 1.5m の所で止まる
-const CRANE_TIME = 24; // 片道にかかる時間 (s)
-const CRANE_PAUSE = 3; // 端で止まる時間 (s)
+// 吊り荷は、フォークリフトや荷の山の上を通る高さに吊る。橋桁と吊り荷は当たり判定を持ち、上に乗ると一緒に運ばれる
+const CRANE_Z0 = 4; // 橋桁の中心 (z) の、手前の端（動き出す前の位置）
+const CRANE_CROSS = -50; // 横通路の真ん中
+const CRANE_Z1 = -92; // 奥の端。吊り荷が棚の列の端と奥の壁の間に収まる
+const CRANE_SIDE = 18; // 巻き上げ機が左右に寄る所 (|x|)
 const GIRDER_Y0 = 9.5;
 const GIRDER_Y1 = 10.1;
 const HOIST_Y0 = 8.7; // 巻き上げ機の底面
 const LOAD_Y0 = 5; // 吊り荷の底面（フォークリフトの頭上の囲いより上）
 const LOAD_PALLET = 0.3;
-const LOAD_Y1 = 6.5; // 吊り荷の上面（中二階の床からよじ登れる高さ）
+const LOAD_Y1 = 6.5; // 吊り荷の上面
 const LOAD_HALF = 1.5;
 
 // 明るさ（0 が黒）。高いもの・重いものほど暗くする
@@ -62,16 +57,10 @@ const LIGHT_SHUTTER = 0.4;
 const LIGHT_BUMPER = 0.18;
 const LIGHT_UPRIGHT = 0.32;
 const LIGHT_BEAM = 0.26;
-const LIGHT_RACK_CORE = 0.2;
 const LIGHT_RACK_TOP = 0.5;
 const LIGHT_PALLET = 0.46;
 const LIGHT_CARGO_MIN = 0.66;
 const LIGHT_CARGO_MAX = 0.92;
-const LIGHT_MEZZ = 0.62;
-const LIGHT_COLUMN = 0.84;
-const LIGHT_RAIL = 0.3;
-const LIGHT_OFFICE = 0.86;
-const LIGHT_WINDOW = 0.24;
 const LIGHT_TRUSS = 0.36;
 const LIGHT_ROOF = 0.78;
 const LIGHT_LAMP = 0.22;
@@ -203,31 +192,10 @@ export function buildWarehouse(): StageLayout {
   pallet(-1, -48, 2, 1.5);
   pallet(19, -50, 1, 1.5);
   pallet(-22, -48, 2, 2);
-  // 中二階の手前: 2m の荷から中二階へよじ登れる所を 2 か所
-  pallet(-14, MEZZ_FRONT + 2, 1, 2);
-  pallet(-12, MEZZ_FRONT + 2, 1, 1.5);
-  pallet(10, MEZZ_FRONT + 2, 1, 2);
-
-  // ---- 中二階 ----
-  for (let x = -HALF_W; x < HALF_W; x += 10) {
-    for (let z = MEZZ_FRONT; z > FAR; z -= 7) box(x, Math.min(x + 10, HALF_W), z, Math.max(z - 7, FAR), MEZZ_Y0, MEZZ_Y, LIGHT_MEZZ, 'terrain');
-  }
-  // 床を支える柱
-  for (const x of [-20, -10, 0, 10, 20]) for (const z of [MEZZ_FRONT - 1, MEZZ_FRONT - 8]) box(x - 0.5, x + 0.5, z, z - 1, 0, MEZZ_Y0, LIGHT_COLUMN);
-  // 手すり: 縁に沿った細い横棒と 2m おきの支柱。よじ登りの邪魔にならないよう、当たり判定は持たせない
-  deco(-HALF_W + 1, HALF_W - 1, MEZZ_FRONT - 0.1, MEZZ_FRONT - 0.2, MEZZ_Y + 1, MEZZ_Y + 1.1, LIGHT_RAIL);
-  for (let x = -HALF_W + 1; x <= HALF_W - 1; x += 2) deco(x - 0.05, x + 0.05, MEZZ_FRONT - 0.1, MEZZ_FRONT - 0.2, MEZZ_Y, MEZZ_Y + 1, LIGHT_RAIL);
-  // 中二階の床の縁の線
-  lines.push({ x: 0, y: MEZZ_Y + 0.01, z: MEZZ_FRONT - 0.8, w: 2 * HALF_W, d: 0.3 });
-  // 事務所: 中二階の左に載ったプレハブ。屋根（7.5m）へは中二階からよじ登れる。手前の面に窓の帯を貼る（窓の間の柱で途切れさせる）
-  box(-26, -10, -98, -106, MEZZ_Y, RACK_H, LIGHT_OFFICE);
-  for (let x = -25; x < -15; x += 3.5) deco(x, x + 2.5, -98, -97.97, MEZZ_Y + 1, MEZZ_Y + 2.5, LIGHT_WINDOW);
-  deco(-14, -12, -98, -97.97, MEZZ_Y, MEZZ_Y + 2.5, LIGHT_WINDOW); // 扉
-  // 中二階の右: 低い棚に段ボールを並べる
-  for (const x of [8, 14, 20]) {
-    box(x, x + 4, -101, -104, MEZZ_Y, MEZZ_Y + 2, LIGHT_RACK_CORE);
-    for (const dx of [0, 2]) deco(x + dx + 0.25, x + dx + 1.75, -99.5, -101, MEZZ_Y + 0.25, MEZZ_Y + 0.25 + [0.75, 1, 1.25][Math.floor(rand() * 3)], cargoLight());
-  }
+  // 奥の壁ぎわの荷
+  pallet(-14, -92, 1, 2);
+  pallet(-12, -92, 1, 1.5);
+  pallet(10, -92, 1, 2);
 
   // ---- フォークリフト ----
   forklift(decor, colliders, 0, -28, -1, false);
@@ -270,25 +238,50 @@ export function buildWarehouse(): StageLayout {
   // ---- 天井クレーン ----
   // 走行レール: 側壁の柱型の内側の面に沿わせる（見た目だけ。壁走りの邪魔をしない）
   for (const s of [-1, 1]) deco(s * (HALF_W - 1.5), s * (HALF_W - 1), NEAR, FAR, GIRDER_Y0 - 0.5, GIRDER_Y0, LIGHT_RUNWAY);
-  const craneBoxes: StageBox[] = [];
-  const craneDecor: StageBox[] = [];
+  const bridge = { boxes: [] as StageBox[], decor: [] as StageBox[], follow: 'z' as const };
+  const trolley = { boxes: [] as StageBox[], decor: [] as StageBox[] };
   // 橋桁の中心からの位置で置く
   const crane = (list: StageBox[], x0: number, x1: number, z0: number, z1: number, y0: number, h: number, light: number) =>
     list.push({ ...rect(x0, x1, CRANE_Z0 + z0, CRANE_Z0 + z1), y0: y0 || undefined, h, light, look: 'struct' });
-  // 橋桁（乗れて、鎖鎌も掛かる）と、両端でレールに載る脚（サドル）
-  crane(craneBoxes, -(HALF_W - 2.5), HALF_W - 2.5, -0.75, 0.75, GIRDER_Y0, GIRDER_Y1, LIGHT_GIRDER);
-  for (const s of [-1, 1]) crane(craneDecor, s * (HALF_W - 2.5), s * (HALF_W - 1), -2, 2, GIRDER_Y0, GIRDER_Y1 + 0.2, LIGHT_SADDLE);
-  // 巻き上げ機: 橋桁の真ん中の下に吊る
-  crane(craneDecor, -1.25, 1.25, -1, 1, HOIST_Y0, GIRDER_Y0, LIGHT_HOIST);
+  // 橋桁（乗れて、鎖鎌も掛かる）と、両端でレールに載る脚（サドル）。奥と手前にだけ動く
+  crane(bridge.boxes, -(HALF_W - 2.5), HALF_W - 2.5, -0.75, 0.75, GIRDER_Y0, GIRDER_Y1, LIGHT_GIRDER);
+  for (const s of [-1, 1]) crane(bridge.decor, s * (HALF_W - 2.5), s * (HALF_W - 1), -2, 2, GIRDER_Y0, GIRDER_Y1 + 0.2, LIGHT_SADDLE);
+  // 巻き上げ機: 橋桁の下に吊り、橋桁に沿って左右にも動く
+  crane(trolley.decor, -1.25, 1.25, -1, 1, HOIST_Y0, GIRDER_Y0, LIGHT_HOIST);
   // ワイヤー: 巻き上げ機から吊り荷の四隅の内側へ
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) crane(craneDecor, sx * 0.9, sx * 0.95, sz * 0.9, sz * 0.95, LOAD_Y1, HOIST_Y0, LIGHT_WIRE);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) crane(trolley.decor, sx * 0.9, sx * 0.95, sz * 0.9, sz * 0.95, LOAD_Y1, HOIST_Y0, LIGHT_WIRE);
   // 吊り荷: パレットに載せた木箱（どちらも乗れる）
-  crane(craneBoxes, -LOAD_HALF, LOAD_HALF, -LOAD_HALF, LOAD_HALF, LOAD_Y0, LOAD_Y0 + LOAD_PALLET, LIGHT_PALLET);
-  crane(craneBoxes, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, LOAD_Y0 + LOAD_PALLET, LOAD_Y1, LIGHT_CARGO_MAX);
+  crane(trolley.boxes, -LOAD_HALF, LOAD_HALF, -LOAD_HALF, LOAD_HALF, LOAD_Y0, LOAD_Y0 + LOAD_PALLET, LIGHT_PALLET);
+  crane(trolley.boxes, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, -LOAD_HALF + 0.25, LOAD_HALF - 0.25, LOAD_Y0 + LOAD_PALLET, LOAD_Y1, LIGHT_CARGO_MAX);
+  // 道のり（1 周 105 秒）: 手前で右・左と荷を振ってから、横通路へ進んで右へ寄り、戻って奥へ。奥で左へ寄ってから、手前へ戻る
+  const cross = CRANE_CROSS - CRANE_Z0;
+  const far = CRANE_Z1 - CRANE_Z0;
+  const cranePath = [
+    { x: 0, z: 0, time: 3 },
+    { x: CRANE_SIDE, z: 0, time: 5 },
+    { x: CRANE_SIDE, z: 0, time: 2 },
+    { x: -CRANE_SIDE, z: 0, time: 8 },
+    { x: -CRANE_SIDE, z: 0, time: 2 },
+    { x: 0, z: 0, time: 5 },
+    { x: 0, z: 0, time: 1 },
+    { x: 0, z: cross, time: 14 },
+    { x: 0, z: cross, time: 2 },
+    { x: CRANE_SIDE, z: cross, time: 5 },
+    { x: CRANE_SIDE, z: cross, time: 2 },
+    { x: 0, z: cross, time: 5 },
+    { x: 0, z: cross, time: 1 },
+    { x: 0, z: far, time: 10 },
+    { x: 0, z: far, time: 3 },
+    { x: -(CRANE_SIDE - 2), z: far, time: 5 },
+    { x: -(CRANE_SIDE - 2), z: far, time: 2 },
+    { x: 0, z: far, time: 5 },
+    { x: 0, z: far, time: 1 },
+    { x: 0, z: 0, time: 24 },
+  ];
 
   return {
     boxes,
-    movers: [{ boxes: craneBoxes, decor: craneDecor, axis: 'z', travel: CRANE_Z1 - CRANE_Z0, time: CRANE_TIME, pause: CRANE_PAUSE }],
+    movers: [{ parts: [bridge, trolley], path: cranePath }],
     decor,
     colliders,
     scenery: [],
@@ -296,16 +289,18 @@ export function buildWarehouse(): StageLayout {
     // 壁の外側の面まで。境界の壁は壁の中に隠れ、動ける範囲は壁そのものの当たり判定で決まる（屋根の上は壁の上まで歩ける）
     bounds: { minX: -HALF_W - WALL_T, maxX: HALF_W + WALL_T, minZ: FAR - WALL_T, maxZ: NEAR + WALL_T },
     start: { x: 0, y: 0, z: 6 },
-    // 敵の出る所: 荷・柱・フォークリフトを避けた床（荷さばきの広場、真ん中の通路、棚の間の通路、横通路、中二階の手前）と、
-    // 中二階の上、棚の天板の上（列の真ん中）、事務所の屋根の上。敵は今の床と同じ高さの所しか歩かないので、高い所の敵はそこから降りてこない
+    // 敵の出る所: 荷・柱・フォークリフトを避けた床（荷さばきの広場、真ん中の通路、棚の間の通路、横通路、奥の広い床）と、
+    // 棚の天板の上（列の真ん中）。敵は今の床と同じ高さの所しか歩かないので、高い所の敵はそこから降りてこない。
+    // 狙撃手だけは、棚の列の上のトラスの下弦材と、棚の列の端の天板にも出る（真ん中の通路や棚の間を上から見通す）
     enemySpawns: [
-      ...[[-4, -6], [10, -4], [-20, -6], [3, -20], [-3, -40], [2, -66], [-2, -82], [12, -30], [-21, -36], [-12, -70], [21, -62], [8, -50], [-12, -50], [0, -91]].map(([x, z]) => ({ x, y: 0, z })),
-      ...[[0, -99], [-4, -104], [26, -99]].map(([x, z]) => ({ x, y: MEZZ_Y, z })),
+      ...[[-4, -6], [10, -4], [-20, -6], [3, -20], [-3, -40], [2, -66], [-2, -82], [12, -30], [-21, -36], [-12, -70], [21, -62], [8, -50], [-12, -50], [0, -91], [0, -100], [-6, -104], [24, -100]].map(([x, z]) => ({ x, y: 0, z })),
       ...[[7.5, -30], [-16.5, -70], [25.5, -20], [-7.5, -62]].map(([x, z]) => ({ x, y: RACK_H, z })),
-      { x: -18, y: RACK_H, z: -102 },
+      ...[[7.5, -40], [-7.5, -64], [16.5, -72], [-16.5, -32], [7.5, -96], [-7.5, -96]].map(([x, z]) => ({ x, y: TRUSS_Y1, z, perch: true })),
+      ...[[7.5, -88], [-7.5, -88], [16.5, -12], [-16.5, -12]].map(([x, z]) => ({ x, y: RACK_H, z, perch: true })),
     ],
     lead: 'striker', // 棚の陰や角から、近い距離で飛び出してくる
-    // 入口の左の荷の山の上あたりから、真ん中の通路と左右の棚が奥の中二階まで続くのを見る
+    guest: 'sniper', // トラスや棚の上から、通路を見下ろして撃ってくる
+    // 入口の左の荷の山の上あたりから、真ん中の通路と左右の棚が奥の壁まで続くのを見る
     view: { eye: { x: -9, y: 9, z: 9 }, target: { x: 4, y: 3, z: -50 } },
   };
 }

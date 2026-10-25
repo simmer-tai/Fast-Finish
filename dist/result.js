@@ -29,7 +29,12 @@ const RANKS = [
     ['B', 260, 'GOOD'],
     ['C', 0, 'CLEAR'],
 ];
+// ヘッドショット率が 9 割を超えたら、スコアによらずこの段にする（冗談のランク）
+const CHEATER_RANK = ['Cheater?', 0, 'TOO ACCURATE'];
+const CHEATER_HEADSHOT_RATE = 0.9;
 function rankOf(d) {
+    if (d.headshotRate !== null && d.headshotRate > CHEATER_HEADSHOT_RATE)
+        return CHEATER_RANK;
     return RANKS.find(([, per]) => d.score >= per * d.kills);
 }
 // 出す順番（秒）
@@ -37,12 +42,15 @@ const T_HEAD = 0.1; // 見出し
 const T_ROW = 0.55; // 1 行目
 const ROW_GAP = 0.62;
 const ROW_COUNT = 0.5; // 1 行を数え上げる時間
-const T_SCORE = T_ROW + ROW_GAP * 3 + 0.1;
 const SCORE_COUNT = 1.3;
-const T_SCORE_SLAM = T_SCORE + 0.2 + SCORE_COUNT + 0.18; // 数え終えてから一拍おいて確定
-const T_RANK = T_SCORE_SLAM + 0.7;
-const T_TAGS = T_RANK + 0.55;
-const T_MENU = T_TAGS + 0.45;
+// 合計から後は、出す行の数（ヘッドショット率の行があるか）でずらす
+const timesAfterRows = (n) => {
+    const score = T_ROW + ROW_GAP * n + 0.1;
+    const slam = score + 0.2 + SCORE_COUNT + 0.18; // 数え終えてから一拍おいて確定
+    const rank = slam + 0.7;
+    const tags = rank + 0.55;
+    return { score, slam, rank, tags, menu: tags + 0.45 };
+};
 const TICK_GAP = 0.045; // 数え上げの刻みの間隔
 const view = document.querySelector('#overlay .result-view');
 const q = (sel) => view.querySelector(sel);
@@ -54,8 +62,8 @@ const title = q('.rv-title');
 const rule = q('.rv-rule');
 const rows = {
     time: q('[data-row="time"]'),
-    kills: q('[data-row="kills"]'),
     damage: q('[data-row="damage"]'),
+    headshot: q('[data-row="headshot"]'),
 };
 const score = q('.rv-score');
 const scoreVal = score.querySelector('b');
@@ -168,14 +176,17 @@ export function showResult(d, done) {
         },
     });
     addRow(T_ROW, rows.time, d.time, fmtTime);
-    addRow(T_ROW + ROW_GAP, rows.kills, d.kills, (v) => String(Math.round(v)));
-    addRow(T_ROW + ROW_GAP * 2, rows.damage, d.damage, (v) => String(Math.round(v)));
-    steps.push({ at: T_SCORE, run: () => show(score) });
+    addRow(T_ROW + ROW_GAP, rows.damage, d.damage, (v) => String(Math.round(v)));
+    rows.headshot.hidden = d.headshotRate === null;
+    if (d.headshotRate !== null)
+        addRow(T_ROW + ROW_GAP * 2, rows.headshot, d.headshotRate * 100, (v) => `${Math.round(v)}%`);
+    const T = timesAfterRows(d.headshotRate === null ? 2 : 3);
+    steps.push({ at: T.score, run: () => show(score) });
     steps.push({
-        at: T_SCORE + 0.2,
+        at: T.score + 0.2,
         run: () => {
             counts.push({
-                start: T_SCORE + 0.2,
+                start: T.score + 0.2,
                 dur: SCORE_COUNT,
                 lastTick: -1,
                 set: (k) => {
@@ -191,7 +202,7 @@ export function showResult(d, done) {
         },
     });
     steps.push({
-        at: T_SCORE_SLAM,
+        at: T.slam,
         run: () => {
             score.classList.add('slam');
             restart(scoreVal, 'lock');
@@ -200,7 +211,7 @@ export function showResult(d, done) {
         },
     });
     steps.push({
-        at: T_RANK,
+        at: T.rank,
         run: () => {
             show(rank);
             // 文字が落ちきる瞬間に合わせて鳴らし、揺らす
@@ -219,14 +230,14 @@ export function showResult(d, done) {
     if (d.newScore)
         tagList.push(tags.score);
     tagList.forEach((tag, i) => steps.push({
-        at: T_TAGS + i * 0.16,
+        at: T.tags + i * 0.16,
         run: () => {
             show(tag);
             play(sfx.playResultStamp);
         },
     }));
     steps.push({
-        at: T_MENU,
+        at: T.menu,
         run: () => {
             show(menu);
             running = false;

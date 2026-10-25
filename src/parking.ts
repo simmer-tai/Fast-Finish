@@ -1,17 +1,16 @@
 // ---- ステージ: PARKING（地下駐車場） ----
-// 天井の低い、1 層だけの広い地下駐車場。真ん中で十字に交わる広い通路（主通路と横通路）があり、プレイヤーはこの交差点から始める。
+// 1 層だけの広い地下駐車場。真ん中で十字に交わる広い通路（主通路と横通路）があり、プレイヤーはこの交差点から始める。
 // 主通路の左右には、背中合わせの車の列と通路が交互に 2 組ずつ並び、外周の壁ぎわにも車を 1 列並べる。前後の壁ぎわは車の無い通路。
 // 柱は車の列の真ん中の線（車と車の隙間）に立てる。天井は平らなスラブで、通路の真上に蛍光灯を並べる。
-// 天井は一面ふさがっていて、日の光は入らない。奥の壁の真ん中に、地上へ上がる坂（シャッターで閉じている）、
-// 手前の壁の真ん中にエレベーターホール、対角の 2 つの角に階段室がある。
+// 天井は一面ふさがっていて、日の光は入らない。手前の壁の真ん中にエレベーターホール、対角の 2 つの角に階段室がある。
 // 走る速さに合わせて、実際の駐車場より 1.5 倍ほど大きく作る。当たり判定のある箱はすべて 0.5m のグリッドに合わせる（車だけは除く）
-import type { StageLayout, StageBox, StageRamp } from './stage.js';
+import type { StageLayout, StageBox, StageMover, StageMoverPart, StageMoverStep } from './stage.js';
 
 const HALF_W = 58; // 左右の壁の内面 (|x|)
 const HALF_D = 50; // 前後の壁の内面 (|z|)
 const WALL_T = 1;
-const CEIL_Y0 = 3.5; // 天井の下面。セダンの屋根（1.65m）に立っても頭が当たらない高さ
-const CEIL_Y1 = 4.5; // 天井の上面（地上の地面）
+const CEIL_Y0 = 5; // 天井の下面。ワンボックスの屋根（2.7m）に立っても頭が当たらない高さ
+const CEIL_Y1 = 6; // 天井の上面（地上の地面）
 
 // x の帯（右半分。左は鏡写し）: 主通路の半分 | 背中合わせの車の列 | 通路 | 車の列 | 通路 | 壁ぎわの車
 const MAIN = 5; // 主通路の半幅
@@ -27,12 +26,15 @@ const COLUMN_Z = [5, 17, 29, 41]; // 柱の z (|z|)。3 ますおき
 // 天井を張る区切り。帯の境目で切る（組み上がりで少しずつせり上がるよう、小分けにする）
 const CEIL_X = [-59, -51, -42, -28, -19, -5, 5, 19, 28, 42, 51, 59];
 const CEIL_Z = [-51, -41, -29, -17, -5, 5, 17, 29, 41, 51];
-// 地上への坂: 奥の壁を主通路の幅で抜き、トンネルの中を上った先の踊り場にシャッター
-const RAMP_Z0 = -(HALF_D + WALL_T); // 坂の下の端
-const RAMP_Z1 = -64; // 坂の上の端
-const RAMP_H = 3;
-const SHUTTER_Z = -68;
-const TUNNEL_Y = 7.5; // トンネルの天井の下面
+// 走る車: 四隅のブロックに 1 台ずつ。内側の列（通路側の端 |x| = 19、輪止め |x| = 12）の 5 ます目に止まっていて、
+// ときどき出てそのブロックを一周して戻る
+const DRIVER_ROW = 19;
+const DRIVER_STALL = 4;
+const DRIVER_Z = CROSS + STALL_W * (DRIVER_STALL + 0.5); // 23 (|z|)
+const DRIVER_LANE = 2; // 横通路では、奥と手前の車がすれ違えるよう、横通路の真ん中からこれだけ自分の側へ寄って走る
+const DRIVERS: [number, number, number][] = [[-1, -1, 8], [1, 1, 13], [1, -1, 19], [-1, 1, 25]]; // 左右・前後の向きと、初めに止まっている時間
+const CAR_SPEED = 9; // 通路を走る速さ (m/s)
+const CAR_SLOW = 3; // ますへの出し入れの速さ (m/s)
 // 階段室: 対角の 2 つの角
 const CORE_X = 51;
 const CORE_Z = 42;
@@ -46,15 +48,12 @@ const LIGHT_DARK = 0.2;
 const LIGHT_PAINT = 0.3; // 床の白線の代わりの暗い線
 const LIGHT_LAMP = 0.97;
 const LIGHT_PIPE = 0.4;
-const LIGHT_SHUTTER = 0.4;
-const LIGHT_RAMP = 0.58;
 const CAR_LIGHTS = [0.16, 0.28, 0.55, 0.72, 0.9];
 
 export function buildParking(): StageLayout {
   const boxes: StageBox[] = [];
   const decor: StageBox[] = [];
   const colliders: StageLayout['colliders'] = [];
-  const ramps: StageRamp[] = [];
   const rect = (x0: number, x1: number, z0: number, z1: number) => ({ minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1) });
   const box = (x0: number, x1: number, z0: number, z1: number, y0: number, h: number, light: number, look: StageBox['look'] = 'struct') =>
     boxes.push({ ...rect(x0, x1, z0, z1), y0: y0 || undefined, h, light, look });
@@ -76,15 +75,14 @@ export function buildParking(): StageLayout {
   }
 
   // ---- 壁 ----
-  // 外周を囲む。奥の壁は主通路の幅だけ抜いて、坂のトンネルへつなぐ
+  // 外周を囲む
   for (const s of [-1, 1]) {
     for (let z = HALF_D + WALL_T; z > -HALF_D - WALL_T; z -= 12) {
       box(s * HALF_W, s * (HALF_W + WALL_T), z, Math.max(z - 12, -HALF_D - WALL_T), 0, CEIL_Y0, LIGHT_WALL);
     }
   }
-  for (let x = -HALF_W; x < HALF_W; x += 14.5) box(x, x + 14.5, HALF_D, HALF_D + WALL_T, 0, CEIL_Y0, LIGHT_WALL);
-  for (const [x0, x1] of [[-HALF_W, -MAIN], [MAIN, HALF_W]]) {
-    for (let x = x0; x < x1; x += 13.25) box(x, Math.min(x + 13.25, x1), -HALF_D, -HALF_D - WALL_T, 0, CEIL_Y0, LIGHT_WALL);
+  for (const sz of [-1, 1]) {
+    for (let x = -HALF_W; x < HALF_W; x += 14.5) box(x, x + 14.5, sz * HALF_D, sz * (HALF_D + WALL_T), 0, CEIL_Y0, LIGHT_WALL);
   }
   // 壁の付け柱: 左右の壁は柱の z に、前後の壁は柱の x に
   for (const s of [-1, 1]) {
@@ -93,7 +91,7 @@ export function buildParking(): StageLayout {
   }
   // 前後の壁ぎわの通路の上に、壁に沿って配管を通す（見た目だけ）
   for (const sz of [-1, 1]) {
-    for (const y of [2.9, 3.2]) deco(-HALF_W, HALF_W, sz * (HALF_D - 0.4), sz * (HALF_D - 0.1), y, y + 0.2, LIGHT_PIPE);
+    for (const y of [CEIL_Y0 - 0.6, CEIL_Y0 - 0.3]) deco(-HALF_W, HALF_W, sz * (HALF_D - 0.4), sz * (HALF_D - 0.1), y, y + 0.2, LIGHT_PIPE);
   }
 
   // ---- 柱 ----
@@ -128,7 +126,9 @@ export function buildParking(): StageLayout {
         const type = pickCar(rand);
         const cx = x1 - back * Math.min(type.len / 2 + 0.25 + rand() * 0.3, Math.abs(x1 - x0) / 2);
         const slack = (STALL_W - 1) / 2 - type.wid / 2; // ますの境の柱（幅 1m）に当たらない範囲
-        car(decor, colliders, type, cx, cz + (rand() * 2 - 1) * slack, rand() < 0.5 ? back : -back, 'x', rand);
+        // 走る車のますは空けておく（乱数の並びは変えない）
+        const free = Math.abs(x0) === DRIVER_ROW && k === DRIVER_STALL;
+        car(free ? [] : decor, free ? [] : colliders, type, cx, cz + (rand() * 2 - 1) * slack, rand() < 0.5 ? back : -back, 'x', rand);
       }
     }
   };
@@ -142,7 +142,7 @@ export function buildParking(): StageLayout {
   }
   // 通路に止まっている車: 敵の出る所を避ける。少し片側へ寄せる
   for (const [x, z, axis, dir] of [
-    [47.5, 17, 'z', 1], [-45.5, -29, 'z', -1], [1.5, -29, 'z', 1], [-46.5, 17, 'z', -1], [23.5, 1.5, 'x', -1], [-23.5, 44.5, 'x', 1],
+    [1.5, -29, 'z', 1], [-1.5, 17, 'z', -1],
   ] as const) {
     car(decor, colliders, pickCar(rand), x, z, dir, axis, rand);
   }
@@ -163,17 +163,8 @@ export function buildParking(): StageLayout {
     for (let x = 10; x <= 42; x += 8) for (const z of [-45.5, 45.5]) lampX(s * x, z);
   }
 
-  // ---- 地上への坂 ----
-  // 奥の壁の抜けから、トンネルの中を上って踊り場へ。踊り場の先はシャッターで閉じている
-  ramps.push({ ...rect(-MAIN, MAIN, RAMP_Z0, RAMP_Z1), y0: 0, h: RAMP_H, up: '-z', light: LIGHT_RAMP, look: 'terrain' });
-  box(-MAIN, MAIN, RAMP_Z1, SHUTTER_Z, 0, RAMP_H, LIGHT_RAMP, 'terrain');
-  box(-MAIN, MAIN, SHUTTER_Z, SHUTTER_Z - 0.5, RAMP_H, TUNNEL_Y, LIGHT_SHUTTER);
-  for (let y = RAMP_H + 0.5; y < TUNNEL_Y; y += 0.5) deco(-MAIN, MAIN, SHUTTER_Z + 0.03, SHUTTER_Z, y - 0.05, y, LIGHT_DARK);
-  for (const s of [-1, 1]) box(s * MAIN, s * (MAIN + WALL_T), RAMP_Z0, SHUTTER_Z - 0.5, 0, TUNNEL_Y, LIGHT_WALL);
-  box(-MAIN - WALL_T, MAIN + WALL_T, RAMP_Z0, SHUTTER_Z - 0.5, TUNNEL_Y, TUNNEL_Y + 1, LIGHT_CEIL);
-  // トンネルの天井の照明と、坂の入口の上の「出口」の表示
-  for (let z = RAMP_Z0 - 4; z > SHUTTER_Z; z -= 6) deco(-0.2, 0.2, z - 1.5, z + 1.5, TUNNEL_Y - 0.08, TUNNEL_Y, LIGHT_LAMP);
-  deco(-2, 2, -HALF_D + 0.03, -HALF_D, 2.75, 3.25, LIGHT_LAMP);
+  // ---- 走る車 ----
+  const movers = DRIVERS.map(([sx, sz, first]) => driver(rand, sx, sz, first));
 
   // ---- エレベーターホール ----
   // 手前の壁の真ん中に張り出した部屋。主通路の突き当たりにガラスの扉と、中のエレベーターの扉が見える
@@ -195,21 +186,74 @@ export function buildParking(): StageLayout {
     for (const z of [-35, -23, -11, 11, 23, 35]) spawns.push([x, z]);
   }
   for (const z of [0, -45.5, 45.5]) for (const x of [-35, -12, 12, 35]) spawns.push([x, z]);
+  // 狙撃手だけが出る所: 高い所は無いので、長い通路の突き当たり（主通路の前後の端、横通路の左右の端、列の間の通路の端）から見通しで撃つ。
+  // 前後の壁ぎわでは、走る車の通り道（z = ±45.5）にかからないよう、壁へ寄せる
+  const perches: [number, number][] = [[0, -48.5], [0, 42], [-54, 0], [54, 0]];
+  for (const x of AISLES.flatMap((a) => [-a, a])) for (const z of [-48.5, 48.5]) perches.push([x, z]);
   return {
     boxes,
+    movers,
     decor,
     colliders,
     scenery: [],
-    ramps,
+    ramps: [],
     lines: [],
     // 壁の外側の面まで。境界の壁は壁の中に隠れ、動ける範囲は壁そのものの当たり判定で決まる
-    bounds: { minX: -HALF_W - WALL_T, maxX: HALF_W + WALL_T, minZ: SHUTTER_Z - 0.5, maxZ: HALF_D + WALL_T },
+    bounds: { minX: -HALF_W - WALL_T, maxX: HALF_W + WALL_T, minZ: -HALF_D - WALL_T, maxZ: HALF_D + WALL_T },
     // 真ん中の交差点
     start: { x: 0, y: 0, z: 0 },
-    enemySpawns: spawns.map(([x, z]) => ({ x, y: 0, z })),
-    // 手前の右の角の近くから、低い天井の下に車の列と柱が奥まで続くのを見る
+    enemySpawns: [...spawns.map(([x, z]) => ({ x, y: 0, z })), ...perches.map(([x, z]) => ({ x, y: 0, z, perch: true }))],
+    guest: 'sniper', // 長い通路の奥から、車と柱の間を通して撃ってくる
+    // 手前の右の角の近くから、天井の下に車の列と柱が奥まで続くのを見る
     view: { eye: { x: 40, y: 2.8, z: 46 }, target: { x: 4, y: 1.2, z: -10 } },
   };
+}
+
+// ---- 走る車 ----
+// 内側の列のますに頭から止まっている。しばらくするとバックで出て、内側の通路を壁のほうへ、前後の壁ぎわを外へ、外側の通路を横通路へ、
+// 横通路を内へ走って戻り、元のますに頭から入る。通路では止まらずに角を曲がる。走っている間に触れると、プレイヤーも敵もはね飛ばされる。
+// 道のりは左奥のブロックで書き、(sx, sz) で左右・前後を写す
+const Q = Math.PI / 2;
+function driver(rand: () => number, sx: number, sz: number, first: number): StageMover {
+  const t = CAR_TYPES[0]; // セダン（屋根に乗れる）
+  const cx = -12 - (t.len / 2 + 0.4);
+  const cz = -DRIVER_Z;
+  const pivot = { x: -sx * cx, z: -sz * cz }; // 写した先での、止まっているときの車の真ん中
+  const part: StageMoverPart = { boxes: [], decor: [], colliders: [] };
+  car(part.decor, part.colliders!, t, pivot.x, pivot.z, -sx, 'x', rand);
+  const path: StageMoverStep[] = [];
+  let px = cx;
+  let pz = cz;
+  // (x, z) は左奥での車の真ん中の位置、yaw は左奥での向き。写すと向きの回り方は、片方だけ写せば逆になる。
+  // かかる時間は、速さの付け方ごとに一番速いところが speed になるよう決める
+  const go = (x: number, z: number, yaw: number, ease: StageMoverStep['ease'], speed = CAR_SPEED) => {
+    const peak = ease === 'none' ? 1 : ease === 'both' ? 1.5 : 2;
+    path.push({ x: -sx * (x - cx), z: -sz * (z - cz), yaw: sx * sz * yaw, time: (Math.hypot(x - px, z - pz) * peak) / speed, ease });
+    px = x;
+    pz = z;
+  };
+  const wait = (time: number) => path.push({ x: -sx * (px - cx), z: -sz * (pz - cz), time });
+  const [inner, outer, far, lane] = [-AISLES[0], -AISLES[1], -45.5, -DRIVER_LANE];
+  const R = 3.5; // 角を曲がるときの大きさ
+  wait(first);
+  // バックでますから出て、頭を壁のほうへ向ける
+  go(-20.5, cz, 0, 'both', CAR_SLOW);
+  go(inner, cz + 3, Q, 'both', CAR_SLOW);
+  wait(1);
+  // ブロックを一周する
+  go(inner, far + R, Q, 'in');
+  go(inner - R, far, 2 * Q, 'none');
+  go(outer + R, far, 2 * Q, 'none');
+  go(outer, far + R, 3 * Q, 'none');
+  go(outer, lane - R, 3 * Q, 'none');
+  go(outer + R, lane, 4 * Q, 'none');
+  go(inner - R, lane, 4 * Q, 'none');
+  go(inner, lane - R, 5 * Q, 'none');
+  // ますの手前で速さを落とし、頭から入れる
+  go(inner, cz + 6, 5 * Q, 'out');
+  go(-19.5, cz, 4 * Q, 'both', CAR_SLOW);
+  go(cx, cz, 4 * Q, 'both', CAR_SLOW * 0.7);
+  return { parts: [part], path, pivot, hazard: true };
 }
 
 // ---- 車 ----
@@ -236,7 +280,7 @@ function pickCar(rand: () => number): CarType {
 
 // (cx, cz) は車体の中心、dir は鼻先の向き（軸の正の向きなら 1）、axis は車の長さの向き。
 // 当たり判定は車体とキャビン（くぐれる車は車輪も、ピックアップは荷台のあおりも）
-function car(decor: StageBox[], colliders: StageLayout['colliders'], t: CarType, cx: number, cz: number, dir: number, axis: 'x' | 'z', rand: () => number) {
+function car(decor: StageBox[], colliders: NonNullable<StageMoverPart['colliders']>, t: CarType, cx: number, cz: number, dir: number, axis: 'x' | 'z', rand: () => number) {
   // u: 前（鼻先の向き）、v: 横
   const area = (u0: number, u1: number, v0: number, v1: number) => {
     const a = cx + (axis === 'x' ? dir * u0 : v0);
