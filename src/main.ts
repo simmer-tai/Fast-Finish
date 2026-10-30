@@ -12,7 +12,7 @@ import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.j
 import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
 import { buildTutorial } from './tutorialStage.js';
-import { startTutorial, startWeaponTutorial, updateTutorial } from './tutorial.js';
+import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, updateTutorial } from './tutorial.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -1248,6 +1248,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   const damage = hitDamage(def, kind) * dmgScale * (headshot ? HEADSHOT_MULT : 1);
   en.hp -= damage;
   if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT) chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
+  if (!remote && pendingStage === 'tutorial' && game.shownWeapon === 'sword' && kind === 'sword') noteTutorialSwordHit(def);
   if (!remote) { countHit(en.hp <= 0); trackHitProcess(def, kind); }
   if (en.hp <= 0) {
     if (!remote) { countChain(); countMulti(def); scoreKill(showKillScore(killBonuses(def, headshot)), highlightWeight(def, kind)); }

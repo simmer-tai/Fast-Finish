@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { camera, scene } from './core.js';
 import { game } from './game/state.js';
+import { SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_ISSEN } from './weapons/swordAttacks.js';
+import { swordState } from './weapons/swordCombat.js';
 import { player, position, velocity } from './player/state.js';
 // 足場に着地する、通路をくぐるなど、コースを進むと次の説明に切り替える。
 const steps = [
@@ -29,6 +31,8 @@ scene.add(marker);
 let step = 0;
 let active = false;
 let weaponPractice = false;
+let swordStep = -1;
+let swordGuideKey = '';
 let lastPad = false;
 const startView = new THREE.Quaternion();
 function showStep() {
@@ -46,6 +50,7 @@ function showStep() {
 export function startTutorial() {
     active = true;
     weaponPractice = false;
+    swordStep = -1;
     step = 0;
     startView.copy(camera.quaternion);
     panel.hidden = false;
@@ -68,8 +73,11 @@ export function updateTutorial() {
         player.wallRunning = false;
         player.hasLastWall = false;
     }
-    if (step >= steps.length)
+    if (step >= steps.length) {
+        if (weaponPractice && swordStep >= 0)
+            updateSwordTutorial();
         return;
+    }
     if (lastPad !== game.usingPad)
         showStep();
     const item = steps[step];
@@ -84,6 +92,45 @@ export function updateTutorial() {
 export function startWeaponTutorial(id) {
     weaponPractice = true;
     document.body.classList.remove('in-tutorial');
+    if (id === 'sword') {
+        swordStep = 0;
+        swordGuideKey = '';
+        updateSwordTutorial();
+        return;
+    }
     const names = { kunai: 'クナイ', handgun: 'リボルバー', sword: '刀', sickle: '鎖鎌', axe: 'バトルアックス', bow: '弓', bat: 'バット', spear: '槍' };
     panel.innerHTML = `<small>TUTORIAL / WEAPON</small><strong>${names[id]}の練習</strong><span>目の前の的に向かって、攻撃や右側の操作を試そう。</span>${id === 'bow' ? '<span class="tutorial-next">弓は攻撃ボタンを押し続けてから離すと射てます。</span>' : ''}`;
+}
+const swordLessons = [
+    { title: '斬り', pc: '的に近づき、左クリックで斬りを当てよう', pad: '的に近づき、ZR で斬りを当てよう' },
+    { title: '溜め斬り', pc: '左クリックを長押しし、溜まったら離して的を斬ろう', pad: 'ZR を長押しし、溜まったら離して的を斬ろう' },
+    { title: '居合ゲージ', pc: '的を攻撃して、居合ゲージを満タンにしよう', pad: '的を攻撃して、居合ゲージを満タンにしよう' },
+    { title: '一閃', pc: '右クリックで構え、的に照準を合わせて左クリック', pad: 'ZL で構え、的に照準を合わせて ZR' },
+];
+function updateSwordTutorial() {
+    if (swordStep === 2 && swordState.focusCharge >= 1)
+        swordStep++;
+    const refill = swordStep === 3 && swordState.focusCharge < 1 && !swordState.focusing && swordState.rushTime < 0 && swordState.swordAttack !== SWORD_ISSEN;
+    const key = `${swordStep}:${game.usingPad}:${refill}`;
+    if (key === swordGuideKey)
+        return;
+    swordGuideKey = key;
+    if (swordStep >= swordLessons.length) {
+        panel.innerHTML = '<small>TUTORIAL / SWORD</small><strong>刀の練習完了</strong><span>引き続き、的で自由に練習できます。</span><span>Esc / START で一時停止し、TITLE から戻れます。</span>';
+        return;
+    }
+    const lesson = swordLessons[swordStep];
+    panel.innerHTML = `<small>TUTORIAL / SWORD ${swordStep + 1} — ${swordLessons.length}</small><strong>${lesson.title}</strong><span>${game.usingPad ? lesson.pad : lesson.pc}</span>${refill ? '<span class="tutorial-next">ゲージが空のときは、もう一度的を攻撃して溜めよう。</span>' : ''}`;
+}
+// 振るだけではなく、練習用の的に技が当たったときに進める。
+export function noteTutorialSwordHit(def) {
+    if (!weaponPractice || swordStep < 0)
+        return;
+    if (swordStep === 0 && SWORD_COMBO.some((attack) => attack === def))
+        swordStep++;
+    else if (swordStep === 1 && def === SWORD_CHARGE_SLASH)
+        swordStep++;
+    else if (swordStep === 3 && def === SWORD_ISSEN)
+        swordStep++;
+    updateSwordTutorial();
 }

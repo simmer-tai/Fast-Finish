@@ -11,7 +11,7 @@ import { finalScore, fmtTime, killPar, showResult, skipResult } from './result.j
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import { buildStation } from './station.js';
 import { buildTutorial } from './tutorialStage.js';
-import { startTutorial, startWeaponTutorial, updateTutorial } from './tutorial.js';
+import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, updateTutorial } from './tutorial.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -1324,6 +1324,8 @@ function applyDummyHit(def, at, kind, swing, scar = true, dmgScale = 1, remote =
     en.hp -= damage;
     if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT)
         chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
+    if (!remote && pendingStage === 'tutorial' && game.shownWeapon === 'sword' && kind === 'sword')
+        noteTutorialSwordHit(def);
     if (!remote) {
         countHit(en.hp <= 0);
         trackHitProcess(def, kind);
