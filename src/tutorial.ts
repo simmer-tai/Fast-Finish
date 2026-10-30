@@ -11,10 +11,12 @@ const steps = [
   { title: '二段ジャンプ', pc: '足場に向かって跳び、上昇が止まる頃にもう一度スペースキーを押そう', pad: '足場に向かって跳び、上昇が止まる頃にもう一度 A を押そう', z: -27, y: 13.4 },
   { title: 'ダッシュ', pc: '走って縁に近づき、Shift で向こうの足場までダッシュしよう', pad: '走って縁に近づき、左スティックを押し込んで向こうへ渡ろう', z: -56, y: 13.4 },
   { title: 'スライディング', pc: 'Shift で走りながら C を押し続け、低い通路をくぐろう', pad: '左スティックを深く倒して走り、B を押し続けてくぐろう', z: -79, y: 13.4 },
+  { title: '壁走り', pc: '左の壁に体を寄せて走り、スペースで跳んだら W を押し続けよう', pad: '左の壁に体を寄せて走り、A で跳んだら前に進み続けよう', z: -115, y: 13.4 },
 ] as const;
 const checkpoints = [
-  { z: 4, y: 5 }, { z: 4, y: 5 }, { z: -9, y: 5 },
-  { z: -19, y: 8.8 }, { z: -35, y: 13.4 }, { z: -66, y: 13.4 },
+  { x: 0, z: 4, y: 5 }, { x: 0, z: 4, y: 5 }, { x: 0, z: -9, y: 5 },
+  { x: 0, z: -19, y: 8.8 }, { x: 0, z: -35, y: 13.4 }, { x: 0, z: -66, y: 13.4 },
+  { x: -3.65, z: -86, y: 13.4 },
 ] as const;
 const panel = document.createElement('div');
 panel.id = 'tutorial-guide';
@@ -55,7 +57,7 @@ export function updateTutorial() {
   // 下の床に落ちたら、今の課題の手前から何度でもやり直せる。
   if (position.y < 1) {
     const checkpoint = checkpoints[Math.min(step, checkpoints.length - 1)];
-    position.set(0, checkpoint.y, checkpoint.z);
+    position.set(checkpoint.x, checkpoint.y, checkpoint.z);
     velocity.set(0, 0, 0);
     player.onGround = true;
     player.airJump = true;
@@ -63,6 +65,7 @@ export function updateTutorial() {
     player.sliding = false;
     player.mantleTime = -1;
     player.wallRunning = false;
+    player.hasLastWall = false;
   }
   if (step >= steps.length) return;
   if (lastPad !== game.usingPad) showStep();
