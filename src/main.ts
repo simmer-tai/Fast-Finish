@@ -288,12 +288,6 @@ function togglePanel(name: (typeof PANELS)[number]) {
 initOptions({ onBrightness: applyBrightness, onQuality: applyQuality, onClose: () => togglePanel('options') });
 // タイトルでは、本編（GAME）か訓練場（TRAINING）かを選ぶ。今の場所は訓練場として使う
 const overlayPrompt = overlay.querySelector('.foot .prompt')!;
-// マルチプレイの入口はローカル開発時だけ表示する。
-if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
-  const multiplayerButton = overlay.querySelector<HTMLButtonElement>('[data-action="multiplayer"]')!;
-  multiplayerButton.hidden = false;
-  multiplayerButton.style.removeProperty('display');
-}
 // ---- ステージ選択 ----
 // GAME を押すと、ステージと難易度を選ぶ画面を出す。START でそのステージへ入る。
 // 難易度は次に開いたときのために覚えておく
