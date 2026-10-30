@@ -11,7 +11,6 @@ import { finalScore, fmtTime, killPar, showResult, skipResult } from './result.j
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
-import { buildCourtyard } from './courtyard.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -3425,8 +3424,8 @@ function updateStageRise(dt: number) {
 // ---- ステージへ入る ----
 // 訓練場（アリーナ）を丸ごと外し、選んだステージの箱を置き直す。タイトルへ戻ると読み込み直すので、
 // 1 度入ったら訓練場へ戻す処理は持たない。敵は操作を返してから出す
-type StageId = 'courtyard' | 'station' | 'warehouse' | 'parking' | 'lift' | 'mall' | 'ruins';
-const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { courtyard: buildCourtyard, station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
+type StageId = 'station' | 'warehouse' | 'parking' | 'lift' | 'mall' | 'ruins';
+const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
 let pendingStage: StageId | null = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
