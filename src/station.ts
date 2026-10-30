@@ -4,6 +4,7 @@
 // プレイヤーはホームの手前の端から、奥（-Z）を向いて始める。
 // 走る速さに合わせて、実際の駅より 1.5 倍ほど大きく作る。箱はすべて 0.5m のグリッドに合わせる
 import type { StageLayout, StageBox } from './stage.js';
+import { game } from './game/state.js';
 
 const PLATFORM_H = 1; // ホームの高さ（線路から）。よじ登れる
 const PLATFORM_HALF = 12; // ホームの半幅
@@ -54,7 +55,14 @@ export function buildStation(): StageLayout {
   // 線路の外の擁壁
   for (const s of [-1, 1]) run(s * TRACK_OUTER, s * (TRACK_OUTER + 2), LINE_NEAR, LINE_FAR, 20, WALL_H, LIGHT_WALL);
 
-  buildTrain(decor, colliders);
+  const trainDecor: StageBox[] = [];
+  const trainColliders: StageLayout['colliders'] = [];
+  buildTrain(trainDecor, trainColliders);
+  const movingTrain = game.difficulty !== 'easy';
+  if (!movingTrain) {
+    decor.push(...trainDecor);
+    colliders.push(...trainColliders);
+  }
 
   // ホームの柱: 左右 2 列、20m おき。屋根を支える
   for (let z = -10; z >= -130; z -= 20) {
@@ -130,6 +138,15 @@ export function buildStation(): StageLayout {
 
   return {
     boxes,
+    movers: movingTrain ? [{
+      parts: [{ boxes: [], decor: trainDecor, colliders: trainColliders }],
+      path: [
+        { x: 0, z: 0, time: 5 },
+        { x: 0, z: -20, time: 8 },
+        { x: 0, z: -20, time: 5 },
+        { x: 0, z: 0, time: 8 },
+      ],
+    }] : [],
     decor,
     colliders,
     scenery,
@@ -141,8 +158,8 @@ export function buildStation(): StageLayout {
     // 狙撃手だけは、残りの車両の屋根と、階段の囲いと売店の上にも出る（どれもホームからよじ登れる高さ）
     enemySpawns: [
       ...[[-4, -16], [3, -30], [-8, -48], [9, -58], [-6, -85], [9, -92], [4, -118], [-3, -142]].map(([x, z]) => ({ x, y: PLATFORM_H, z })),
-      ...[1, 3].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2 })),
-      ...[0, 2, 4].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2, perch: true })),
+      ...(!movingTrain ? [1, 3].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2 })) : []),
+      ...(!movingTrain ? [0, 2, 4].map((i) => ({ x: TRAIN_CX, y: ROOF_Y, z: CAR_NEAR - i * (CAR_LEN + CAR_GAP) - CAR_LEN / 2, perch: true })) : []),
       { x: 0, y: PLATFORM_H + 2.5, z: -70, perch: true },
       { x: 0, y: PLATFORM_H + 2.5, z: -99, perch: true },
     ],
