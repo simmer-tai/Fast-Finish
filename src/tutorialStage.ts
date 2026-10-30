@@ -1,11 +1,12 @@
-﻿import type { StageLayout, StageBox } from './stage.js';
+import type { StageLayout, StageBox } from './stage.js';
 
 // 戦闘を始める前に、移動を安全に試せる一本道。
 export function buildTutorial(): StageLayout {
   const boxes: StageBox[] = [
-    { minX: -6, maxX: -5, minZ: -62, maxZ: 8, h: 3, light: 0.7, look: 'struct' },
-    { minX: 5, maxX: 6, minZ: -62, maxZ: 8, h: 3, light: 0.7, look: 'struct' },
+    { minX: -6, maxX: -5, minZ: -62, maxZ: 8, h: 12, light: 0.7, look: 'struct' },
+    { minX: 5, maxX: 6, minZ: -62, maxZ: 8, h: 12, light: 0.7, look: 'struct' },
     { minX: -4.8, maxX: 4.8, minZ: -17, maxZ: -14, h: 0.8, light: 0.65, look: 'terrain' },
+    { minX: -5, maxX: 5, minZ: -54, maxZ: -49, y0: 0.95, h: 3, light: 0.45, look: 'struct' },
   ];
   return {
     boxes, decor: [], colliders: [], scenery: [],
