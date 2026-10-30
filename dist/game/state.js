@@ -6,6 +6,7 @@ import { PLAYER_MAX_HP } from '../player/config.js';
 export const game = {
     wantWeapon: 'kunai', // 数字キーで選んだ武器
     shownWeapon: 'kunai', // 今手に持っている武器
+    unarmed: false, // 武器を持たないチュートリアル
     weaponLocked: false, // ステージでは選んだ武器のまま戦う（持ち替えられるのは訓練場だけ）
     holster: 0, // 0 = 構えている, 1 = 画面の下へ下げきった
     throwHeld: false, // 右クリックを押し続けているか

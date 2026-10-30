@@ -146,11 +146,11 @@ export function updatePad(dt) {
         keys.add(code);
         pressed.add(code);
     }
-    if (pad.down[PAD.RT])
+    if (!game.unarmed && pad.down[PAD.RT])
         game.attackPressed = game.attackHeld = true;
-    if (pad.down[PAD.LT])
+    if (!game.unarmed && pad.down[PAD.LT])
         game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
-    if (pad.down[PAD.X] && game.shownWeapon === 'handgun')
+    if (!game.unarmed && pad.down[PAD.X] && game.shownWeapon === 'handgun')
         gunState.reloadQueued = true;
     const cycle = game.weaponLocked ? 0 : (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
     if (cycle)
@@ -164,7 +164,7 @@ export function updatePad(dt) {
     const m = Math.hypot(pad.rx, pad.ry);
     if (m > 0 || padState.padSprint || pad.lx || pad.ly || pad.down.some(Boolean))
         game.usingPad = true;
-    if (pad.down[PAD.RT])
+    if (!game.unarmed && pad.down[PAD.RT])
         assistMeleeAttack();
     const locking = updateLockOn(dt, m);
     const target = locking ? null : findAssistTarget();

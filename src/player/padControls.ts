@@ -139,9 +139,9 @@ export function updatePad(dt: number) {
     keys.add(code);
     pressed.add(code);
   }
-  if (pad.down[PAD.RT]) game.attackPressed = game.attackHeld = true;
-  if (pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
-  if (pad.down[PAD.X] && game.shownWeapon === 'handgun') gunState.reloadQueued = true;
+  if (!game.unarmed && pad.down[PAD.RT]) game.attackPressed = game.attackHeld = true;
+  if (!game.unarmed && pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
+  if (!game.unarmed && pad.down[PAD.X] && game.shownWeapon === 'handgun') gunState.reloadQueued = true;
   const cycle = game.weaponLocked ? 0 : (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
   if (cycle) game.wantWeapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(game.wantWeapon) + cycle + WEAPON_ORDER.length) % WEAPON_ORDER.length];
   for (const [b, id] of PAD_WEAPONS) if (pad.down[b] && !game.weaponLocked) game.wantWeapon = id;
@@ -152,7 +152,7 @@ export function updatePad(dt: number) {
 
   const m = Math.hypot(pad.rx, pad.ry);
   if (m > 0 || padState.padSprint || pad.lx || pad.ly || pad.down.some(Boolean)) game.usingPad = true;
-  if (pad.down[PAD.RT]) assistMeleeAttack();
+  if (!game.unarmed && pad.down[PAD.RT]) assistMeleeAttack();
   const locking = updateLockOn(dt, m);
   const target = locking ? null : findAssistTarget();
   // 敵の近くでは視点を遅くし、スティックか体を動かしている間だけ照準を胸へ寄せる（止まっていると勝手には動かさない）

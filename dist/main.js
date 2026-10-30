@@ -63,7 +63,7 @@ import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP
 import { AXE_ATTACKS, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_KESA, AXE_LAUNCH, AXE_WHEEL_HIT, AXE_WHEEL_LIFT } from './weapons/axeAttacks.js';
 import { camera, controls, renderer, scene } from './core.js';
 import { DEFAULT_HIT_STOP, game, kickVel } from './game/state.js';
-import { axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, sword, swordViewModel, viewModel, } from './weapons/viewModels.js';
+import { axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, spearViewModel, sword, swordViewModel, viewModel, } from './weapons/viewModels.js';
 import { AXE_SHOCK_HIT, applyAxePose, axeHitSource, axePoseAt, axePoweredHit, axeState, axeTrailPose, flingEnemy, poweredAxeHit, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
 import { FOCUS_DIM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, swordPoseAt, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
@@ -348,6 +348,7 @@ function startStage(remote = false) {
         return sfx.playUiDenied();
     sfx.playUiSelect();
     pendingStage = id;
+    game.unarmed = false;
     const name = id.toUpperCase();
     transitionLabel.textContent = name;
     overlayKicker = `FAST FINISH — ${name} / ${DIFFICULTIES[difficultyIndex].toUpperCase()}`;
@@ -584,12 +585,14 @@ overlay.addEventListener('click', (e) => {
         if (target.closest('[data-action="tutorial"]')) {
             sfx.playUiSelect();
             pendingStage = 'tutorial';
+            game.unarmed = true;
             transitionLabel.textContent = 'TUTORIAL';
             overlayKicker = 'FAST FINISH - TUTORIAL';
             return startFromOverlay();
         }
         if (target.closest('[data-action="training"]')) {
             pendingStage = null;
+            game.unarmed = false;
             overlayKicker = 'FAST FINISH - TRAINING';
             sfx.playUiSelect();
             return startFromOverlay();
@@ -776,9 +779,9 @@ window.addEventListener('keydown', (e) => {
     keys.add(e.code);
     if (WEAPON_KEYS[e.code] && !game.weaponLocked)
         game.wantWeapon = WEAPON_KEYS[e.code];
-    if (e.code === 'KeyR' && !e.repeat)
+    if (!game.unarmed && e.code === 'KeyR' && !e.repeat)
         gunState.reloadQueued = true;
-    if (e.code === 'KeyT' && !e.repeat)
+    if (!game.unarmed && e.code === 'KeyT' && !e.repeat)
         viewState.inspectPressed = true; // 武器を眺める
     // 聴き比べ用: G で銃声の案を切り替え、その場で 1 発鳴らす
     // 影の見比べ: L で切り替える
@@ -825,6 +828,8 @@ document.addEventListener('mousedown', (e) => {
     // パッドで遊んでいる途中でマウスに持ち替えたら、そのクリックでロックする
     if (padPlaying && !document.pointerLockElement)
         lockPointer();
+    if (game.unarmed)
+        return;
     if (controls.isLocked && e.button === 0) {
         game.attackPressed = true;
         game.attackHeld = true;
@@ -1169,23 +1174,28 @@ function update(dt) {
     updateHookHud();
     updateBowHud();
     updateCamera(dt);
-    updateWeaponSwitch(dt);
+    if (!game.unarmed)
+        updateWeaponSwitch(dt);
     updateViewModel(dt);
-    updateAttack(dt);
+    if (!game.unarmed)
+        updateAttack(dt);
     updateKick(dt);
-    updateKunaiPose(dt);
+    if (!game.unarmed)
+        updateKunaiPose(dt);
     const skillWorldSlow = worldSlowFactor(dt);
     kunaiState.worldSlow = multiplayerRun ? 1 : skillWorldSlow;
     updateEnemies(dt * kunaiState.worldSlow);
-    updateSwordAttack(dt);
-    updateAxeAttack(dt);
-    updateThrow(dt);
-    updateBow(dt);
-    updateBat(dt);
-    updateSpear(dt);
-    updateSickleMelee(dt);
-    updateGrapple(dt);
-    updateGun(dt);
+    if (!game.unarmed) {
+        updateSwordAttack(dt);
+        updateAxeAttack(dt);
+        updateThrow(dt);
+        updateBow(dt);
+        updateBat(dt);
+        updateSpear(dt);
+        updateSickleMelee(dt);
+        updateGrapple(dt);
+        updateGun(dt);
+    }
     updateHandCam(dt);
 }
 // ---- カメラ演出 ----（fx/camera.ts）
@@ -3576,7 +3586,7 @@ let introT = -1; // 演出の経過時間。-1 = 演出中でない
 let riseT = -1; // せり上がりの経過時間。-1 = 伸びきった（または伸びていない）
 const riseMatrix = new THREE.Matrix4();
 function setViewModelsVisible(v) {
-    viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = axeViewModel.visible = bowViewModel.visible = batViewModel.visible = v;
+    viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = axeViewModel.visible = bowViewModel.visible = batViewModel.visible = spearViewModel.visible = v;
 }
 // 床に広がる輪: 円くくり抜かれて広がるグリッドの縁に、細い線を引いて輪郭をはっきりさせる。
 // その内側を、少し遅れたこだまの輪が 2 本、細く薄く追いかける
@@ -4023,6 +4033,8 @@ function startStageIntro() {
 function switchToStage() {
     introSwitched = true;
     clearStagePreview();
+    if (game.unarmed)
+        setViewModelsVisible(false);
     if (pendingStage) {
         enterStage(pendingStage);
         game.wantWeapon = game.shownWeapon = selectedLoadout(); // 選んだ武器を構えた状態で始める

@@ -1430,7 +1430,7 @@
       #tutorial-guide small { color: #ff6868; font-size: 11px; letter-spacing: .18em; }
       #tutorial-guide strong { font-size: 23px; margin: 4px 0; }
       #tutorial-guide .tutorial-next { color: #ccc; font-size: 13px; }
-      body.in-tutorial #controls { display: none; }
+      body.in-tutorial :is(#controls, #weapon, #ammo, #crosshair) { display: none; }
       #controls.in { animation: controls-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1); }
       @keyframes controls-in { from { opacity: 0; } to { opacity: 1; } }
       #controls .row { display: flex; align-items: flex-start; gap: 10px; }
