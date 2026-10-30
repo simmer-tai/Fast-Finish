@@ -29,7 +29,7 @@ function readStick(x, y) {
     const k = Math.min(1, (m - STICK_DEADZONE) / (1 - STICK_DEADZONE)) / m;
     return [x * k, y * k];
 }
-function findPad() {
+export function findPad() {
     const pads = navigator.getGamepads?.() ?? [];
     let fallback = null;
     for (const p of pads) {

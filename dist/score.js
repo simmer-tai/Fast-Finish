@@ -56,16 +56,26 @@ function bank() {
 }
 // 今の合計。まだ確定させていない点数も含める（最後の一撃の確定を待たずに結果を出せるように）
 export const totalScore = () => total + pending;
-export function showKillScore(bonuses) {
+export function resetScore() {
+    time = Infinity;
+    queue = [];
+    pts = ptsTarget = total = totalShown = pending = 0;
+    rowsEl.replaceChildren();
+    el.classList.remove('on', 'slam', 'out');
+    totalEl.textContent = '0';
+    gainEl.textContent = '';
+}
+// base = 倍率を掛ける前の点数（ボスは本体を削った分。ふつうの敵は KILL_BASE）。返り値は倍率を掛けた点数
+export function showKillScore(bonuses, base = KILL_BASE) {
     bank();
     const list = [...bonuses].sort((a, b) => a.add - b.add); // 大きい倍率ほど後に足して、盛り上がりを最後に置く
-    const final = KILL_BASE * (1 + list.reduce((s, b) => s + b.add, 0));
+    const final = base * (1 + list.reduce((s, b) => s + b.add, 0));
     pending = final;
     rowsEl.replaceChildren();
     el.classList.remove('slam', 'out');
     restart(el, 'on');
     let mult = 1;
-    pts = ptsTarget = KILL_BASE;
+    pts = ptsTarget = base;
     ptsEl.textContent = fmt(pts);
     multText.textContent = '×1.0';
     sfx.playScoreTick(0);
@@ -77,7 +87,7 @@ export function showKillScore(bonuses) {
             multText.textContent = `×${mult.toFixed(1)}`;
             restart(multEl, 'punch');
             restart(ptsEl, 'bump');
-            ptsTarget = KILL_BASE * mult;
+            ptsTarget = base * mult;
             sfx.playScoreTick(i + 1);
         },
     }));
@@ -93,6 +103,7 @@ export function showKillScore(bonuses) {
         },
     }, { at: slamAt + HOLD, run: () => el.classList.add('out') }, { at: slamAt + HOLD + FADE, run: () => el.classList.remove('on', 'slam', 'out') });
     time = 0;
+    return final;
 }
 export function updateScoreHud(realDt) {
     if (totalShown !== total) {

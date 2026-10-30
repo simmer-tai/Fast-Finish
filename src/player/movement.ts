@@ -102,6 +102,7 @@ export function collideCylinder(cx: number, cz: number, r: number, h: number, pr
 // スライディング中と、低い箱の下に入っている間（車の下でスライディングが止まったときなど）は低い方を使う
 export const PLAYER_HEAD = 1.8;
 export const PLAYER_HEAD_LOW = 0.7;
+const SEAM_DIP = 0.05; // 上面からこれより浅く沈んだだけなら、側面から押し返さない（1 フレームの重力での沈みより十分大きい）
 const headNow = () => (player.sliding || player.underCover ? PLAYER_HEAD_LOW : PLAYER_HEAD);
 export function collideBox(b: Block, prevY: number) {
   const px = THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
@@ -125,6 +126,9 @@ export function collideBox(b: Block, prevY: number) {
     return;
   }
   if (position.y >= b.h || position.y + head <= y0 || dist >= PLAYER_RADIUS) return;
+  // 前のフレームで上面の高さにいて、重力でわずかに沈んだだけなら、側面から押し返さない。
+  // 同じ高さの箱が継ぎ目で並んでいるとき（回廊の床板から渡り廊下へ移るときなど）、まだ乗っていない側の箱の側面につっかえないようにする
+  if (prevY >= b.h - 1e-4 && b.h - position.y < SEAM_DIP) return;
   // 坂に立っているときは、坂の上の端につながる床の縁（坂の傾きの分だけのわずかな段）を上る
   if (player.groundRamp && b.h - position.y <= RAMP_LIP) {
     position.y = b.h;

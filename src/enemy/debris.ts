@@ -27,8 +27,8 @@ export function breakDummy(dir: THREE.Vector3, style: BreakStyle = 'normal', swi
   const heavy = style === 'heavy';
   const launch = style === 'launch';
   debrisPush.copy(dir);
-  if ((heavy || launch) && swing && swing.lengthSq() > 1e-6) {
-    debrisPush.addScaledVector(swing.clone().normalize(), launch ? 1 : 0.7);
+  if (swing && swing.lengthSq() > 1e-6) {
+    debrisPush.addScaledVector(swing.clone().normalize(), launch ? 1 : heavy ? 0.7 : 0.5);
     debrisPush.y = 0; // 叩きつけで下へ振っても、床へ潜らせず前へ飛ばす
     if (debrisPush.lengthSq() < 1e-6) debrisPush.copy(dir);
     debrisPush.normalize();
@@ -71,8 +71,8 @@ export function breakDummy(dir: THREE.Vector3, style: BreakStyle = 'normal', swi
       vel.normalize().multiplyScalar(rand(0.4, 1.2)).addScaledVector(debrisPush, rand(6, 10));
       vel.y = Math.max(vel.y, 0) + rand(1.5, 3.5) + (obj.position.y - en.root.position.y) * 0.6;
     } else {
-      vel.normalize().multiplyScalar(rand(1.5, 3.5)).addScaledVector(dir, rand(2.5, 5.5));
-      vel.y = rand(2, 5.5) + obj.position.y * 1.2; // 上の部品ほど高く飛ぶ
+      vel.normalize().multiplyScalar(rand(1.5, 3.5)).addScaledVector(debrisPush, rand(3.5, 5.5));
+      vel.y = rand(2, 5.5) + (obj.position.y - en.root.position.y) * 1.2; // 上の部品ほど高く飛ぶ
     }
     en.debris.push({
       obj,

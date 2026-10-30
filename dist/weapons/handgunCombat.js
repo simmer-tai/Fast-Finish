@@ -8,9 +8,13 @@ import { createRound } from './revolver.js';
 import { gunSpin, revolver, weaponMats } from './viewModels.js';
 import { FOCUS_EMPTY_FLASH, lockTo, swordState } from './swordCombat.js';
 import { spawnSparks } from '../fx/hitFx.js';
+import { addGlow } from '../fx/glow.js';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
+import { onSkinChange, skinFx, skinOf } from './skins.js';
 import { en, hitDir, setEn } from '../enemy/state.js';
 import { floorAt } from '../world/blocks.js';
 import { castHit, castThrow } from '../world/raycast.js';
+import { bossAlive } from '../enemy/boss.js';
 import { lookEuler, player, position, velocity } from '../player/state.js';
 import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js';
 import { DEADEYE_MAX, game, kickVel } from '../game/state.js';
@@ -19,6 +23,8 @@ import { hooks } from '../game/hooks.js';
 // 射撃・装填・ガンスピン・デッドアイ・落ちた薬莢
 export const GUN_AMMO = 6; // 弾倉に入る弾の数
 // 本体からも読み書きする値
+// 回す音はスキンが替えることがある
+const gunSwish = () => skinOf('handgun').swish ?? 'gun';
 export const gunState = {
     gunAmmo: GUN_AMMO,
     gunCooldown: 0,
@@ -92,6 +98,13 @@ export const muzzleFlash = new THREE.Group();
 }
 muzzleFlash.visible = false;
 gunMuzzle.add(muzzleFlash);
+// 弾の光の尾の色を持つスキン（爪）は、マズルフラッシュもその色に寄せる
+const tintFlash = () => {
+    const trail = skinOf('handgun').trail;
+    flashMat.color.setHex(trail ? trail.core : 0xffffff);
+};
+tintFlash();
+onSkinChange((id) => id === 'handgun' && tintFlash());
 export const bullets = [];
 export const tracerGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5); // 原点から +Z へ伸びる
 export const tracerMat = new THREE.MeshBasicMaterial({
@@ -102,6 +115,20 @@ export const tracerMat = new THREE.MeshBasicMaterial({
     depthWrite: false,
 });
 export const TRACER_AXIS = new THREE.Vector3(0, 0, 1);
+// スキンの色の光の尾。白い背景でも見えるよう、足さずに重ねる（色ごとに 1 つ作って使い回す）。
+// 芯の色より一段明るい赤の尾の中に、白に近い細い芯を通す
+const SKIN_TRACER_CORE = 0.35; // 芯の太さ（尾の太さに対する割合）
+const SKIN_TRACER_GLOW = 1.6; // にじみの濃さ
+const skinTracerMats = new Map();
+const skinTracerMat = (trail) => {
+    let mat = skinTracerMats.get(trail.body);
+    if (!mat) {
+        const color = new THREE.Color(trail.core).offsetHSL(0, 0, 0.12);
+        skinTracerMats.set(trail.body, (mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })));
+    }
+    return mat;
+};
+const skinTracerCoreMat = new THREE.MeshBasicMaterial({ color: 0xffe2e2, transparent: true, depthWrite: false });
 export const bulletFrom = new THREE.Vector3();
 export const bulletAim = new THREE.Vector3();
 export const bulletBack = new THREE.Vector3();
@@ -146,9 +173,23 @@ export function fireGun(at, target) {
     camera.updateMatrixWorld(true);
     const aimDist = bulletFrom.distanceTo(bulletAim);
     const dir = bulletAim.sub(bulletFrom).normalize().clone();
-    const mesh = new THREE.Mesh(tracerGeo, tracerMat);
+    const trail = skinOf('handgun').trail;
+    const mesh = new THREE.Mesh(tracerGeo, trail ? skinTracerMat(trail) : tracerMat);
     mesh.frustumCulled = false;
     scene.add(mesh);
+    if (trail) {
+        const core = new THREE.Mesh(tracerGeo, skinTracerCoreMat);
+        core.scale.set(SKIN_TRACER_CORE, SKIN_TRACER_CORE, 1);
+        core.renderOrder = 1; // 尾の後に描いて、尾の中から透けて見せる
+        mesh.add(core);
+        if (trail.glow)
+            addGlow(mesh, trail.body).strength = SKIN_TRACER_GLOW; // 弾が消えて尾がシーンから外れたら、にじみの登録も外れる
+    }
+    skinFx.flare = 1; // スキンの飾りを光らせる
+    // 稲妻を出すスキンは、マズルフラッシュに放電を交える
+    const arc = skinOf('handgun').arc;
+    if (arc)
+        spawnMuzzleArcs(gunMuzzle, arc);
     bullets.push({
         pos: bulletFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, deadEye: !!at,
         aimEnemy: aimEnemy ?? undefined, aimDist,
@@ -209,7 +250,7 @@ export function startTwirl(duration = TWIRL_TIME) {
     twirlDuration = duration;
     // 速く回すほど風切り音も短く高く
     const k = TWIRL_TIME / duration;
-    playSwish({ at: 0, dur: 0.32 / k, f0: 500 * k, f1: 1700 * k, gain: 0.12 }, 'gun');
+    playSwish({ at: 0, dur: 0.32 / k, f0: 500 * k, f1: 1700 * k, gain: 0.12 }, gunSwish());
 }
 export function updateTwirl(dt) {
     if (gunState.twirlT < 0)
@@ -278,7 +319,7 @@ export function updateSlideSpin(dt) {
     slideSpin += slideSpinVel * dt;
     // 半周ごとに小さな風切り音
     if (spinning && Math.floor(slideSpin / Math.PI) > Math.floor(prev / Math.PI))
-        playSwish(SLIDE_SPIN_SWISH, 'gun');
+        playSwish(SLIDE_SPIN_SWISH, gunSwish());
 }
 export function endSlideSpin() {
     slideSpin = 0;
@@ -352,7 +393,7 @@ export const DRAW_SPINS = 2;
 export const DRAW_SPIN_SWISH = { at: 0, dur: 0.34, f0: 600, f1: 2000, gain: 0.13 };
 // 時間順に一度だけ起こす出来事
 export const DRAW_EVENTS = [
-    { at: DRAW_SPIN_START, fn: () => playSwish(DRAW_SPIN_SWISH, 'gun') },
+    { at: DRAW_SPIN_START, fn: () => playSwish(DRAW_SPIN_SWISH, gunSwish()) },
     { at: 0.08, fn: spinCylinder },
     { at: DRAW_SPIN_END, fn: catchDrawnGun },
 ];
@@ -480,8 +521,9 @@ export const DEADEYE_AFTER = 0.3; // 撃ち終えてからスローを解くま�
 export const DEADEYE_ZOOM = 8; // 印を付けている間に狭める視野（度）
 export const DEADEYE_TURN = 30; // 次の印へ視点を寄せる速さ (1/s)
 export const DEADEYE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1 };
+const markAlive = (m) => (m.enemy ? m.enemy.alive : bossAlive());
 let deadEyeFullT = 0;
-let deadEyeOver = null; // 照準が今乗っている敵
+let deadEyeOver = null; // 照準が今乗っている体（敵の root かボスの部品）
 let deadEyeDwell = 0;
 export const deadEyeMarks = [];
 export const deadEyeLook = new THREE.Vector3();
@@ -490,6 +532,7 @@ export const deadEyeScreen = new THREE.Vector3();
 export function startDeadEye() {
     game.deadEye = 'mark';
     game.deadEyeT = deadEyeFullT = deadEyeDwell = 0;
+    game.deadEyeKills = 0;
     deadEyeOver = null;
     if (gunState.twirlT >= 0)
         endTwirl(false);
@@ -502,44 +545,48 @@ export function endDeadEye() {
         m.el.remove();
     deadEyeMarks.length = 0;
 }
-export function addDeadEyeMark(e, at) {
-    e.root.updateMatrixWorld();
+export function addDeadEyeMark(e, anchor, at) {
+    anchor.updateMatrixWorld();
     const el = document.createElement('div');
     el.className = 'deadeye-mark';
     el.innerHTML =
         '<svg viewBox="0 0 20 20"><path class="br" d="M-9 0 V-9 H0 M20 -9 H29 V0 M29 20 V29 H20 M0 29 H-9 V20" />' +
             '<path class="x" d="M4 4 L16 16 M16 4 L4 16" /></svg>';
     document.body.appendChild(el);
-    deadEyeMarks.push({ enemy: e, local: e.root.worldToLocal(at.clone()), el, done: false });
+    deadEyeMarks.push({ enemy: e, anchor, local: anchor.worldToLocal(at.clone()), el, done: false });
     sfx.playDeadEyeMark(deadEyeMarks.length);
 }
-export const markWorld = (m, out) => m.enemy.root.localToWorld(out.copy(m.local));
-// 照準の先の敵に印を付ける。パッドでは照準のすぐ近くの敵の胸にも付ける
+export const markWorld = (m, out) => m.anchor.localToWorld(out.copy(m.local));
+// 照準の先の敵に印を付ける。パッドでは照準のすぐ近くの敵の胸にも付ける。
+// ボスの機体は、照準の先の部品に付ける（ダメージが通らない所でも付く。撃てば弾かれる）
 export function markUnderCrosshair() {
     camera.getWorldDirection(deadEyeLook);
     let e = null;
-    if (castThrow(camera.position, deadEyeLook, DEADEYE_RANGE) && castHit.enemy) {
+    let anchor = null;
+    if (castThrow(camera.position, deadEyeLook, DEADEYE_RANGE) && (castHit.enemy || castHit.boss)) {
         e = castHit.enemy;
+        anchor = e ? e.root : castHit.part;
         deadEyeAt.copy(castHit.point);
     }
     else {
         const t = findAssistTarget();
         if (t && t.angle < t.size * ASSIST_SNAP) {
             e = t.enemy;
+            anchor = t.enemy?.root ?? null;
             deadEyeAt.copy(t.point);
         }
     }
-    if (e !== deadEyeOver) {
-        deadEyeOver = e;
+    if (anchor !== deadEyeOver) {
+        deadEyeOver = anchor;
         deadEyeDwell = 0;
-        if (e)
-            addDeadEyeMark(e, deadEyeAt);
+        if (anchor)
+            addDeadEyeMark(e, anchor, deadEyeAt);
     }
-    else if (e) {
+    else if (anchor) {
         deadEyeDwell += game.realDt;
         if (deadEyeDwell >= DEADEYE_RESTACK) {
             deadEyeDwell = 0;
-            addDeadEyeMark(e, deadEyeAt);
+            addDeadEyeMark(e, anchor, deadEyeAt);
         }
     }
 }
@@ -590,7 +637,7 @@ export function updateDeadEye() {
     }
     else if (game.deadEye === 'fire') {
         // 先の弾で倒した敵に残った印は飛ばす
-        const m = deadEyeMarks.find((d) => !d.done && d.enemy.alive);
+        const m = deadEyeMarks.find((d) => !d.done && markAlive(d));
         if (!m) {
             game.deadEye = 'after';
             game.deadEyeT = 0;
@@ -603,7 +650,7 @@ export function updateDeadEye() {
                 game.deadEyeT = 0;
                 m.done = true;
                 m.el.remove();
-                fireGun(deadEyeAt, m.enemy);
+                fireGun(deadEyeAt, m.enemy ?? undefined);
             }
         }
     }
@@ -625,7 +672,7 @@ export function placeDeadEyeMarks() {
     for (const m of deadEyeMarks) {
         if (m.done)
             continue;
-        if (!m.enemy.alive) {
+        if (!markAlive(m)) {
             m.done = true;
             m.el.remove();
             continue;
@@ -645,6 +692,7 @@ export const CASING_RADIUS = 0.005;
 export const casings = [];
 export function spawnCasing(live, at, quat, vel) {
     const mesh = createRound(weaponMats, live);
+    skinOf('handgun').round?.(mesh, weaponMats.gun.envMap); // スキンの弾（爪など）
     mesh.position.copy(at);
     mesh.quaternion.copy(quat);
     scene.add(mesh);
@@ -710,7 +758,7 @@ export function updateBullets(dt) {
             const moved = b.pos.distanceTo(castHit.point);
             b.tail = Math.min(maxTail, b.tail + moved);
             b.pos.copy(castHit.point);
-            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye, b.batted);
+            onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye, b.batted, castHit.boss);
         }
         else if (b.aimEnemy?.alive && b.traveled + step >= b.aimDist) {
             // 狙った所まで来た: クロスヘアが捉えていた敵に当てる
@@ -737,7 +785,15 @@ export function updateBullets(dt) {
         b.mesh.scale.set(width, width, b.tail);
     }
 }
-export function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false, batted = false) {
+export function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = false, batted = false, onBoss = null) {
+    if (!onDummy && onBoss) {
+        // ボスの機体: 打ち返した球・弾き返した弾・撃った弾を、敵に当てたときと同じ重さで部位に当てる
+        const hit = batted ? BAT_RETURN_HIT : parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT;
+        hooks.hitBoss(hit, at, batted ? 'bat' : 'bullet', onBoss, dir);
+        if (parried)
+            game.parryReturnAge = 0;
+        return;
+    }
     if (onDummy) {
         setEn(onDummy);
         hitDir.set(dir.x, 0, dir.z);
@@ -746,8 +802,13 @@ export function onBulletHit(at, dir, onDummy, parried = false, deadEyeShot = fal
         hitDir.normalize();
         if (batted)
             hooks.applyHit(BAT_RETURN_HIT, at, 'bat'); // 打球は当たった敵をバットで倒したときのようにかっ飛ばす
-        else
-            hooks.applyHit(parried ? PARRY_RETURN_HIT : deadEyeShot ? DEADEYE_HIT : BULLET_HIT, at, 'bullet');
+        else if (parried)
+            hooks.applyHit(PARRY_RETURN_HIT, at, 'bullet');
+        else {
+            // 稲妻を出すスキンは、当たりの光も稲妻と同じ色にする
+            const hit = deadEyeShot ? DEADEYE_HIT : BULLET_HIT;
+            hitWithArcs(skinOf('handgun'), hit.fx ?? 1, dir, () => hooks.applyHit(hit, at, 'bullet'), at);
+        }
         if (parried)
             game.parryReturnAge = 0;
     }

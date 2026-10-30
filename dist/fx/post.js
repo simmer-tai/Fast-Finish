@@ -5,6 +5,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { camera, renderer, scene } from '../core.js';
 import { fxScene } from './hitFx.js';
+import { GlowPass } from './glow.js';
 import { ImpactFxShader, SpeedFxShader } from './postShaders.js';
 import { player, velocity } from '../player/state.js';
 import { SPRINT_SPEED } from '../player/config.js';
@@ -18,6 +19,9 @@ export const MAX_VIGNETTE = 0.3;
 export const composerTarget = new THREE.WebGLRenderTarget(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: 4 });
 export const composer = new EffectComposer(renderer, composerTarget);
 composer.addPass(new RenderPass(scene, camera));
+// 光る物（スキンの刃先など）のにじみ。速さのブラーより前に重ね、ブラーでいっしょに流れるようにする
+export const glowPass = new GlowPass(scene, camera);
+composer.addPass(glowPass);
 export const speedFxPass = new ShaderPass(SpeedFxShader);
 composer.addPass(speedFxPass);
 export const impactFxPass = new ShaderPass(ImpactFxShader);

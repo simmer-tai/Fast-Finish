@@ -1,59 +1,83 @@
 import * as THREE from 'three';
+import { broadcastBossBreak, broadcastBossVictory, broadcastPartyDefeat, confirmRemoteHit, initMultiplayer, isMultiplayerGuest, latestAdds, latestBossSnapshot, latestMissiles, leaveMultiplayer, multiplayerPartyDown, multiplayerPartySize, remotePlayers, returnToMultiplayerLobby, sendAddHit, sendAddKill, sendKunaiBossHit, startMultiplayer, updateMultiplayer } from './multiplayer/connectionTest.js';
+import { applyBossSnapshot } from './multiplayer/bossSnapshot.js';
+import { addSpawnId, applyAddSnapshot, markAddSpawn } from './multiplayer/enemySnapshot.js';
+import { remoteMissileBlast, remoteMissileHurt, remoteMissileParry, remoteMissileShotDown, updateRemoteMissileEffects, updateRemoteMissiles } from './enemy/bossMissiles.js';
 import * as sfx from './audio.js';
 import { ensureAudio, playHit } from './audio.js';
-import { showKillScore, totalScore, updateScoreHud } from './score.js';
-import { finalScore, fmtTime, showResult, skipResult } from './result.js';
+import { resetScore, showKillScore, totalScore, updateScoreHud } from './score.js';
+import { CLIP_ASPECT, noteReplayKill, playReplay, prepareReplayFrame, resetReplay, startReplay } from './fx/replayClip.js';
+import { finalScore, fmtTime, killPar, showResult, skipResult } from './result.js';
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import { buildStation } from './station.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
+import { buildLift } from './lift.js';
+import { buildMall } from './mall.js';
+import { buildRuins } from './ruins.js';
+import { BOSS_LIMBS, boss, bossDangers, bossEntranceLeft, bossEntranceView, bossMeleeTarget, clearBoss, damageBoss, endBossEntrance, remoteBossImpact, remoteBossSlam, showRemoteBossBreak, spawnBoss, startBossEntrance, updateBoss, updateBossEntrance, updateRemoteBossDebris } from './enemy/boss.js';
+import { updateQuake } from './fx/quake.js';
 import { STAGE_TITLE_END, createStageTitle } from './stageTitle.js';
 import { WEAPON_KEYS } from './weapons/ids.js';
-import { ARROW_DMG_MAX, ARROW_HIT, BOW_RICOCHET_STOCK, bowState, gainRicochetArrow, updateBow } from './weapons/bowCombat.js';
-import { BAT_ATTACKS, BAT_SWING_1, batState, startBatAttack, updateBat } from './weapons/batCombat.js';
+import { updateMeleePull } from './weapons/meleePull.js';
+import { ARROW_DMG_MAX, ARROW_HIT, ARROW_RICOCHET_DMG, BOW_RICOCHET_STOCK, bowState, gainRicochetArrow, updateBow } from './weapons/bowCombat.js';
+import { BAT_ATTACKS, BAT_CHARGE_LIFT, BAT_SWING_1, batState, startBatAttack, updateBat } from './weapons/batCombat.js';
+import { SPEAR_ATTACKS, SPEAR_GUARD_SLOW, SPEAR_TWIRL_1, spearHolds, spearState, spearThrow, startSpearAttack, updateSpear } from './weapons/spearCombat.js';
 import { rand } from './random.js';
 import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody, buildStrikerBody } from './enemy/body.js';
 import { updateControlsHud } from './ui/controlsHud.js';
 import { GROUND_REVEAL_ALL, groundReveal, riseOrigin, withGroundReveal } from './world/reveal.js';
-import { RISE_BASE_HEIGHT, RISE_BASE_TIME, RISE_FILL_DONE, RISE_FILL_START, RISE_SLAM_HEIGHT, RISE_WAVE, arenaRiseEnd, resetArenaRiseEnd, riseDelayAt, riseLines, riseMeshes, risers, } from './world/rise.js';
-import { STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, floorAt, gridMaterial, octagonXGeo, octagonZGeo, rampMatrix, rampUpDir, ramps, wedgeGeo, } from './world/blocks.js';
+import { RISE_BASE_HEIGHT, RISE_BASE_TIME, RISE_FILL_DONE, RISE_FILL_START, RISE_PULSE_TIME, RISE_SLAM_HEIGHT, RISE_WAVE, arenaRiseEnd, resetArenaRiseEnd, riseDelayAt, riseLines, riseMeshes, risers, } from './world/rise.js';
+import { STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, boxMatrixFor, floorAt, gridMaterial, groundArea, octagonXGeo, octagonZGeo, rampMatrix, rampUpDir, ramps, wedgeGeo, } from './world/blocks.js';
 import { castWorld } from './world/raycast.js';
 import { addMover, clearMovers, moverHazardAt, moverThreat, updateMovers } from './world/movers.js';
+import { boardLedge, setShaft, shaftCopies, updateBoarding, updateShaft } from './world/shaft.js';
+import { liftDangers, setLiftTraps, updateLiftTraps } from './world/liftTraps.js';
+import { updateDangerHud } from './ui/dangerHud.js';
 import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, playBounds } from './world/arena.js';
 import { HEAVY_FX, hitFxVisible, impact, initHitFx, spawnFinaleFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles, } from './fx/hitFx.js';
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
+import { updateArcs } from './fx/arcs.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions } from './ui/options.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
+import { addXp, loadXp } from './mastery.js';
 import { initEnemyEnv } from './enemy/env.js';
 import { DEFAULT_KNOCK, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, } from './enemy/state.js';
 import { STRIKER_HP, STRIKER_STRIDE, poseStriker, resetStriker, resetStrikerNav, strikerRestPose, updateStrikerFace, updateStrikerMove, } from './enemy/striker.js';
 import { SNIPER_HP, SNIPER_SPAWN_NEAR, attachSniperRifle, createSniperLaser, resetSniper, updateSniperAim, updateSniperFire, } from './enemy/sniper.js';
 import { isOnDummy, resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js';
 import { breakDummy, clearDebris, updateDebris } from './enemy/debris.js';
-import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_STRIDE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, enemyCanStand, poseEnemyTumble, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js';
+import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_STRIDE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, enemyCanStand, knockEnemy, launchEnemy, poseEnemyTumble, spikeEnemy, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js';
 import { DEG, UP, wrapAngle } from './math.js';
-import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, AIR_JUMP_SPEED, DASH_TIME, EYE_HEIGHT, PLAYER_GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_SPEED, } from './player/config.js';
+import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, AIR_JUMP_SPEED, DASH_TIME, EYE_HEIGHT, PLAYER_GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, OVERSPEED_DECAY, PLAYER_MAX_HP, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_MAX_FALL, WALLRUN_SPEED, } from './player/config.js';
 import { dashDir, forward, lookEuler, player, position, right, velocity, wallNormal, wallTangent, wish, } from './player/state.js';
 import { RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, initMovement, moveToward, underLowBox, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantleBox, tryStartWallRun, updateMantle, } from './player/movement.js';
 import { keys, padMove, pressed } from './input.js';
 import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js';
+import { spawnRiseRipple, updateRiseRipples } from './fx/riseRipples.js';
 import { ATTACKS, DASH_SLASH, SLASH_1, SLIDE_UP } from './weapons/kunaiAttacks.js';
 import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js';
-import { AXE_ATTACKS, AXE_DRIVE, AXE_KESA } from './weapons/axeAttacks.js';
+import { AXE_ATTACKS, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_KESA, AXE_LAUNCH, AXE_WHEEL_HIT, AXE_WHEEL_LIFT } from './weapons/axeAttacks.js';
 import { camera, controls, renderer, scene } from './core.js';
 import { DEFAULT_HIT_STOP, game, kickVel } from './game/state.js';
 import { axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, sword, swordViewModel, viewModel, } from './weapons/viewModels.js';
-import { AXE_SHOCK_HIT, applyAxePose, axePoseAt, axeState, axeTrailPose, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js';
+import { AXE_SHOCK_HIT, applyAxePose, axeHitSource, axePoseAt, axePoweredHit, axeState, axeTrailPose, flingEnemy, poweredAxeHit, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js';
 import { initGameHooks } from './game/hooks.js';
 import { FOCUS_DIM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, swordPoseAt, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js';
-import { BULLET_HIT, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, RELOAD_EVENTS, isParryReturn, applyGunSpin, deadEyeMarks, endDeadEye, endGunDraw, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, startReload, updateBullets, updateCasings, updateDeadEye, updateGunDraw, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js';
+import { BAT_RETURN_HIT, BULLET_HIT, BULLET_RANGE, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, isParryReturn, applyGunSpin, deadEyeMarks, endDeadEye, endGunDraw, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, startReload, updateBullets, updateCasings, updateDeadEye, updateGunDraw, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js';
 import { GRAPPLE_STICK_HIT, HOOK_CHARGES, SICKLE_DAMAGE_SCALE, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT, SICKLE_PULL_HIT, SICKLE_PULL_LAST, sickleState, updateGrapple, updateGrapplePull, updateSickleMelee, } from './weapons/sickleCombat.js';
-import { WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiState, startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js';
+import * as sickleHits from './weapons/sickleCombat.js';
+import { GUARD_HIT, PIN_HIT, RUSH_HIT, SKEWER_FIRST, SKEWER_GAP, SKEWER_HIT, YANK_SPEED } from './weapons/spearCombat.js';
+import { THROW_HIT, WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiState, startAttack, startReturn, thrown, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js';
+import { THROW_RANGE } from './weapons/kunai.js';
 import { ammoHud, ammoPips, updateWeaponHud } from './ui/weaponHud.js';
-import { ENEMY_FIRST_SHOT, attachEnemyGun, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js';
+import { ENEMY_FIRST_SHOT, attachEnemyGun, onPlayerShot, showRemoteBossParry, spawnRemoteBossShot, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js';
 import { PARRY_INVERT_TIME, parryMono, parrySlowFactor, parryState } from './combat/parry.js';
+import { rumble } from './player/rumble.js';
 import { updateHudSway } from './ui/hudSway.js';
+import { updateBossHud } from './ui/bossHud.js';
+import { setLetterbox } from './ui/letterbox.js';
 import { updateHandCam } from './fx/handCam.js';
 import { addTrauma, applyCameraOffset, cameraFx, onDash, onLand, onMantleEnd, onMantleStart, onSlideStart, onWallJump, onWallRunStart, restoreCameraOffset, savedQuat, updateCamera, updateKick, } from './fx/camera.js';
 import { GAMEOVER_DELAY, downFall, downSlowFactor, isDown } from './player/down.js';
@@ -63,6 +87,7 @@ import { composer, hitFxRenderPass, impactFxPass, speedFxPass, updateSpeedFx } f
 import { overlay } from './ui/overlay.js';
 import { turnView, zoomLookScale } from './player/look.js';
 import { padState, updatePad } from './player/padControls.js';
+import { beginPerfFrame, endPerfFrame } from './ui/perfHud.js';
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
 // ---- ライト ----
@@ -126,6 +151,10 @@ grid10Mat.opacity = 0.18;
 grid10Mat.transparent = true;
 withGroundReveal(grid10Mat);
 scene.add(grid10);
+// 地面と床のグリッドを出す / 消す（宙に浮いたリフトのステージでは消す）
+function showGround(on) {
+    ground.visible = grid.visible = grid10.visible = on;
+}
 // ---- アリーナ ----（訓練場の配置は world/arena.ts、箱と坂は world/blocks.ts、せり上がりは world/rise.ts）
 scene.add(arenaRoot);
 // ---- 武器の手元のモデル ----（weapons/viewModels.ts）
@@ -142,6 +171,10 @@ function applyBrightness() {
 applyBrightness();
 let menuRedraw = true; // 止まっているメニューの画面で、次のフレームに 1 度だけ描き直す
 let padPlaying = false;
+let multiplayerRun = false; // 接続試験で RUINS に入った後はメニューを開いても時間を進める
+let multiplayerSessionLost = false;
+let multiplayerRemoteAddPoints = 0;
+let multiplayerResult = null;
 let skipNextMove = false;
 let recentMove = 0; // 直近の移動量のならし
 async function lockPointer() {
@@ -203,7 +236,6 @@ const overlayPrompt = overlay.querySelector('.foot .prompt');
 // 難易度は次に開いたときのために覚えておく
 const DIFFICULTIES = ['easy', 'normal', 'hard'];
 const DIFFICULTY_STORE = 'fast-finish.difficulty';
-const overlayStatus = overlay.querySelector('.foot .status');
 const stageButtons = [...overlay.querySelectorAll('.stage-list [data-stage]')];
 const difficultyButtons = [...overlay.querySelectorAll('.si-diff [data-difficulty]')];
 const stageSelectable = (i) => stageButtons[i]?.getAttribute('aria-disabled') !== 'true';
@@ -282,7 +314,6 @@ function setStageSelect(on) {
     hidePicker();
     showStagePreview(on ? selectedStageId() : null);
     overlayPrompt.textContent = on ? 'SELECT STAGE' : 'SELECT MODE';
-    overlayStatus.textContent = on ? 'ESC — BACK' : 'ESC — PAUSE';
     // START を押したのにロックできずに戻ったときは、訓練場へ入る設定に戻す
     if (!on) {
         pendingStage = null;
@@ -309,7 +340,7 @@ function stepDifficulty(dir) {
 }
 const transitionLabel = document.querySelector('#transition .label');
 let overlayKicker = 'FAST FINISH — TRAINING'; // 入った後の一時停止の画面に出す、今いる場所
-function startStage() {
+function startStage(remote = false) {
     const id = selectedStageId();
     if (!id)
         return sfx.playUiDenied();
@@ -318,8 +349,33 @@ function startStage() {
     const name = id.toUpperCase();
     transitionLabel.textContent = name;
     overlayKicker = `FAST FINISH — ${name} / ${DIFFICULTIES[difficultyIndex].toUpperCase()}`;
-    startFromOverlay();
+    if (remote) {
+        ensureAudio();
+        showPanel(null);
+        padPlaying = true;
+        setPlaying(true);
+    }
+    else
+        startFromOverlay();
 }
+function enterMultiplayerStage(remote) {
+    const i = stageButtons.findIndex((button) => button.dataset.stage === 'ruins');
+    if (i < 0)
+        return;
+    if (remote)
+        selectDifficulty(DIFFICULTIES.indexOf(game.difficulty));
+    multiplayerRun = true;
+    overlay.classList.remove('select-multiplayer');
+    selectStage(i);
+    startStage(remote);
+}
+initMultiplayer(() => enterMultiplayerStage(true), (event) => {
+    sharedBossBreakTime = 0;
+    healPlayer(KILL_HEAL);
+    showRemoteBossBreak(event.part, event.down);
+    spawnKillFx(new THREE.Vector3(...event.at), new THREE.Vector3(...event.dir));
+    sfx.playKill();
+}, onRemoteKunaiBossHit, spawnRemoteBossShot, (dir, damage) => onPlayerShot(new THREE.Vector3(...dir), damage), remoteMissileBlast, remoteMissileHurt, remoteBossSlam, remoteBossImpact, onMultiplayerBossVictory, onMultiplayerPartyDefeat, showRemoteBossParry, remoteMissileParry, remoteMissileShotDown, onRemoteAddHit, rewardKill, onMultiplayerDisconnect, onGuestHitConfirmed);
 function onStageSelectClick(target) {
     if (pickerOpen())
         return onPickerClick(target);
@@ -356,26 +412,21 @@ function onStageSelectKey(e) {
             sfx.playUiBack();
             return setStageSelect(false);
         case 'Enter':
-        case 'NumpadEnter':
             e.preventDefault();
             return startStage();
         case 'ArrowUp':
-        case 'KeyW':
             e.preventDefault();
             return stepStage(-1);
         case 'ArrowDown':
-        case 'KeyS':
             e.preventDefault();
             return stepStage(1);
         case 'ArrowLeft':
-        case 'KeyA':
             e.preventDefault();
             return stepDifficulty(-1);
         case 'ArrowRight':
-        case 'KeyD':
             e.preventDefault();
             return stepDifficulty(1);
-        // 武器の選択画面を開く（パッドの Y も Q として届く）
+        // 武器の選択画面を開く（パッドの Y）
         case 'KeyQ':
             return openPicker();
     }
@@ -417,13 +468,68 @@ function restoreRetry() {
 }
 function decideGameOver(choice) {
     sfx.playUiSelect();
-    if (choice === 'retry')
+    if (choice === 'retry' && multiplayerRun)
+        returnToLobby();
+    else if (choice === 'retry')
         retryStage();
     else
         quitToTitle();
 }
+function returnToLobby() {
+    if (!returnToMultiplayerLobby()) {
+        showToast('部屋との接続が切れました');
+        return;
+    }
+    multiplayerRun = false;
+    multiplayerSessionLost = false;
+    multiplayerRemoteAddPoints = 0;
+    multiplayerResult = null;
+    guestHitPending.clear();
+    remoteWeaponHolds.clear();
+    game.playerHp = PLAYER_MAX_HP;
+    game.downT = -1;
+    game.hitStop = 0;
+    game.timeScale = 1;
+    game.deadEye = 'off';
+    game.weaponLocked = false;
+    swordState.focusCharge = 0;
+    swordState.focusing = false;
+    swordState.rushTime = -1;
+    swordState.swordAttack = null;
+    gunState.gunAmmo = GUN_AMMO;
+    gunState.gunReloading = false;
+    player.dashCharges = DASH_CHARGES;
+    player.dashTime = 0;
+    player.dashCooldown = 0;
+    player.mantleTime = -1;
+    player.sliding = false;
+    player.wallRunning = false;
+    player.eyeHeight = EYE_HEIGHT;
+    finale = false;
+    killSlowTime = Infinity;
+    sharedBossBreakTime = Infinity;
+    finaleHud.classList.remove('on');
+    runHud.classList.remove('clear');
+    remainHud.classList.remove('clear');
+    document.body.classList.remove('result-shown', 'player-down', 'finale', 'pad-playing');
+    document.body.classList.add('on-title');
+    overlay.classList.remove('result', 'over', 'pause', 'hidden', 'leaving', 'quitting');
+    overlay.classList.add('title', 'select-multiplayer');
+    overlayPrompt.textContent = '';
+    resetScore();
+    resetReplay();
+    setupTitleStage();
+    menuRedraw = true;
+}
 overlay.addEventListener('click', (e) => {
     const target = e.target;
+    // 結果の演出の途中なら、どこを押しても最後まで飛ばす
+    if (overlay.classList.contains('result') && skipResult())
+        return;
+    if (target.closest('[data-action="multiplayer-lobby"]') && multiplayerRun) {
+        sfx.playUiSelect();
+        return returnToLobby();
+    }
     if (target.closest('[data-action="title"]')) {
         sfx.playUiSelect();
         return quitToTitle();
@@ -441,8 +547,31 @@ overlay.addEventListener('click', (e) => {
         return;
     }
     if (overlay.classList.contains('title')) {
+        if (overlay.classList.contains('select-multiplayer')) {
+            // 参加者は後でホストの通知から始まるため、ユーザー操作のある準備ボタンでゲーム音を起こしておく。
+            if (target.closest('[data-connect="ready"]'))
+                ensureAudio();
+            if (target.closest('[data-action="multiplayer-back"]')) {
+                leaveMultiplayer();
+                overlay.classList.remove('select-multiplayer');
+                overlayPrompt.textContent = 'SELECT MODE';
+                sfx.playUiBack();
+            }
+            else if (target.closest('[data-action="multiplayer-start"]')) {
+                if (startMultiplayer())
+                    enterMultiplayerStage(false);
+            }
+            return;
+        }
         if (overlay.classList.contains('select-stage'))
             return onStageSelectClick(target);
+        if (target.closest('[data-action="multiplayer"]')) {
+            showPanel(null);
+            overlay.classList.add('select-multiplayer');
+            overlayPrompt.textContent = 'CO-OP';
+            sfx.playUiOpen();
+            return;
+        }
         if (target.closest('[data-action="game"]')) {
             sfx.playUiOpen();
             return setStageSelect(true);
@@ -472,46 +601,76 @@ overlay.addEventListener('mouseover', (e) => {
 // UI の音はユーザー操作の中でしか始められないので、最初に触れたときに用意する
 for (const type of ['pointerdown', 'keydown'])
     window.addEventListener(type, () => sfx.ensureUiAudio(), { capture: true });
-window.addEventListener('keydown', (e) => {
-    if (controls.isLocked || overlay.classList.contains('hidden'))
+// メニューはマウスとパッドで操作する。キーボードは受け付けず、パッドのボタンを置き換えたキー（PAD_MENU_KEYS）だけを通す
+let padMenuTarget = null;
+function onPadMenuKey(e, selector) {
+    const items = Array.from(overlay.querySelectorAll(selector)).filter((item) => item.getClientRects().length > 0 && !item.closest('[hidden]') &&
+        !item.matches(':disabled, [aria-disabled="true"]'));
+    if (!items.length)
         return;
-    if (overlay.classList.contains('select-stage'))
-        return onStageSelectKey(e);
+    let index = items.indexOf(padMenuTarget);
+    const dir = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }[e.code];
+    if (dir) {
+        index = index < 0 ? 0 : (index + dir + items.length) % items.length;
+        padMenuTarget?.classList.remove('pad-focus');
+        padMenuTarget = items[index];
+        padMenuTarget.classList.add('pad-focus');
+        padMenuTarget.scrollIntoView({ block: 'nearest' });
+        sfx.playUiHover();
+        e.preventDefault();
+    }
+    else if (e.code === 'Enter') {
+        const target = index < 0 ? items[0] : items[index];
+        padMenuTarget?.classList.remove('pad-focus');
+        padMenuTarget = null;
+        target.click();
+        e.preventDefault();
+    }
+}
+window.addEventListener('keydown', (e) => {
+    if (controls.isLocked || overlay.classList.contains('hidden') || !padState.fromPad)
+        return;
     if (overlay.classList.contains('show-options'))
         return onOptionsKey(e);
+    if (overlay.classList.contains('select-multiplayer')) {
+        if (e.code === 'Escape')
+            return overlay.querySelector('[data-action="multiplayer-back"]')?.click();
+        return onPadMenuKey(e, '.multiplayer button');
+    }
+    if (overlay.classList.contains('select-stage'))
+        return onStageSelectKey(e);
     if (overlay.classList.contains('result')) {
-        if (e.code !== 'Enter' && e.code !== 'NumpadEnter' && e.code !== 'KeyQ')
+        if (e.code !== 'Enter' && e.code !== 'Escape' && e.code !== 'KeyQ')
             return;
         e.preventDefault();
         if (skipResult())
             return; // 演出の途中なら、まず最後まで飛ばす
         sfx.playUiSelect();
-        return quitToTitle();
+        return multiplayerRun ? returnToLobby() : quitToTitle();
     }
-    // ゲームオーバー: 上下で選んで ENTER で決める。R はやり直し、Q はタイトルへすぐ
+    // ゲームオーバー: 上下で選んで A で決める。Y はタイトルへすぐ
     if (overlay.classList.contains('over')) {
-        const dir = { ArrowUp: -1, KeyW: -1, ArrowDown: 1, KeyS: 1 }[e.code];
+        const dir = { ArrowUp: -1, ArrowDown: 1 }[e.code];
         if (dir) {
             e.preventDefault();
             if (stepGameOverMenu(dir))
                 sfx.playUiHover();
         }
-        else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        else if (e.code === 'Enter') {
             e.preventDefault();
             decideGameOver(gameOverChoice());
         }
-        else if (e.code === 'KeyR') {
-            decideGameOver('retry');
-        }
-        else if (e.code === 'KeyQ') {
+        else if (e.code === 'Escape' || e.code === 'KeyQ') {
             decideGameOver('title');
         }
         return;
     }
-    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+    if (e.code === 'Escape' && overlay.classList.contains('pause')) {
         e.preventDefault();
-        sfx.playUiSelect();
-        startFromOverlay(); // タイトルでは TRAINING、一時停止では RESUME
+        padMenuTarget?.classList.remove('pad-focus');
+        padMenuTarget = null;
+        sfx.playUiBack();
+        startFromOverlay();
     }
     else if (e.code === 'KeyQ' && overlay.classList.contains('pause')) {
         sfx.playUiSelect();
@@ -520,10 +679,8 @@ window.addEventListener('keydown', (e) => {
     else if (e.code === 'KeyO') {
         togglePanel('options');
     }
-    else if (e.code === 'KeyG' && !e.repeat) {
-        // 聴き比べ用: G で UI の音の案を切り替え、決定の音を鳴らす
-        showToast(`UI の音: ${sfx.cycleUiVariant()}`);
-        sfx.playUiSelect();
+    else if (overlay.classList.contains('title') || overlay.classList.contains('pause')) {
+        onPadMenuKey(e, overlay.classList.contains('title') ? '.modes button' : '.main button');
     }
 });
 // 訓練場へ入るときは、タイトルをすぐには消さずに払い出す。切り替えの帯で覆いきったら（switchToStage）、
@@ -538,7 +695,6 @@ function endOverlayLeave() {
     overlay.classList.remove('select-stage');
     overlay.querySelector('[data-action="start"] .label').textContent = 'RESUME';
     overlay.querySelector('.kicker').textContent = overlayKicker;
-    overlayStatus.textContent = 'ESC — PAUSE';
     overlayPrompt.textContent = 'CLICK TO RESUME';
 }
 function setPlaying(on) {
@@ -547,9 +703,17 @@ function setPlaying(on) {
         return;
     controls.isLocked = on;
     menuRedraw = true;
-    // 止めている間は音も HUD の動きも止める
-    sfx.setAudioPaused(!controls.isLocked);
-    document.body.classList.toggle('paused', !controls.isLocked);
+    // マルチプレイではメニューを開いても世界と音を進める
+    sfx.setAudioPaused(!controls.isLocked && !multiplayerRun);
+    document.body.classList.toggle('paused', !controls.isLocked && !multiplayerRun);
+    if (!on) {
+        keys.clear();
+        pressed.clear();
+        game.attackHeld = game.attackPressed = game.throwHeld = false;
+        sickleState.throwPressed = swordState.focusPressed = false;
+        axeState.axeLaunchPressed = axeState.axeDrivePressed = gunState.deadEyePressed = gunState.reloadQueued = false;
+        bowState.aimPressed = bowState.volleyHeld = spearThrow.aimPressed = spearThrow.pressed = viewState.inspectPressed = false;
+    }
     if (controls.isLocked && overlay.classList.contains('title') && !overlay.classList.contains('leaving')) {
         overlay.classList.add('leaving');
         startStageIntro();
@@ -599,10 +763,12 @@ window.addEventListener('keydown', (e) => {
     if (!e.repeat)
         pressed.add(e.code);
     keys.add(e.code);
-    if (WEAPON_KEYS[e.code])
+    if (WEAPON_KEYS[e.code] && !game.weaponLocked)
         game.wantWeapon = WEAPON_KEYS[e.code];
     if (e.code === 'KeyR' && !e.repeat)
-        gunState.reloadQueued = sickleState.tossPressed = true;
+        gunState.reloadQueued = true;
+    if (e.code === 'KeyT' && !e.repeat)
+        viewState.inspectPressed = true; // 武器を眺める
     // 聴き比べ用: G で銃声の案を切り替え、その場で 1 発鳴らす
     // 影の見比べ: L で切り替える
     if (e.code === 'KeyL' && !e.repeat) {
@@ -618,6 +784,11 @@ window.addEventListener('keydown', (e) => {
         damagePlayer(12);
     if (e.code === 'KeyJ')
         healPlayer(25);
+    // ?devmode のときだけ: 0 で無敵を切り替える
+    if (e.code === 'Digit0' && !e.repeat && DEV_MODE) {
+        invincible = !invincible;
+        showToast(`無敵: ${invincible ? 'オン' : 'オフ'}`);
+    }
 });
 const toast = document.createElement('div');
 toast.style.cssText =
@@ -649,10 +820,10 @@ document.addEventListener('mousedown', (e) => {
     }
     if (controls.isLocked && e.button === 1) {
         e.preventDefault(); // 自動スクロールを出さない
-        axeState.axeDrivePressed = bowState.volleyHeld = true;
+        axeState.axeDrivePressed = bowState.volleyHeld = spearThrow.pressed = true;
     }
     if (controls.isLocked && e.button === 2)
-        game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = true;
+        game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
 });
 document.addEventListener('mouseup', (e) => {
     if (e.button === 0)
@@ -672,9 +843,12 @@ document.addEventListener('mousemove', (e) => {
 });
 // ---- ゲームパッドの割り当て ----（player/padControls.ts）
 // ---- HUD: ダッシュ・鎖鎌の残り回数と体力 ----（ui/hud.ts。体力を減らす処理は damagePlayer）
+const DEV_MODE = new URLSearchParams(location.search).has('devmode');
+let invincible = false; // ?devmode で 0 キーを押すと切り替わる。体力が減らない
 function damagePlayer(amount) {
-    if (game.playerHp <= 0 || amount <= 0)
+    if (game.playerHp <= 0 || amount <= 0 || invincible)
         return;
+    rumble('damage');
     if (stageRun?.running)
         stageRun.damage += amount;
     const before = game.playerHp;
@@ -689,7 +863,8 @@ function downPlayer() {
     if (isDown() || !stageRun)
         return;
     game.downT = 0;
-    stageRun.running = false;
+    if (!multiplayerRun)
+        stageRun.running = false;
     game.hitStop = Math.max(game.hitStop, 0.14);
     game.hitStopTotal = game.hitStop;
     addTrauma(1);
@@ -703,8 +878,8 @@ function downPlayer() {
 function dropPlayerInput() {
     keys.clear();
     pressed.clear();
-    game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = axeState.axeDrivePressed = gunState.deadEyePressed = bowState.aimPressed = bowState.volleyHeld = false;
-    gunState.reloadQueued = sickleState.tossPressed = false;
+    game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = axeState.axeDrivePressed = gunState.deadEyePressed = bowState.aimPressed = bowState.volleyHeld = spearThrow.pressed = spearThrow.aimPressed = false;
+    gunState.reloadQueued = false;
     padMove.x = padMove.y = 0;
     padState.padSprint = false;
 }
@@ -714,15 +889,19 @@ function updatePlayerDown(realDt) {
     const shown = game.downT >= GAMEOVER_DELAY;
     game.downT += game.realDt;
     dropPlayerInput();
-    if (!shown && game.downT >= GAMEOVER_DELAY && stageRun)
+    if (!multiplayerRun && !shown && game.downT >= GAMEOVER_DELAY && stageRun)
         showGameOver(stageRun);
+    if (multiplayerRun && stageRun?.running && game.downT >= GAMEOVER_DELAY && multiplayerPartyDown()) {
+        broadcastPartyDefeat();
+        onMultiplayerPartyDefeat();
+    }
 }
 // 一時停止の画面をゲームオーバーの画面に作り替えて止める。記録は残さない
 function showGameOver(run) {
     const button = stageButtons[stageIndex];
     overlay.classList.add('over');
-    overlayStatus.textContent = '';
-    overlayPrompt.textContent = 'ENTER — RETRY';
+    overlay.querySelector('.go-menu [data-action="retry"] span').textContent = multiplayerRun ? 'LOBBY' : 'RETRY';
+    overlayPrompt.textContent = '';
     showGameOverView({
         stageNo: button.querySelector('.no').textContent,
         stageName: button.dataset.stage.toUpperCase(),
@@ -763,7 +942,8 @@ function update(dt) {
     }
     const hasWish = wish.lengthSq() > 0;
     const sprinting = locked && (keys.has('ShiftLeft') || keys.has('ShiftRight') || padState.padSprint);
-    const maxSpeed = sprinting ? SPRINT_SPEED : WALK_SPEED;
+    // 槍の風車受けで回している間は遅くなる
+    const maxSpeed = (sprinting ? SPRINT_SPEED : WALK_SPEED) * THREE.MathUtils.lerp(1, SPEAR_GUARD_SLOW, game.shownWeapon === 'spear' ? spearState.guard : 0);
     const slideKey = locked && keys.has('KeyC');
     if (!slideKey)
         player.slideLock = false;
@@ -887,8 +1067,24 @@ function update(dt) {
     // 鎖鎌が掛かっている間は、ここまでの速度を引き寄せる向きへ置き換える
     if (sickleState.grapple?.phase === 'pull')
         updateGrapplePull(dt);
+    // 剣の踏み込みで、狙った敵の方へ寄る
+    if (player.mantleTime < 0)
+        updateMeleePull(dt);
     // 動く物を先に動かし、上に立っていれば一緒に運ぶ（世界だけのスローは前のフレームの値を使う）
     updateMovers(dt * kunaiState.worldSlow);
+    updateShaft(dt * kunaiState.worldSlow, !!stageRun?.running);
+    updateLiftTraps(dt * kunaiState.worldSlow, !!stageRun?.running);
+    if (multiplayerRun && isMultiplayerGuest()) {
+        const snapshot = latestBossSnapshot();
+        if (snapshot)
+            applyBossSnapshot(snapshot, game.realDt);
+        updateRemoteMissiles(latestMissiles(), game.realDt);
+        updateRemoteMissileEffects(dt);
+        updateRemoteBossDebris(dt);
+        updateQuake(dt);
+    }
+    else
+        updateBoss(dt * kunaiState.worldSlow);
     // ---- 移動と当たり判定 ----
     const wasOnGround = player.onGround;
     player.landImpact = 0;
@@ -967,13 +1163,15 @@ function update(dt) {
     updateAttack(dt);
     updateKick(dt);
     updateKunaiPose(dt);
-    kunaiState.worldSlow = worldSlowFactor(dt);
+    const skillWorldSlow = worldSlowFactor(dt);
+    kunaiState.worldSlow = multiplayerRun ? 1 : skillWorldSlow;
     updateEnemies(dt * kunaiState.worldSlow);
     updateSwordAttack(dt);
     updateAxeAttack(dt);
     updateThrow(dt);
     updateBow(dt);
     updateBat(dt);
+    updateSpear(dt);
     updateSickleMelee(dt);
     updateGrapple(dt);
     updateGun(dt);
@@ -989,7 +1187,7 @@ const FLASH_FADE = 0.12; // そこから元の色へ戻る時間
 // 体力: 0 になると体ごと砕け散り、しばらくするとその場で生えるように起き上がる
 const DUMMY_MAX_HP = 100;
 const HIT_DAMAGE = { kunai: 14, sword: 18, throw: 15, bullet: 30, axe: 24, bat: 20 }; // fx = 1 のときの量
-const KILL_HIT_STOP = 0.16; // とどめの一撃は長く止める
+const KILL_HIT_STOP = 0.1; // とどめの一撃を短く止める
 const KILL_SLOW_SCALE = 0.25; // 砕けた直後は時間をゆっくりにして、飛び散る破片を見せる
 const KILL_SLOW_HOLD = 0.55; // スローを保つ実時間
 const KILL_SLOW_RELEASE = 0.45; // そこから元の速さへ戻す実時間
@@ -1001,8 +1199,18 @@ const FINALE_SLOW_RELEASE = 0.9;
 const FINALE_INVERT_TIME = 0.08; // 白黒を反転させておく実時間
 let finale = false; // 最後の 1 体を倒したあと
 let killSlowTime = Infinity; // 倒してからの実時間
-// 攻撃の届く範囲（距離と視線からの角度）にいる敵のうち、いちばん近いものを en にする。いれば hitDir に攻撃の向きを入れる
+let sharedBossBreakTime = Infinity; // ホストの部位破壊を全員に知らせてからの実時間
+// 攻撃の届く範囲（距離と視線からの角度）にいる敵のうち、いちばん近いものを en にする。いれば hitDir に攻撃の向きを入れる。
+// ボスの機体が届く範囲にあって、どの敵よりも近ければボスを選ぶ（bossHitPart に部位を入れる）
 function dummyInReach(reach, angle) {
+    const onEnemy = enemyInReach(reach, angle);
+    const enemyDist = onEnemy ? Math.hypot(en.root.position.x - position.x, en.root.position.z - position.z) - DUMMY_RADIUS : Infinity;
+    if (bossInReach(reach, angle) && Math.hypot(bossHitAt.x - position.x, bossHitAt.z - position.z) <= enemyDist)
+        return true;
+    bossHitPart = null;
+    return onEnemy && inReachOf(reach, angle); // hitDir を選んだ敵への向きで入れ直す
+}
+function enemyInReach(reach, angle) {
     let best = null;
     let bestDist = Infinity;
     for (const e of enemies) {
@@ -1049,7 +1257,11 @@ const HEADSHOT_HEIGHT = 1.55; // 敵の足元からの高さ
 const HEADSHOT_MULT = 2.5;
 // 当たりの反応と演出。hitDir（攻撃した側から敵の奥への水平の向き）は呼ぶ前に入れておく
 // scar = false なら切り跡を残さない（刃の当たらない衝撃波など）。dmgScale はダメージだけに掛ける倍率
-function applyDummyHit(def, at, kind, swing, scar = true, dmgScale = 1) {
+function applyDummyHit(def, at, kind, swing, scar = true, dmgScale = 1, remote = false) {
+    if (multiplayerRun && isMultiplayerGuest() && stageRun?.boss) {
+        sendGuestHit(def, at, kind, 'core', kind === 'kunai' || kind === 'sword' || kind === 'axe' || (kind === 'bat' && def !== BAT_RETURN_HIT) ? dmgScale * BOSS_MELEE_MULT : dmgScale, enemies.indexOf(en), swing);
+        return;
+    }
     const headshot = (kind === 'throw' || kind === 'bullet') && at.y - en.root.position.y >= HEADSHOT_HEIGHT;
     staggerDummy(def.knock ?? DEFAULT_KNOCK, at, swing);
     en.flashT = 0;
@@ -1059,47 +1271,512 @@ function applyDummyHit(def, at, kind, swing, scar = true, dmgScale = 1) {
     shakeEnemy = en;
     // 空振りとの差をはっきりさせるため、当たったときだけ画面を大きく揺らして反動も足す
     const fx = def.fx ?? 1;
-    addTrauma(HIT_TRAUMA * fx);
-    kickVel.x += def.kick[0] * DEG * 12 * fx;
-    kickVel.y += def.kick[1] * DEG * 12 * fx;
-    kickVel.z += def.kick[2] * DEG * 12 * fx;
+    if (!remote) {
+        addTrauma(HIT_TRAUMA * fx);
+        kickVel.x += def.kick[0] * DEG * 12 * fx;
+        kickVel.y += def.kick[1] * DEG * 12 * fx;
+        kickVel.z += def.kick[2] * DEG * 12 * fx;
+    }
     playHit(fx, kind);
     spawnHitFx(at, hitDir, def, swing);
-    if (scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe'))
+    if (!remote && scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe'))
         addSlashScar(en, camera, at, hitDir, def, kind, swing);
     // 結果に出すヘッドショット率は、自分で狙って当てた弾と矢だけで数える（デッドアイと跳ね返した弾は除く）
-    if (stageRun?.running && (def === BULLET_HIT || def === ARROW_HIT)) {
+    if (!remote && stageRun?.running && (def === BULLET_HIT || def === ARROW_HIT)) {
         stageRun.aimedHits++;
         if (headshot)
             stageRun.headshots++;
     }
     const damage = hitDamage(def, kind) * dmgScale * (headshot ? HEADSHOT_MULT : 1);
     en.hp -= damage;
-    if (def !== SWORD_ISSEN && def !== DEADEYE_HIT)
+    if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT)
         chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
-    countHit(en.hp <= 0);
-    trackHitProcess(def, kind);
+    if (!remote) {
+        countHit(en.hp <= 0);
+        trackHitProcess(def, kind);
+    }
     if (en.hp <= 0) {
-        countChain();
-        countMulti(def);
-        showKillScore(killBonuses(def, headshot)); // 倒した瞬間の体勢で数えるので、killDummy で状態が変わる前に
-        killDummy(kind, swing);
-        showHitMarker(true);
+        if (!remote) {
+            countChain();
+            countMulti(def);
+            scoreKill(showKillScore(killBonuses(def, headshot)), highlightWeight(def, kind));
+        }
+        killDummy(kind, swing, remote);
+        if (!remote)
+            showHitMarker(true, true);
     }
     else {
-        showHitMarker(fx >= HEAVY_FX || headshot);
+        if (!remote)
+            showHitMarker(fx >= HEAVY_FX || headshot);
     }
 }
-function killDummy(kind, swing) {
+// ハイライトに選ぶときの重み。ゲージ技（一閃・デッドアイ）がいちばん重く、操作一覧に名前のある技がその次
+const HIGHLIGHT_GAUGE = 3;
+const HIGHLIGHT_SKILL = 1.5;
+function highlightWeight(def, kind) {
+    if (def === SWORD_ISSEN || def === DEADEYE_HIT)
+        return HIGHLIGHT_GAUGE;
+    const axeSkill = kind === 'axe' && (def === AXE_DRIVE || axeState.axeAttack === AXE_LAUNCH || axeState.axeAttack === AXE_DRIVE);
+    const skill = kind === 'throw' || // クナイの溜め投げ
+        def === SWORD_CHARGE_SLASH ||
+        def === GRAPPLE_STICK_HIT || def === SICKLE_PULL_HIT || def === SICKLE_PULL_LAST || // 鎖を投げる・引き寄せ
+        axeSkill || // 打ち上げ・突き飛ばし
+        bowState.ricochetHitting || bowState.volleyHitting;
+    return skill ? HIGHLIGHT_SKILL : 1;
+}
+// 倒した点数を、今持っている武器の熟練度の XP に足し、結果で流すハイライトの候補にする（ステージだけ。訓練場では入らない）。
+// ハイライトは点数 × weight でいちばん大きいキルを選ぶ
+function scoreKill(pts, weight = 1) {
+    if (!stageRun)
+        return;
+    noteReplayKill(pts * weight);
+    if (multiplayerRun)
+        return; // 協力戦の共有点を、ホスト個人の武器熟練度には加えない
+    const xp = Math.round(pts); // 保存する値と結果に出す値をそろえるため、整数で足す
+    addXp(game.shownWeapon, xp);
+    stageRun.xp += xp;
+}
+// ---- ボスへの当たり ----（状態とダメージの決まりは enemy/boss.ts）
+// 近接の武器は dummyInReach → hitPointFromTip → applyHit の順に呼ぶので、dummyInReach でボスを選んだら部位を覚えておき、
+// 続く 2 つをボスへ回す（applyHit で忘れる）
+let bossHitPart = null;
+const bossHitAt = new THREE.Vector3();
+const bossLook = new THREE.Vector3();
+function bossInReach(reach, angle) {
+    camera.getWorldDirection(bossLook);
+    const t = bossMeleeTarget(reach, angle, camera.position, bossLook);
+    bossHitPart = t?.part ?? null;
+    if (!t)
+        return false;
+    bossHitAt.copy(t.point);
+    hitDir.set(t.point.x - position.x, 0, t.point.z - position.z);
+    if (hitDir.lengthSq() < 1e-6)
+        hitDir.set(bossLook.x, 0, bossLook.z);
+    hitDir.normalize();
+    return true;
+}
+function applyHit(def, at, kind, swing, scar = true, dmgScale = 1) {
+    const part = bossHitPart;
+    bossHitPart = null;
+    if (part)
+        applyBossHit(def, at, kind, part, swing, dmgScale * BOSS_MELEE_MULT); // dummyInReach で選んだ = 近接
+    else
+        applyDummyHit(def, at, kind, swing, scar, dmgScale);
+}
+function hitBoss(def, at, kind, part, dir, dmgScale = 1, swing = dir) {
+    hitDir.set(dir.x, 0, dir.z);
+    if (hitDir.lengthSq() < 1e-6)
+        hitDir.set(at.x - position.x, 0, at.z - position.z);
+    hitDir.normalize();
+    // ここへ来るのは投げ物・弾・矢と、ボスへの一閃（近接）だけ
+    const melee = kind === 'sword';
+    applyBossHit(def, at, kind, part, swing, dmgScale * (melee ? BOSS_MELEE_MULT : 1));
+}
+// 近接の攻撃がボスに与えるダメージの倍率（大きな機体に踏み込んで斬る危なさに見合わせる）
+const BOSS_MELEE_MULT = 2;
+// ---- ボスの点数 ----
+// 点の元は本体に与えたダメージだけ: 本体の体力を削った割合 × BOSS_CORE_POINTS と、倒したときの BOSS_KILL_POINTS。
+// 何周しても素点の合計は変わらないので、時間をかけて稼ぐことはできない（部位を故障させても点は入らない）。
+// 当てた瞬間の技と動きの加点を、その一撃の点にだけ掛ける。しゃがみ込みが終わるとき（起き上がる・倒した）に、その間の点をまとめて 1 回出す。
+// まとめた加点は一撃ごとの点で重みを付けて均す（出す点数が、一撃ごとの点 × 倍率の和に一致する）
+const BOSS_CORE_POINTS = 3000;
+const BOSS_KILL_POINTS = 2000;
+const BOSS_PAR = { easy: 90, normal: 150, hard: 210 }; // 結果の時間の倍率が ×1.0 になる基準タイム（秒。目安）
+const BOSS_RANK_SCALE = 25; // ランクのしきい値（1 体あたり）に掛ける数（S = 15,000）
+const bossTally = { pts: 0, weight: 1, adds: new Map() }; // adds = 加点ごとの「一撃の点 × 倍率」の和。weight = その間でいちばん重いハイライトの重み
+function tallyBoss(pts, bonuses, weight) {
+    bossTally.pts += pts;
+    bossTally.weight = Math.max(bossTally.weight, weight);
+    for (const b of bonuses) {
+        const e = bossTally.adds.get(b.label);
+        if (e)
+            e.add += pts * b.add;
+        else
+            bossTally.adds.set(b.label, { add: pts * b.add, detail: b.detail });
+    }
+}
+function flushBossTally() {
+    const pts = bossTally.pts;
+    if (pts <= 0)
+        return;
+    const bonuses = [...bossTally.adds].map(([label, e]) => ({ label, detail: e.detail, add: e.add / pts })).filter((b) => b.add >= 0.05);
+    scoreKill(showKillScore(bonuses, pts), bossTally.weight);
+    bossTally.pts = 0;
+    bossTally.weight = 1;
+    bossTally.adds.clear();
+}
+// 部位を削ったときは敵に当てたときと同じ手応え。故障させた・しゃがみ込ませたときは倒したときの重さ。
+// ダメージが通らない所（故障済みの部位、部位が残っているうちの本体、止まった後の機体）には、小さく弾かれた音だけ返す（当たりの光は出さない）
+function remoteSickleHits() {
+    const hits = [sickleHits.SICKLE_KESA_HIT, sickleHits.SICKLE_HOOK_HIT, sickleHits.SICKLE_CROSS_HIT_R, sickleHits.SICKLE_CROSS_HIT_L,
+        sickleHits.SICKLE_WHEEL_HIT, sickleHits.SICKLE_WHEEL_LAST, sickleHits.SICKLE_DASH_HIT, sickleHits.SICKLE_DASH_LAST,
+        sickleHits.SICKLE_SLIDE_HIT, sickleHits.SICKLE_AIR_HIT, sickleHits.SICKLE_AIR_SWEEP_HIT, sickleHits.SICKLE_AIR_RISE_HIT,
+        sickleHits.SICKLE_AIR_WHEEL_HIT, sickleHits.SICKLE_AIR_WHEEL_LAST, sickleHits.SICKLE_PULL_HIT, sickleHits.SICKLE_PULL_LAST];
+    return Object.fromEntries(hits.map((def, i) => [String(i), def]));
+}
+const remoteWeaponHolds = new Map();
+function registerRemoteHold(enemy, owner, kind) {
+    const existing = remoteWeaponHolds.get(enemy);
+    if (existing && existing.owner !== owner)
+        return;
+    remoteWeaponHolds.set(enemy, { owner, spawnId: addSpawnId(enemy), kind, created: performance.now(), pinApplied: false });
+}
+function updateRemoteWeaponHolds() {
+    const players = remotePlayers();
+    for (const [enemy, hold] of remoteWeaponHolds) {
+        const p = players.find((item) => item.id === hold.owner);
+        const index = enemies.indexOf(enemy);
+        if (!enemy.alive || index < 0 || addSpawnId(enemy) !== hold.spawnId || !p) {
+            remoteWeaponHolds.delete(enemy);
+            continue;
+        }
+        if (hold.kind === 'grapple') {
+            if (p.grapple?.[0] === index && p.grapple[1] === hold.spawnId)
+                continue;
+        }
+        else {
+            const spearIndex = p.spear.held.findIndex(([i, id]) => i === index && id === hold.spawnId);
+            if ((p.spear.phase === 'flying' || p.spear.phase === 'stuck') && spearIndex >= 0) {
+                const [x, y, z] = p.spear.tip, [dx, , dz] = p.spear.dir;
+                if (Math.hypot(x - p.x, y - p.y, z - p.z) <= 160 && Math.hypot(x - enemy.root.position.x, z - enemy.root.position.z) <= 10) {
+                    const back = SKEWER_FIRST + SKEWER_GAP * spearIndex;
+                    enemy.root.position.x = x - dx * back;
+                    enemy.root.position.z = z - dz * back;
+                    enemy.vel.set(0, 0, 0);
+                    enemy.knockVel.set(0, 0, 0);
+                    enemy.moving = false;
+                    enemy.cooldown = Math.max(enemy.cooldown, 0.4);
+                    continue;
+                }
+            }
+            if (p.spear.phase === 'returning' || p.spear.phase === 'none') {
+                if (performance.now() - hold.created < 300)
+                    continue;
+                enemy.knockVel.set(p.x - enemy.root.position.x, 0, p.z - enemy.root.position.z);
+                if (enemy.knockVel.lengthSq() > 1e-6)
+                    enemy.knockVel.normalize().multiplyScalar(YANK_SPEED);
+            }
+        }
+        if (performance.now() - hold.created >= 300)
+            remoteWeaponHolds.delete(enemy);
+    }
+}
+function onRemoteKunaiBossHit(hit, attacker, enemy) {
+    if (!stageRun?.running || !stageRun.boss || !boss.rig?.root.visible || boss.entering)
+        return;
+    const thrown = hit.attack === 'throw';
+    const ranged = {
+        bullet: { def: BULLET_HIT, kind: 'bullet', maxScale: 1 },
+        deadeye: { def: DEADEYE_HIT, kind: 'bullet', maxScale: 1 },
+        arrow: { def: ARROW_HIT, kind: 'bullet', maxScale: ARROW_DMG_MAX * ARROW_RICOCHET_DMG ** 2 },
+        parry: { def: PARRY_RETURN_HIT, kind: 'bullet', maxScale: 1 },
+        batted: { def: BAT_RETURN_HIT, kind: 'bat', maxScale: 1 },
+        hook: { def: GRAPPLE_STICK_HIT, kind: 'throw', maxScale: 1 },
+        'spear:skewer': { def: SKEWER_HIT, kind: 'sword', maxScale: BOSS_MELEE_MULT },
+        'spear:pin': { def: PIN_HIT, kind: 'sword', maxScale: BOSS_MELEE_MULT },
+    };
+    const rangedHit = Object.hasOwn(ranged, hit.attack) ? ranged[hit.attack] : undefined;
+    const [weapon, name] = hit.attack.split(':');
+    const meleeSets = {
+        sword: { defs: SWORD_ATTACKS, kind: 'sword' }, bat: { defs: BAT_ATTACKS, kind: 'bat' },
+        spear: { defs: { ...SPEAR_ATTACKS, guard: GUARD_HIT, rushHit: RUSH_HIT }, kind: 'sword' },
+        sickle: { defs: remoteSickleHits(), kind: 'sword' },
+        axe: { defs: { ...AXE_ATTACKS, wheel: AXE_WHEEL_HIT, shock: AXE_SHOCK_HIT }, kind: 'axe' },
+    };
+    const melee = Object.hasOwn(meleeSets, weapon) && name && Object.hasOwn(meleeSets[weapon].defs, name) ? meleeSets[weapon] : undefined;
+    const scale = hit.scale ?? 1;
+    if ((!thrown && !rangedHit && !melee && !Object.hasOwn(ATTACKS, hit.attack)) || !(hit.part === 'core' || BOSS_LIMBS.some((part) => part === hit.part)))
+        return;
+    if (rangedHit ? scale <= 0 || scale > rangedHit.maxScale : melee
+        ? (weapon === 'axe' ? (name === 'shock' ? !enemy || scale < 0.3 || scale > 1.4 || hit.force === undefined : scale < 0 || scale > 1) : scale <= 0 || scale > 4 || (weapon === 'sickle' ? scale !== BOSS_MELEE_MULT * SICKLE_DAMAGE_SCALE : weapon !== 'spear' && scale !== BOSS_MELEE_MULT))
+        : scale !== 1)
+        return;
+    const at = new THREE.Vector3(...hit.at);
+    // 投擲は発射後にもプレイヤーが移動できるため、同期遅れを含む余裕を持たせる。
+    const reach = rangedHit ? BULLET_RANGE + 50 : thrown ? THROW_RANGE + 10 : 10;
+    if (at.distanceTo(enemy ? enemy.root.position : boss.pos) > (enemy ? 3 : 10) || Math.hypot(at.x - attacker.x, at.y - attacker.y, at.z - attacker.z) > reach)
+        return;
+    hitDir.set(at.x - attacker.x, 0, at.z - attacker.z).normalize();
+    const def = rangedHit?.def ?? (melee ? melee.defs[name] : thrown ? THROW_HIT : ATTACKS[hit.attack]);
+    if (weapon === 'axe' && name === 'shock') {
+        AXE_SHOCK_HIT.fx = scale;
+        AXE_SHOCK_HIT.knock = hit.force;
+    }
+    const resolved = weapon === 'axe' && melee && name !== 'shock' ? poweredAxeHit(def, scale) : def;
+    const kind = rangedHit?.kind ?? (melee ? melee.kind : thrown ? 'throw' : 'kunai');
+    const amount = weapon === 'axe' && melee ? BOSS_MELEE_MULT : rangedHit || melee ? scale : thrown ? 1 : BOSS_MELEE_MULT;
+    if (enemy) {
+        const old = en;
+        setEn(enemy);
+        const adjusted = !rangedHit || hit.attack === 'spear:skewer' || hit.attack === 'spear:pin' ? (thrown ? amount : amount / BOSS_MELEE_MULT) : amount;
+        const hpBefore = enemy.hp;
+        const headshot = (kind === 'throw' || kind === 'bullet') && at.y - enemy.root.position.y >= HEADSHOT_HEIGHT;
+        const damage = hitDamage(resolved, kind) * adjusted * (headshot ? HEADSHOT_MULT : 1);
+        applyDummyHit(resolved, at, kind, undefined, false, adjusted, true);
+        if (enemy.alive)
+            applyRemoteAddReaction(weapon, name, scale, resolved, attacker);
+        if (enemy.alive && hit.attack === 'spear:skewer')
+            registerRemoteHold(enemy, attacker.id, 'spear');
+        if (enemy.alive && hit.attack === 'hook')
+            registerRemoteHold(enemy, attacker.id, 'grapple');
+        if (hit.attack === 'spear:pin') {
+            const hold = remoteWeaponHolds.get(enemy);
+            if (hold)
+                hold.pinApplied = true;
+        }
+        if (enemy.hp < hpBefore && hit.requestId)
+            confirmRemoteHit(attacker.id, { id: hit.requestId, damage, result: enemy.alive ? 'hit' : 'kill' });
+        if (!enemy.alive) {
+            multiplayerRemoteAddPoints += 100;
+            sendAddKill(attacker.id);
+        }
+        setEn(old);
+    }
+    else {
+        const result = applyBossHit(resolved, at, kind, hit.part, undefined, amount, true);
+        if (result && hit.requestId)
+            confirmRemoteHit(attacker.id, { id: hit.requestId, damage: result === 'locked' || result === 'idle' ? 0 : hitDamage(resolved, kind) * amount,
+                result: result === 'locked' || result === 'idle' ? 'blocked' : result === 'break' || result === 'down' || result === 'kill' ? result : 'hit' });
+    }
+}
+function onRemoteAddHit(hit, attacker) {
+    const enemy = enemies[hit.index];
+    if (!enemy?.alive || addSpawnId(enemy) !== hit.spawnId)
+        return;
+    if (hit.attack === 'spear:pin') {
+        const hold = remoteWeaponHolds.get(enemy);
+        if (!hold || hold.kind !== 'spear' || hold.owner !== attacker.id || hold.pinApplied)
+            return;
+    }
+    onRemoteKunaiBossHit(hit, attacker, enemy);
+}
+function applyRemoteAddReaction(weapon, name, power, def, attacker) {
+    if (enemyHeld())
+        return;
+    const look = new THREE.Vector3(attacker.lookX, 0, attacker.lookZ);
+    if (look.lengthSq() < 1e-6)
+        look.copy(hitDir);
+    look.normalize();
+    if (weapon === 'bat') {
+        const fling = BAT_ATTACKS[name]?.fling;
+        if (fling) {
+            en.knockVel.copy(look).multiplyScalar(fling);
+            en.flung = en.batFlung = true;
+            en.airVel = Math.max(en.airVel, BAT_CHARGE_LIFT);
+            en.vel.set(0, 0, 0);
+            en.moving = false;
+            en.spiked = false;
+        }
+        else
+            knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
+    }
+    else if (weapon === 'axe') {
+        if (name === 'shock')
+            knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
+        else if (name === 'wheel') {
+            if (en.airY > 0.3) {
+                en.airVel = Math.max(en.airVel, AXE_WHEEL_LIFT);
+                en.spiked = false;
+            }
+            else
+                knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
+        }
+        else if (name === 'rush' && en.airY > 0.3)
+            flingEnemy(look, AXE_FLING_SPEED, AXE_FLING_LIFT, power);
+        else if (name === 'drive')
+            flingEnemy(look, AXE_DRIVE_SPEED, AXE_DRIVE_LIFT, power);
+        else if ((name === 'air' || name === 'kabuto') && en.airY > 0.2)
+            spikeEnemy();
+        else if (name !== 'launch' && name !== 'air')
+            knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
+        if (name === 'launch')
+            launchEnemy();
+    }
+    else if (weapon === 'spear' && name !== 'skewer' && name !== 'pin')
+        knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
+}
+const guestHitPending = new Map();
+function onGuestHitConfirmed(confirmation) {
+    const hit = guestHitPending.get(confirmation.id);
+    if (!hit)
+        return;
+    guestHitPending.delete(confirmation.id);
+    if (confirmation.result === 'blocked') {
+        if (hit.boss)
+            sfx.playBossArmor();
+        return;
+    }
+    const fx = hit.def.fx ?? 1;
+    addTrauma(HIT_TRAUMA * fx);
+    kickVel.x += hit.def.kick[0] * DEG * 12 * fx;
+    kickVel.y += hit.def.kick[1] * DEG * 12 * fx;
+    kickVel.z += hit.def.kick[2] * DEG * 12 * fx;
+    playHit(fx, hit.kind);
+    if (hit.boss)
+        sfx.playBossPlate(fx);
+    spawnHitFx(hit.at, hit.dir, hit.def, hit.swing);
+    if (hit.charge)
+        chargeFocus(confirmation.damage);
+    const heavy = confirmation.result === 'break' || confirmation.result === 'down' || confirmation.result === 'kill';
+    if (heavy && !(hit.boss && confirmation.result !== 'kill')) {
+        spawnKillFx(hit.at, hit.dir);
+        sfx.playKill();
+    }
+    showHitMarker(heavy || fx >= HEAVY_FX, confirmation.result === 'kill');
+}
+function sendGuestHit(def, at, kind, part, dmgScale, addIndex, swing) {
+    const send = (hit) => {
+        let id = null;
+        if (addIndex === undefined)
+            id = sendKunaiBossHit(hit);
+        else {
+            const snapshot = latestAdds()[addIndex];
+            if (snapshot?.alive && snapshot.id > 0)
+                id = sendAddHit({ ...hit, index: addIndex, spawnId: snapshot.id });
+        }
+        if (id === null)
+            return;
+        const now = performance.now();
+        for (const [key, pending] of guestHitPending)
+            if (now - pending.sent > 10000)
+                guestHitPending.delete(key);
+        const copy = { ...def, kick: [def.kick[0], def.kick[1], def.kick[2]] };
+        guestHitPending.set(id, { def: copy, at: at.clone(), dir: hitDir.clone(), swing: swing?.clone(), kind,
+            boss: addIndex === undefined, charge: def !== SWORD_ISSEN && def !== DEADEYE_HIT, sent: now });
+    };
+    {
+        if (kind === 'kunai') {
+            const attack = Object.keys(ATTACKS).find((key) => ATTACKS[key] === def);
+            if (attack)
+                send({ attack, part, at: [at.x, at.y, at.z] });
+        }
+        else if (kind === 'throw' && def === THROW_HIT) {
+            send({ attack: 'throw', part, at: [at.x, at.y, at.z] });
+        }
+        else if (kind === 'throw' && def === GRAPPLE_STICK_HIT) {
+            send({ attack: 'hook', part, at: [at.x, at.y, at.z], scale: dmgScale });
+        }
+        else if (kind === 'bullet' || kind === 'bat') {
+            const attack = def === BULLET_HIT ? 'bullet' : def === DEADEYE_HIT ? 'deadeye' : def === ARROW_HIT ? 'arrow'
+                : def === PARRY_RETURN_HIT ? 'parry' : def === BAT_RETURN_HIT ? 'batted' : null;
+            if (attack)
+                send({ attack, part, at: [at.x, at.y, at.z], scale: dmgScale });
+        }
+        if (kind === 'sword' && def === SKEWER_HIT)
+            send({ attack: 'spear:skewer', part, at: [at.x, at.y, at.z], scale: dmgScale });
+        if (kind === 'sword' && def === PIN_HIT && addIndex !== undefined)
+            send({ attack: 'spear:pin', part, at: [at.x, at.y, at.z], scale: dmgScale });
+        if (kind === 'axe' && def === axePoweredHit) {
+            const defs = { ...AXE_ATTACKS, wheel: AXE_WHEEL_HIT };
+            const name = Object.keys(defs).find((key) => defs[key] === axeHitSource.def);
+            if (name)
+                send({ attack: `axe:${name}`, part, at: [at.x, at.y, at.z], scale: axeHitSource.power });
+        }
+        if (kind === 'axe' && def === AXE_SHOCK_HIT && addIndex !== undefined) {
+            send({ attack: 'axe:shock', part, at: [at.x, at.y, at.z], scale: def.fx ?? 1, force: def.knock ?? DEFAULT_KNOCK });
+        }
+        const meleeSets = [
+            { name: 'sword', kind: 'sword', defs: SWORD_ATTACKS }, { name: 'bat', kind: 'bat', defs: BAT_ATTACKS },
+            { name: 'spear', kind: 'sword', defs: { ...SPEAR_ATTACKS, guard: GUARD_HIT, rushHit: RUSH_HIT } },
+            { name: 'sickle', kind: 'sword', defs: remoteSickleHits() },
+        ];
+        for (const set of meleeSets) {
+            if (kind !== set.kind)
+                continue;
+            const name = Object.keys(set.defs).find((key) => set.defs[key] === def);
+            if (name) {
+                send({ attack: `${set.name}:${name}`, part, at: [at.x, at.y, at.z], scale: dmgScale });
+                break;
+            }
+        }
+        return;
+    }
+}
+function applyBossHit(def, at, kind, part, swing, dmgScale = 1, remote = false) {
+    if (multiplayerRun && isMultiplayerGuest()) {
+        sendGuestHit(def, at, kind, part, dmgScale, undefined, swing);
+        return;
+    }
+    const fx = def.fx ?? 1;
+    const damage = hitDamage(def, kind) * dmgScale;
+    const coreBefore = boss.coreHp;
+    const result = damageBoss(part, damage);
+    let killSoundChain = 1;
+    if (result === 'locked' || result === 'idle') {
+        sfx.playBossArmor(); // 通らないことだけ分かるよう、小さく弾かれた音を鳴らす
+        return result;
+    }
+    if (stageRun?.running && (result === 'core' || result === 'kill')) {
+        const pts = ((coreBefore - boss.coreHp) / boss.coreMax) * BOSS_CORE_POINTS + (result === 'kill' ? BOSS_KILL_POINTS : 0);
+        tallyBoss(pts, remote ? [] : bossBonuses(def), highlightWeight(def, kind));
+        if (result === 'kill') {
+            killSoundChain = showKillChain();
+            flushBossTally();
+            stageRun.kills++;
+            breakAdds();
+        }
+    }
+    game.hitStop = Math.max(game.hitStop, def.hitStop ?? DEFAULT_HIT_STOP);
+    game.hitStopTotal = game.hitStop;
+    game.hitStopShakesDummy = false;
+    if (!remote) {
+        addTrauma(HIT_TRAUMA * fx);
+        kickVel.x += def.kick[0] * DEG * 12 * fx;
+        kickVel.y += def.kick[1] * DEG * 12 * fx;
+        kickVel.z += def.kick[2] * DEG * 12 * fx;
+    }
+    playHit(fx, kind);
+    sfx.playBossPlate(fx);
+    spawnHitFx(at, hitDir, def, swing);
+    if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT)
+        chargeFocus(damage);
+    if (result === 'break' || result === 'down' || result === 'kill') {
+        if (result !== 'kill')
+            healPlayer(KILL_HEAL);
+        if (multiplayerRun && result !== 'kill' && broadcastBossBreak({ part: part, at: [at.x, at.y, at.z], dir: [hitDir.x, hitDir.y, hitDir.z], down: result === 'down' }))
+            sharedBossBreakTime = 0;
+        const last = result === 'kill';
+        finale = last && !!stageRun?.running;
+        game.hitStop = Math.max(game.hitStop, last ? FINALE_HIT_STOP : KILL_HIT_STOP);
+        game.hitStopTotal = game.hitStop;
+        killSlowTime = 0;
+        if (!remote) {
+            addTrauma(last ? 1 : result === 'down' ? 0.7 : 0.45);
+            game.fovKick += last ? 18 : 9;
+        }
+        spawnKillFx(at, hitDir);
+        if (last)
+            sfx.playFinale(FINALE_HIT_STOP, killSoundChain);
+        else
+            sfx.playKill();
+        if (finale) {
+            spawnFinaleFx(at, hitDir);
+            finaleHud.classList.add('on');
+            document.body.classList.add('finale');
+            clearStageRun();
+        }
+        if (!remote)
+            showHitMarker(true, result === 'kill');
+    }
+    else {
+        if (!remote)
+            showHitMarker(fx >= HEAVY_FX);
+    }
+    return result;
+}
+function killDummy(kind, swing, remote = false) {
     en.alive = false;
     en.deadTime = 0;
+    const killSoundChain = remote ? 1 : showKillChain();
     sinceKill = 0;
-    finale = !!stageRun?.running && stageRun.kills + 1 >= stageRun.quota;
+    finale = !!stageRun?.running && !stageRun.boss && stageRun.kills + 1 >= stageRun.quota;
     game.hitStop = Math.max(game.hitStop, finale ? FINALE_HIT_STOP : KILL_HIT_STOP);
     game.hitStopTotal = game.hitStop;
     killSlowTime = 0;
-    addTrauma(finale ? 1 : 0.45);
-    game.fovKick += finale ? 18 : 9;
+    if (!remote) {
+        addTrauma(finale ? 1 : 0.45);
+        game.fovKick += finale ? 18 : 9;
+    }
     // 刺さっていたクナイは砕ける前に抜いて手元へ戻す
     for (const t of thrown)
         if (t.phase === 'stuck' && isOnDummy(t.mesh))
@@ -1109,14 +1786,15 @@ function killDummy(kind, swing) {
     spawnKillFx(en.root.position, hitDir);
     if (finale) {
         spawnFinaleFx(en.root.position, hitDir);
-        sfx.playFinale(FINALE_HIT_STOP);
+        sfx.playFinale(FINALE_HIT_STOP, killSoundChain);
         finaleHud.classList.add('on');
         document.body.classList.add('finale'); // キルスコアを FINISH の帯の上へ逃がす
     }
     else {
-        sfx.playKill();
+        sfx.playKill(killSoundChain);
     }
-    rewardKill();
+    if (!remote)
+        rewardKill();
     countStageKill();
     startleAllies();
 }
@@ -1201,19 +1879,27 @@ function trackHitProcess(def, kind) {
     en.lastHitAt = lastAnyHitAt = now;
     game.viewSpin = 0;
 }
-// 同時撃破: 前の敵を倒してから MULTI_WINDOW 秒以内（ゲーム内の時間）に同じ技で倒すと、同時に倒した数を増やす
+// 同時撃破: 前の敵を倒してから MULTI_WINDOW 秒以内（ゲーム内の時間）に同じ技で倒すと、同時に倒した数を増やす。
+// 矢とデッドアイは数えない（3 本射ちと、印を付けて続けて撃つデッドアイは、狙わなくても揃ってしまうので）。
+// デッドアイで続けて倒した分は、DEAD EYE の加点を増やす
 const MULTI_WINDOW = 0.15;
 const MULTI_STEP = 1; // 1 体増えるごとに倍率へ足す量
 const MULTI_MAX = 2;
 let multiKill = 1; // 今の同時撃破の数（1 = 単独）
 let lastKillDef = null;
 function countMulti(def) {
-    multiKill = def === lastKillDef && sinceKill <= MULTI_WINDOW ? multiKill + 1 : 1;
+    const counts = def !== ARROW_HIT && def !== DEADEYE_HIT;
+    multiKill = counts && def === lastKillDef && sinceKill <= MULTI_WINDOW ? multiKill + 1 : 1;
     lastKillDef = def;
+    if (def === DEADEYE_HIT)
+        game.deadEyeKills++;
 }
 // とどめの倒し方ごとに、スコアの倍率へ足す量
-const LONG_SHOT_DIST = 12; // これより遠くから倒すと遠距離の加点。さらに 6 m 離れるごとに 0.5 ずつ増やす
+const LONG_SHOT_DIST = 15; // これより遠くから倒すと遠距離の加点。さらに LONG_SHOT_STEP 離れるごとに 0.5 ずつ増やす
+const LONG_SHOT_STEP = 8;
 const LONG_SHOT_MAX = 2;
+const DEADEYE_STEP = 0.5; // デッドアイで 2 体目から 1 体ごとに DEAD EYE へ足す量
+const DEADEYE_BONUS_MAX = 2;
 const SPEED_KILL_MIN = 20; // 倒した瞬間の水平の速さがこれ以上なら速さの加点
 const SPEED_KILL_HIGH = 30; // これ以上なら加点を倍にする
 const killAt = new THREE.Vector3();
@@ -1235,12 +1921,49 @@ function killBonuses(def, headshot) {
         out.push({ label: '360', add: 1 });
     if (!en.hitPlayer)
         out.push({ label: 'NO DAMAGE', add: 0.5 });
+    moveBonuses(def, out);
+    if (en.airY > 0.5)
+        out.push({ label: 'JUGGLE', add: 1 });
+    if (def === SICKLE_PULL_HIT || def === SICKLE_PULL_LAST || def === GRAPPLE_STICK_HIT)
+        out.push({ label: 'HOOK KILL', add: 1 });
+    if (player.wallRunning)
+        out.push({ label: 'WALL RUN', add: 1 });
+    else if (!player.onGround && player.mantleTime < 0)
+        out.push({ label: 'AERIAL', add: 0.5 });
+    const dist = camera.position.distanceTo(killAt.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z));
+    if (dist >= LONG_SHOT_DIST) {
+        const add = Math.min(LONG_SHOT_MAX, 0.5 + Math.floor((dist - LONG_SHOT_DIST) / LONG_SHOT_STEP) * 0.5);
+        out.push({ label: 'LONG SHOT', detail: `${Math.round(dist)}M`, add });
+    }
+    speedBonus(out);
+    if (killChain > 1) {
+        out.push({ label: 'CHAIN', detail: `×${killChain}`, add: Math.min(CHAIN_MAX, (killChain - 1) * CHAIN_STEP) });
+    }
+    return out;
+}
+// ボスの本体に当てたときの加点。敵ごとの加点（コンボなど）は数えず、技と動きの加点だけ
+function bossBonuses(def) {
+    const out = [];
+    if (isParryReturn(def))
+        out.push({ label: 'PARRY', add: 1 });
+    moveBonuses(def, out);
+    if (player.wallRunning)
+        out.push({ label: 'WALL RUN', add: 1 });
+    else if (!player.onGround && player.mantleTime < 0)
+        out.push({ label: 'AERIAL', add: 0.5 });
+    speedBonus(out);
+    return out;
+}
+// 当てた技とそのときの動きで決まる加点
+function moveBonuses(def, out) {
     if (player.sliding || def === SLIDE_UP || def === SWORD_SWEEP)
         out.push({ label: 'SLIDE KILL', add: 1 });
     if (def === SWORD_ISSEN)
         out.push({ label: 'IAI', add: 1 });
-    if (def === DEADEYE_HIT)
-        out.push({ label: 'DEAD EYE', add: 1 });
+    if (def === DEADEYE_HIT) {
+        const n = Math.max(1, game.deadEyeKills);
+        out.push({ label: 'DEAD EYE', detail: n > 1 ? `×${n}` : undefined, add: Math.min(DEADEYE_BONUS_MAX, 1 + (n - 1) * DEADEYE_STEP) });
+    }
     if (def === DASH_SLASH || def === AXE_DRIVE || def === SWORD_THRUST || def === SICKLE_DASH_HIT || def === SICKLE_DASH_LAST)
         out.push({ label: 'DASH KILL', add: 0.5 });
     if (def === SWORD_CHARGE_SLASH)
@@ -1253,29 +1976,16 @@ function killBonuses(def, headshot) {
         out.push({ label: 'BODY SLAM', add: 1 });
     if (def === FLOOR_SLAM_HIT)
         out.push({ label: 'GROUND SLAM', add: 1 });
-    if (en.airY > 0.5)
-        out.push({ label: 'JUGGLE', add: 1 });
-    if (def === SICKLE_PULL_HIT || def === SICKLE_PULL_LAST || def === GRAPPLE_STICK_HIT)
-        out.push({ label: 'HOOK KILL', add: 1 });
-    if (player.wallRunning)
-        out.push({ label: 'WALL RUN', add: 1 });
-    else if (!player.onGround && player.mantleTime < 0)
-        out.push({ label: 'AERIAL', add: 0.5 });
-    const dist = camera.position.distanceTo(killAt.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z));
-    if (dist >= LONG_SHOT_DIST) {
-        const add = Math.min(LONG_SHOT_MAX, 0.5 + Math.floor((dist - LONG_SHOT_DIST) / 6) * 0.5);
-        out.push({ label: 'LONG SHOT', detail: `${Math.round(dist)}M`, add });
-    }
+}
+function speedBonus(out) {
     const speed = Math.hypot(velocity.x, velocity.z);
     if (speed >= SPEED_KILL_MIN) {
         out.push({ label: 'SPEED KILL', detail: `${Math.round(speed)}M/S`, add: speed >= SPEED_KILL_HIGH ? 1 : 0.5 });
     }
-    if (killChain > 1) {
-        out.push({ label: 'CHAIN', detail: `×${killChain}`, add: Math.min(CHAIN_MAX, (killChain - 1) * CHAIN_STEP) });
-    }
-    return out;
 }
 function respawnDummy() {
+    if (stageRun?.boss)
+        stageRun.adds--;
     if (stageRun) {
         const kind = pickEnemyKind();
         if (kind !== en.kind)
@@ -1284,9 +1994,13 @@ function respawnDummy() {
             stageRun.leads++;
         else if (kind === stageGuest)
             stageRun.guests++;
+        stageRun.spawned[kind]++;
     }
+    if (multiplayerRun && stageRun?.boss && !isMultiplayerGuest())
+        markAddSpawn(en);
     if (enemySpawns.length > 0)
         placeDummy(pickSpawn());
+    boardLedge(); // リフトのステージでは、上の足場に乗せる
     en.alive = true;
     en.hp = enemyMaxHp(en.kind);
     en.airY = 0;
@@ -1336,11 +2050,23 @@ const STAGE_LEAD_AT_ONCE = { easy: 1, normal: 1, hard: 2 };
 const STAGE_GUEST_COUNT = { easy: 1, normal: 2, hard: 3 };
 let stageLead; // 今のステージの主役（無ければ銃撃役だけ）
 let stageGuest; // 今のステージの脇役（無ければ混ぜない）
+let stageMix; // 今のステージの、難易度ごとの種類の割合（あれば主役と脇役の代わりに使う）
 // 次に出す敵の種類。残りの出番に主役と脇役の残りを散らして混ぜ、終わりまでに数が揃うようにする
 function pickEnemyKind() {
-    if (!stageRun)
-        return 'gunner';
+    if (!stageRun || stageRun.boss)
+        return 'gunner'; // ボスの増援は銃撃役だけ
     const difficulty = DIFFICULTIES[difficultyIndex];
+    const mix = stageMix?.[difficulty];
+    if (mix) {
+        // 割合から決まる数の残りに比べて選ぶ（終わりまでに数が揃う）
+        const kinds = Object.keys(mix);
+        const rest = kinds.map((k) => Math.max(0, Math.round(mix[k] * stageRun.quota) - stageRun.spawned[k]));
+        let r = Math.random() * rest.reduce((a, b) => a + b, 0);
+        for (let i = 0; i < kinds.length; i++)
+            if ((r -= rest[i]) < 0)
+                return kinds[i];
+        return kinds[0];
+    }
     const alive = enemies.filter((e) => e.alive);
     const left = (kind, count, atOnce, used) => !kind || alive.filter((e) => e.kind === kind).length >= atOnce ? 0 : Math.max(0, count - used);
     const leadLeft = left(stageLead, STAGE_LEAD_COUNT[difficulty], STAGE_LEAD_AT_ONCE[difficulty], stageRun.leads);
@@ -1358,6 +2084,7 @@ function pickEnemyKind() {
 // 残りの数より多くは湧かせないので、最後の 1 体を倒すと場に敵はいなくなる。とどめのスローの余韻を見せてから結果を出す
 const STAGE_KILL_QUOTA = { easy: 10, normal: 15, hard: 20 };
 const RESULT_DELAY = 3.2; // 倒しきってから結果を出すまで（実時間）。最後の 1 体の長いスローを見せきってから
+const BOSS_RESULT_DELAY = 6.5; // ボスは止まってから爆発し、残骸が落ちきるまで見せる
 const finaleHud = document.getElementById('finale');
 document.fonts.load('800 100px "Barlow Condensed"', 'FINISH'); // 出す瞬間に別の字形で一瞬出ないよう、太字を先に読み込んでおく
 document.fonts.load('600 100px "Oswald"', 'FASTFINISH'); // ステージの始まりのタイトルの字も先に読み込んでおく
@@ -1367,44 +2094,168 @@ const runTime = runHud.querySelector('.time');
 // 残りの敵の数は画面の中央下に大きく出す
 const remainHud = document.getElementById('remain');
 const remainNum = remainHud.querySelector('.num');
-function beginStageRun() {
-    stageRun = { quota: STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]], kills: 0, time: 0, damage: 0, leads: 0, guests: 0, aimedHits: 0, headshots: 0, running: false, clearedT: -1 };
+// ボスのステージでは、ボスを倒したら終わり（倒す数は 1）。残りの数は出さない（ボスの体力の帯がある）。点数の決め方は applyBossHit の上
+function beginStageRun(bossStage = false) {
+    resetKillChainDisplay();
+    resetReplay();
+    stageRun = {
+        quota: bossStage ? 1 : STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]],
+        kills: 0, time: 0, damage: 0, leads: 0, guests: 0, spawned: { gunner: 0, striker: 0, sniper: 0 }, aimedHits: 0, headshots: 0, running: false, clearedT: -1,
+        resultDelay: bossStage ? BOSS_RESULT_DELAY : RESULT_DELAY,
+        boss: bossStage,
+        adds: 0,
+        xp: 0,
+    };
+    bossTally.pts = 0;
+    bossTally.weight = 1;
+    bossTally.adds.clear();
     runTime.textContent = fmtTime(0);
     runHud.hidden = false;
     remainNum.textContent = String(stageRun.quota);
-    remainHud.hidden = false;
+    remainHud.hidden = bossStage;
     bowState.ricochetStock = BOW_RICOCHET_STOCK;
 }
 // まだ湧かせてよいか。倒した数と場にいる数を足して、倒す数に届いたら湧かせない
 function canSpawnEnemy() {
+    if (stageRun?.boss)
+        return stageRun.adds > 0; // ボスのステージでは、呼ばれた分だけ
     return !stageRun || stageRun.kills + enemies.filter((e) => e.alive).length < stageRun.quota;
 }
 function countStageKill() {
-    if (!stageRun?.running)
-        return;
+    if (!stageRun?.running || stageRun.boss)
+        return; // ボスの増援は倒す数に数えない
     stageRun.kills++;
     remainNum.textContent = String(stageRun.quota - stageRun.kills);
     // 減った瞬間に大きく叩きつけてから収める
     remainNum.animate([{ transform: 'scale(1.5)', filter: 'brightness(3)' }, { transform: 'none', filter: 'none' }], { duration: 380, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1)' });
-    if (stageRun.kills < stageRun.quota)
+    if (stageRun.kills >= stageRun.quota)
+        clearStageRun();
+}
+// ---- ボスの増援 ----
+// ボスのステージでは始めに敵を出さず、ボスが信号弾を打ち上げたときだけ、銃撃役を間を空けて出現位置から起き上がらせる。
+// 倒しても倒す数には数えない（ボスを倒したら終わり）。倒したご褒美の回復（rewardKill）が、ボス戦での回復の手段になる
+const ADD_FIRST = 0.3; // 信号弾が弾けてから 1 体目が起き上がり始めるまで
+const ADD_GAP = 0.45; // 次の 1 体まで
+function callAdds(count) {
+    if (!stageRun?.running)
         return;
+    const dead = enemies.filter((e) => !e.alive);
+    for (const e of dead)
+        e.deadTime = -Infinity; // 呼んだ分のほかは起き上がらせない
+    for (let i = 0; i < count; i++) {
+        let e = dead[i];
+        if (!e) {
+            e = createEnemy(true);
+            e.alive = false;
+            e.root.visible = false;
+            e.riseDelay = -1e9; // ステージの組み上がりの動きはさせない
+        }
+        e.deadTime = RESPAWN_TIME - (ADD_FIRST + i * ADD_GAP);
+    }
+    stageRun.adds += count;
+}
+// 場にいる増援と、呼ばれてまだ現れていない増援の数
+function addsAlive() {
+    return stageRun?.boss ? enemies.filter((e) => e.alive).length + stageRun.adds : 0;
+}
+// ボスを倒したら、残っている増援も崩す（とどめの余韻の間に撃たれないように）
+function breakAdds() {
+    if (stageRun)
+        stageRun.adds = 0;
+    const keep = en;
+    for (const e of enemies) {
+        e.deadTime = -Infinity;
+        if (!e.alive)
+            continue;
+        setEn(e);
+        e.alive = false;
+        for (const t of thrown)
+            if (t.phase === 'stuck' && isOnDummy(t.mesh))
+                startReturn(t);
+        breakDummy(hitDir);
+        e.root.visible = false;
+    }
+    setEn(keep);
+}
+function clearStageRun() {
+    if (!stageRun?.running)
+        return;
+    if (multiplayerRun && stageRun.boss && !isMultiplayerGuest()) {
+        multiplayerResult = { score: totalScore() + multiplayerRemoteAddPoints, time: stageRun.time };
+        broadcastBossVictory(multiplayerResult.score, multiplayerResult.time);
+    }
     stageRun.running = false;
     stageRun.clearedT = 0;
     runHud.classList.add('clear');
     remainHud.classList.add('clear');
 }
+function onMultiplayerBossVictory(score, time) {
+    if (!stageRun?.running || !stageRun.boss)
+        return;
+    multiplayerResult = { score, time };
+    stageRun.time = time;
+    stageRun.kills++;
+    finale = true;
+    killSlowTime = 0;
+    finaleHud.classList.add('on');
+    document.body.classList.add('finale');
+    sfx.playFinale(FINALE_HIT_STOP, 1);
+    breakAdds();
+    clearStageRun();
+}
+function onMultiplayerPartyDefeat() {
+    if (!stageRun?.running)
+        return;
+    stageRun.running = false;
+    showGameOver(stageRun);
+}
+function onMultiplayerDisconnect(hostLost) {
+    if (!multiplayerRun || overlay.classList.contains('result') || overlay.classList.contains('over') || (stageRun && stageRun.clearedT >= 0))
+        return;
+    if (!hostLost) {
+        showToast('参加者が退出しました');
+        return;
+    }
+    multiplayerSessionLost = true;
+    pauseGame();
+    sfx.setAudioPaused(true);
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'position:fixed;inset:0;z-index:20000;display:grid;place-items:center;background:rgba(30,30,30,.85);color:white;font:600 18px "IBM Plex Sans JP",sans-serif;text-align:center';
+    const box = document.createElement('div');
+    const title = document.createElement('h2');
+    title.textContent = '接続が切れました';
+    const note = document.createElement('p');
+    note.textContent = 'ホストとの接続が終了しました。';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.textContent = 'タイトルへ戻る';
+    back.style.cssText = 'padding:12px 24px;border:1px solid white;background:transparent;color:white;font:inherit;cursor:pointer';
+    back.addEventListener('click', () => quitToTitle());
+    box.append(title, note, back);
+    dialog.appendChild(box);
+    document.body.appendChild(dialog);
+    back.focus();
+}
 function updateStageRun(realDt) {
     if (!stageRun)
         return;
+    if (stageRun.boss && bossTally.pts > 0 && boss.phase !== 'down')
+        flushBossTally(); // しゃがみ込みが終わったら、その間の点を出す
     if (stageRun.running) {
         stageRun.time += game.realDt;
         runTime.textContent = fmtTime(stageRun.time);
     }
     else if (stageRun.clearedT >= 0) {
         stageRun.clearedT += game.realDt;
-        if (stageRun.clearedT >= RESULT_DELAY)
+        if (stageRun.clearedT >= stageRun.resultDelay)
             showStageResult(stageRun);
     }
+}
+// 結果に出す熟練度。ステージでは持ち替えられないので、今持っている武器で稼いだことになる。名前は武器の選択画面の行から写す
+function masteryResult(run) {
+    const id = game.shownWeapon;
+    const row = document.querySelector(`#overlay .sw-rows [data-weapon="${id}"]`);
+    return { name: row?.dataset.name ?? id.toUpperCase(), ja: row?.dataset.ja ?? '', before: Math.max(0, loadXp(id) - run.xp), gained: run.xp };
 }
 // 一時停止の画面を結果の画面に作り替えて止める。ここからはタイトルへ戻ることしかできない。
 // 自己ベストと比べてから記録し直す
@@ -1413,26 +2264,32 @@ function showStageResult(run) {
     const button = stageButtons[stageIndex];
     const stage = button.dataset.stage;
     const difficulty = DIFFICULTIES[difficultyIndex];
-    const score = finalScore(totalScore(), run.time, run.kills);
+    const bossStage = run.boss;
+    const baseScore = multiplayerRun && multiplayerResult ? multiplayerResult.score : totalScore();
+    const score = finalScore(baseScore, run.time, bossStage ? BOSS_PAR[difficulty] : killPar(run.kills));
     const best = loadBest(stage, difficulty);
-    const newTime = !best || run.time < best.time;
-    const newScore = !best || score > best.score;
-    saveBest(stage, difficulty, { time: newTime ? run.time : best.time, score: newScore ? score : best.score });
+    const newTime = !multiplayerRun && (!best || run.time < best.time);
+    const newScore = !multiplayerRun && (!best || score > best.score);
+    if (!multiplayerRun)
+        saveBest(stage, difficulty, { time: newTime ? run.time : best.time, score: newScore ? score : best.score });
     overlay.classList.add('result');
-    overlayStatus.textContent = '';
-    overlayPrompt.textContent = 'ENTER — SKIP';
+    overlay.querySelector('[data-action="multiplayer-lobby"]').hidden = !multiplayerRun;
+    overlayPrompt.textContent = 'CLICK TO SKIP';
     showResult({
         stageNo: button.querySelector('.no').textContent,
         stageName: stage.toUpperCase(),
         difficulty: difficulty.toUpperCase(),
         time: run.time,
         kills: run.kills,
+        rankScale: bossStage ? BOSS_RANK_SCALE : run.kills,
         damage: Math.round(run.damage),
         headshotRate: run.aimedHits > 0 ? run.headshots / run.aimedHits : null,
         score,
         newTime,
         newScore,
-    }, () => (overlayPrompt.textContent = 'ENTER — TITLE'));
+        mastery: masteryResult(run),
+        clip: startReplay() ? { aspect: CLIP_ASPECT, play: playReplay } : undefined,
+    }, () => (overlayPrompt.textContent = ''));
     pauseGame();
 }
 let enemySpawns = [];
@@ -1516,6 +2373,7 @@ function finishMarkHp() {
         case 'axe': return hitDamage(AXE_KESA, 'axe');
         case 'bow': return hitDamage(ARROW_HIT, 'bullet') * ARROW_DMG_MAX; // 引ききった 1 本
         case 'bat': return hitDamage(BAT_SWING_1, 'bat');
+        case 'spear': return hitDamage(SPEAR_TWIRL_1, 'sword');
     }
 }
 const FINISH_MARK_PAD = 6; // 体のまわりに空ける余白 (px)
@@ -1530,6 +2388,7 @@ function updateFinishMark() {
         updateFinishMarkOf();
     }
     updateThreatMarks();
+    updateDangerHud([...liftDangers(), ...bossDangers()]);
 }
 // ---- 画面外の敵の印 ----
 // 画面に映っていない敵の向きを、クロスヘアのまわりのくさびで示す。向きは、カメラから見た敵の胸の位置の上下左右から決める
@@ -1625,6 +2484,8 @@ const DUMMY_SHAKE = 0.05; // 震えの幅 (m)
 let shakeSide = 1;
 let shakeEnemy = null; // 震わせる敵（最後に当てた敵）
 function updateDummyShake() {
+    if (multiplayerRun && isMultiplayerGuest() && stageRun?.boss)
+        return;
     for (const e of enemies)
         poseEnemyTumble(e);
     if (game.hitStop <= 0 || !game.hitStopShakesDummy || !shakeEnemy)
@@ -1642,7 +2503,8 @@ const dummyShakeInv = new THREE.Quaternion();
 const dummyShakeOff = new THREE.Vector3();
 // 照準のヒットマーカー: 照準の周りに斜めの 4 本線を一瞬出す（締めの技は大きく）
 const hitMarker = document.getElementById('hitmarker');
-function showHitMarker(heavy) {
+function showHitMarker(heavy, killed = false) {
+    rumble(killed ? 'kill' : heavy ? 'heavy' : 'hit');
     hitMarker.classList.remove('show', 'heavy');
     void hitMarker.offsetWidth; // アニメーションを最初からやり直す
     hitMarker.classList.add('show');
@@ -1653,6 +2515,26 @@ function showHitMarker(heavy) {
 // 表示が消える長さ（#hits のアニメーション）と同じにして、数が見えている間だけつながるようにする
 const HIT_COUNT_WINDOW = 1;
 const hitsEl = document.getElementById('hits');
+const killChainEl = document.getElementById('kill-chain');
+let displayedKills = 0;
+let lastDisplayedKill = -Infinity;
+function resetKillChainDisplay() {
+    displayedKills = 0;
+    lastDisplayedKill = -Infinity;
+    killChainEl.classList.remove('show');
+}
+function showKillChain() {
+    const now = performance.now() / 1000;
+    displayedKills = now - lastDisplayedKill <= CHAIN_WINDOW ? displayedKills + 1 : 1;
+    lastDisplayedKill = now;
+    if (displayedKills < 2)
+        return displayedKills;
+    killChainEl.textContent = `${displayedKills} KILLS`;
+    killChainEl.classList.remove('show');
+    void killChainEl.offsetWidth;
+    killChainEl.classList.add('show');
+    return displayedKills;
+}
 let hitCount = 0;
 let lastHitAt = -Infinity;
 function countHit(killed) {
@@ -1675,6 +2557,11 @@ const hitOnAxis = new THREE.Vector3();
 const hitOffset = new THREE.Vector3();
 // 視点から tip（ワールド座標）を通る線が敵に当たる所。外れていれば敵の輪郭のうち線に最も近い所
 function hitPointFromTip(tip, out) {
+    // ボスは、選んだときに求めた機体の表面の点に当てる
+    if (bossHitPart) {
+        out.copy(bossHitAt);
+        return;
+    }
     hitRay.origin.copy(camera.position);
     hitRay.direction.subVectors(tip, camera.position).normalize();
     // 敵を縦の円柱とみなす（頭の分も含めて、少し内側の高さに収める）
@@ -1698,7 +2585,21 @@ initEnemyEnv({
     scene,
     addTrauma,
     isHeld: enemyHeld,
-    playerHp: () => game.playerHp,
+    playerHp: () => game.playerHp > 0 || (multiplayerRun && remotePlayers().length > 0) ? 1 : 0,
+    targetPlayer: (out) => {
+        let distance = game.playerHp > 0 ? Math.hypot(position.x - en.root.position.x, position.z - en.root.position.z) : Infinity;
+        if (distance < Infinity)
+            out.set(position.x, position.y + player.eyeHeight - 0.35, position.z);
+        if (multiplayerRun)
+            for (const remote of remotePlayers()) {
+                const d = Math.hypot(remote.x - en.root.position.x, remote.z - en.root.position.z);
+                if (d < distance) {
+                    distance = d;
+                    out.set(remote.x, remote.y + remote.eyeHeight - 0.35, remote.z);
+                }
+            }
+        return distance < Infinity;
+    },
     slamIntoFloor: slamEnemyIntoFloor,
     slamIntoWall: slamEnemyIntoWall,
     slamIntoEnemy: slamEnemyIntoEnemy,
@@ -1804,6 +2705,10 @@ function buildEnemy(mobile, kind) {
         dropTo: new THREE.Vector3(),
         dropT: 0,
         dropDur: 0,
+        ride: 'none',
+        rideLedge: -1,
+        rideY: 0,
+        rideSlot: 0,
         charge: -1,
         laser: kind === 'sniper' ? createSniperLaser() : null,
         hits: 0,
@@ -1852,6 +2757,23 @@ function rebuildEnemy(kind) {
 let sinceKill = Infinity; // 最後に倒してからの時間
 function updateEnemies(dt) {
     sinceKill += dt;
+    if (multiplayerRun && isMultiplayerGuest() && stageRun?.boss) {
+        const snapshots = latestAdds();
+        while (enemies.length > snapshots.length)
+            removeEnemy(enemies[enemies.length - 1]);
+        snapshots.forEach((snapshot, i) => {
+            let e = enemies[i];
+            if (!e) {
+                e = createEnemy(true, 'gunner');
+                e.root.visible = false;
+            }
+            applyAddSnapshot(e, snapshot, e.root.visible ? game.realDt : 1);
+        });
+        updateEnemyBullets(dt);
+        return;
+    }
+    if (multiplayerRun && stageRun?.boss)
+        updateRemoteWeaponHolds();
     for (const e of enemies) {
         setEn(e);
         hitByMover();
@@ -1907,14 +2829,17 @@ function shoveFromCar() {
 function updateDummy(dt) {
     if (en.alive) {
         en.idleT += dt;
-        if (en.airY > 0 || en.airVel > 0)
+        const boarding = updateBoarding(dt); // リフトの足場に乗っている / 飛び乗っている間は、歩かずに運ばれる
+        if (!boarding && (en.airY > 0 || en.airVel > 0))
             updateEnemyAir(dt);
         updateEnemyTumble(dt);
-        updateEnemyKnock(dt);
-        if (en.kind === 'striker')
-            updateStrikerMove(dt);
-        else if (en.kind === 'gunner')
-            updateEnemyMove(dt); // 狙撃手は出た所から動かない
+        if (!boarding) {
+            updateEnemyKnock(dt);
+            if (en.kind === 'striker')
+                updateStrikerMove(dt);
+            else if (en.kind === 'gunner')
+                updateEnemyMove(dt); // 狙撃手は出た所から動かない
+        }
         updateEnemyGait(dt);
         if (en.kind === 'striker')
             updateStrikerFace(dt);
@@ -2029,7 +2954,7 @@ function slamEnemyIntoEnemy(other) {
 }
 // 鎖鎌で掛けられているか、突進の的になっているか
 function enemyHeld() {
-    return (sickleState.grapple?.enemy === en && sickleState.grapple.phase !== 'back') || (swordState.rushTime >= 0 && swordState.rushEnemy === en);
+    return remoteWeaponHolds.has(en) || (sickleState.grapple?.enemy === en && sickleState.grapple.phase !== 'back') || (swordState.rushTime >= 0 && swordState.rushEnemy === en) || spearHolds(en);
 }
 // ---- エイムアシスト ----（player/aimAssist.ts）
 // ---- 鎖鎌 ----（weapons/sickleCombat.ts）
@@ -2048,6 +2973,7 @@ initHitFx({
 function updateHitFx(dt) {
     updateAxeShocks(dt);
     updateHitParticles(dt);
+    updateArcs(dt);
     impact.age += dt;
     const u = impactFxPass.uniforms;
     // ヒットストップの間は暗いまま保ち、明けてから戻す
@@ -2077,13 +3003,16 @@ function updateHitFx(dt) {
 // 武器のファイルから本体の処理を呼ぶためのフック
 initGameHooks({
     addTrauma,
-    applyHit: applyDummyHit,
+    applyHit,
     enemyHeld,
     inReachOf,
     dummyInReach,
+    bossInReach,
+    bossTargeted: () => bossHitPart !== null,
+    hitBoss,
     hitPointFromTip,
     applyLunge,
-    grappling: () => sickleState.grapple !== null, applyCameraOffset, restoreCameraOffset, damagePlayer, pauseGame,
+    grappling: () => sickleState.grapple !== null, applyCameraOffset, restoreCameraOffset, damagePlayer, pauseGame, callAdds, addsAlive,
 });
 // ---- ハンドガン ----（weapons/handgunCombat.ts）
 // ---- 敵の銃 ----（自動拳銃の持たせ方と敵の射撃は enemy/fire.ts）
@@ -2289,6 +3218,29 @@ function runBatDebug(def, params) {
         camera.quaternion.copy(savedQuat);
     });
 }
+// 槍の攻撃を確かめる: ?spear=sweep1&t=0.25（その時間で止める）
+function runSpearDebug(def, params) {
+    overlay.classList.add('hidden');
+    document.body.classList.remove('on-title');
+    game.wantWeapon = game.shownWeapon = 'spear';
+    const step = 1 / 120;
+    if (params.has('near'))
+        position.set(en.root.position.x, 0, en.root.position.z + 2.6);
+    for (let i = 0; i < 30; i++)
+        update(step);
+    startSpearAttack(def);
+    const tEnd = Number(params.get('t') ?? def.duration);
+    while (spearState.attack && spearState.time + step <= tEnd) {
+        update(step);
+        updateHitFx(step);
+    }
+    updateSpeedFx(0);
+    renderer.setAnimationLoop(() => {
+        applyCameraOffset();
+        composer.render(0);
+        camera.quaternion.copy(savedQuat);
+    });
+}
 function runAxeDebug(def, params) {
     overlay.classList.add('hidden');
     document.body.classList.remove('on-title');
@@ -2335,7 +3287,7 @@ function runAxeDebug(def, params) {
     });
 }
 // 居合の構えを確かめる: ?focus=0.5（構えてからの実時間）&rush=0.2（突進を始めてからの時間。省くと構えたまま）
-// ステージの見た目を確かめる: ?stage=station / warehouse / parking（組み上がった状態を始めの位置から見る）。
+// ステージの見た目を確かめる: ?stage=station / warehouse / lift / mall / ruins / parking（組み上がった状態を始めの位置から見る）。
 // &x=0&y=1.6&z=4（目の位置。省くと始めの位置）&yaw=0&pitch=0（度。yaw は左へ回すと正）
 // &sim=5 で、その秒数だけゲームを進めてから見る（敵の歩きを確かめる。1 秒ごとの敵の位置を console に出す）
 function runStageDebug(params) {
@@ -2615,10 +3567,12 @@ const riseMatrix = new THREE.Matrix4();
 function setViewModelsVisible(v) {
     viewModel.visible = leftViewModel.visible = gunViewModel.visible = swordViewModel.visible = sickleViewModel.visible = axeViewModel.visible = bowViewModel.visible = batViewModel.visible = v;
 }
-// 床に広がる輪: 円くくり抜かれて広がるグリッドの縁に、細い線を引いて輪郭をはっきりさせる
+// 床に広がる輪: 円くくり抜かれて広がるグリッドの縁に、細い線を引いて輪郭をはっきりさせる。
+// その内側を、少し遅れたこだまの輪が 2 本、細く薄く追いかける
 const RISE_RING_MAX = 160; // ここまで広がったら消す
+const RISE_RING_ECHO = 0.07; // こだまの輪の遅れ (s)
 const riseRingMat = new THREE.ShaderMaterial({
-    uniforms: { uRadius: { value: 0 }, uRiseOrigin: riseOrigin, uColor: { value: new THREE.Color(0x333333) } },
+    uniforms: { uRadius: { value: new THREE.Vector3() }, uRiseOrigin: riseOrigin, uColor: { value: new THREE.Color(0x333333) } },
     vertexShader: /* glsl */ `
     varying vec2 vPos;
     void main() {
@@ -2628,15 +3582,18 @@ const riseRingMat = new THREE.ShaderMaterial({
     }
   `,
     fragmentShader: /* glsl */ `
-    uniform float uRadius;
+    uniform vec3 uRadius;
     uniform vec2 uRiseOrigin;
     uniform vec3 uColor;
     varying vec2 vPos;
+    float ring(float d, float r, float thin) {
+      if (r <= 0.0) return 0.0;
+      float w = (0.12 + r * 0.012) * thin; // 遠くへ行くほど速いので、線も太らせる
+      return (1.0 - smoothstep(0.0, w, abs(d - r))) * (1.0 - smoothstep(30.0, ${RISE_RING_MAX.toFixed(1)}, r));
+    }
     void main() {
       float d = distance(vPos, uRiseOrigin);
-      float w = 0.12 + uRadius * 0.012; // 遠くへ行くほど速いので、線も太らせる
-      float front = 1.0 - smoothstep(0.0, w, abs(d - uRadius));
-      float a = front * 0.5 * (1.0 - smoothstep(30.0, ${RISE_RING_MAX.toFixed(1)}, uRadius));
+      float a = max(ring(d, uRadius.x, 1.0) * 0.5, max(ring(d, uRadius.y, 0.6) * 0.28, ring(d, uRadius.z, 0.4) * 0.15));
       if (a < 0.003) discard;
       gl_FragColor = vec4(uColor, a);
     }
@@ -2651,12 +3608,14 @@ riseRing.visible = false;
 scene.add(riseRing);
 // t はせり上がりを始めてからの時間（負なら何も出ていない）。すべて伸びきったら true
 let riseSlamDone = false;
+const stageProps = []; // 入ったステージに置いた、ボスの機体
 function applyStageRise(t) {
     let done = true;
     // 輪の半径は、その時刻に影が落ち始める距離（遅れ = RISE_WAVE * √距離 の逆）
-    const ringR = t > 0 ? (t / RISE_WAVE) ** 2 : 0;
-    riseRing.visible = t > 0 && ringR < RISE_RING_MAX;
-    riseRingMat.uniforms.uRadius.value = ringR;
+    const ringAt = (tt) => (tt > 0 ? (tt / RISE_WAVE) ** 2 : 0);
+    const ringR = ringAt(t);
+    riseRing.visible = t > 0 && ringAt(t - 2 * RISE_RING_ECHO) < RISE_RING_MAX;
+    riseRingMat.uniforms.uRadius.value.set(ringR, ringAt(t - RISE_RING_ECHO), ringAt(t - 2 * RISE_RING_ECHO));
     groundReveal.value = t === Infinity ? GROUND_REVEAL_ALL : ringR;
     let slams = 0;
     for (const r of risers) {
@@ -2676,14 +3635,22 @@ function applyStageRise(t) {
         else if (r.ramp)
             rampMatrix(r.ramp, h, riseMatrix);
         else
-            riseMatrix.makeScale(b.maxX - b.minX, h, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ);
+            boxMatrixFor(b, h, riseMatrix);
         r.mesh.setMatrixAt(r.index, riseMatrix);
-        const fill = f >= 1 ? RISE_FILL_DONE : f > 0 ? y0 + (b.h - y0) * easeInOutCubic(f) : -1;
+        const top = b.h + (b.slope?.rise ?? 0); // 傾けた箱は、高い端の上面まで埋める
+        const fill = f >= 1 ? RISE_FILL_DONE : f > 0 ? y0 + (top - y0) * easeInOutCubic(f) : -1;
         r.mesh.geometry.getAttribute('aFill').setX(r.index, fill);
-        // 高い柱が組み上がった瞬間に、ずしりと揺らす
+        // 埋めきった瞬間から、縁を太く濃く引いて細く戻す
+        const since = s - RISE_BASE_TIME - r.dur * RISE_FILL_START - r.fillDur;
+        const pulse = since >= 0 && since < RISE_PULSE_TIME ? (1 - since / RISE_PULSE_TIME) ** 2 : 0;
+        if (pulse > 0)
+            done = false;
+        r.mesh.geometry.getAttribute('aPulse').setX(r.index, pulse);
+        // 高い柱が組み上がった瞬間に、ずしりと揺らして、足もとから波紋を広げる
         if (!r.slammed && f >= 1 && b.h >= RISE_SLAM_HEIGHT && t !== Infinity) {
             r.slammed = true;
             slams++;
+            spawnRiseRipple(b, t);
         }
     }
     // 揺らすのは入場ごとに 1 度だけ（高い箱がいくつも順に組み上がるステージで、揺れと音が続かないように）
@@ -2695,7 +3662,10 @@ function applyStageRise(t) {
     for (const mesh of riseMeshes) {
         mesh.instanceMatrix.needsUpdate = true;
         mesh.geometry.getAttribute('aFill').needsUpdate = true;
+        mesh.geometry.getAttribute('aPulse').needsUpdate = true;
     }
+    if (updateRiseRipples(t))
+        done = false;
     const lk = THREE.MathUtils.clamp((t - RISE_LINE_DELAY) / RISE_LINE_TIME, 0, 1);
     if (lk < 1)
         done = false;
@@ -2712,6 +3682,9 @@ function applyStageRise(t) {
             done = false;
         e.root.position.y = e.baseY - (DUMMY_HEIGHT + 0.1) * (1 - easeOutQuart(dk));
     }
+    // ボスの機体は、ステージの箱が組み上がりきってから現れる
+    for (const prop of stageProps)
+        prop.visible = t >= arenaRiseEnd;
     return done;
 }
 function updateStageRise(dt) {
@@ -2724,7 +3697,7 @@ function updateStageRise(dt) {
         sfx.stopStageRise();
     }
 }
-const STAGE_BUILDERS = { station: buildStation, warehouse: buildWarehouse, parking: buildParking };
+const STAGE_BUILDERS = { station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
 let pendingStage = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
@@ -2765,6 +3738,10 @@ function addStageLines(layout, parent) {
 }
 function enterStage(id) {
     const layout = STAGE_BUILDERS[id]();
+    if (stageRoot) {
+        scene.remove(stageRoot);
+        stageRoot = null;
+    }
     scene.remove(arenaRoot);
     blocks.length = 0;
     ramps.length = 0;
@@ -2785,8 +3762,11 @@ function enterStage(id) {
     enemySpawns = layout.enemySpawns;
     stageLead = layout.lead;
     stageGuest = layout.guest;
+    stageMix = layout.mix;
     const hasEnemies = enemySpawns.length > 0;
-    for (let i = 0; hasEnemies && i < STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]]; i++) {
+    // リフトでは難易度にかかわらず同じ数の敵を出す。
+    const enemyCount = layout.shaft ? STAGE_ENEMY_COUNT.normal : STAGE_ENEMY_COUNT[DIFFICULTIES[difficultyIndex]];
+    for (let i = 0; hasEnemies && !layout.boss && i < enemyCount; i++) {
         setEn(createEnemy(true));
         en.alive = false;
         en.root.visible = false;
@@ -2801,14 +3781,14 @@ function enterStage(id) {
     const root = new THREE.Group();
     scene.add(root);
     stageRoot = root;
-    if (hasEnemies)
-        beginStageRun();
+    if (hasEnemies || layout.boss)
+        beginStageRun(!!layout.boss);
     // 見た目の箱は、線の引き方と格子の起点ごとに 1 つのメッシュにまとめる。遠景は操作を返すのを待たないので別にする
     for (const [list, inArena] of [[[...layout.boxes, ...layout.decor], true], [layout.scenery, false]]) {
         for (const group of groupStageBoxes(list))
             addBoxes(group, stageMaterial(group[0]), (b) => b.light, root, inArena, stageGeo(group[0]));
     }
-    for (const group of groupStageBoxes(layout.ramps ?? []))
+    for (const group of groupStageBoxes((layout.ramps ?? []).filter((r) => !r.hidden)))
         addRamps(group, stageMaterial(group[0]), root);
     blocks.push(...mergeBoxes([...layout.boxes, ...layout.colliders]));
     ramps.push(...(layout.ramps ?? []));
@@ -2823,8 +3803,40 @@ function enterStage(id) {
         });
         addMover(m, roots);
     }
+    // 昇り続けるリフトのシャフト: 区切りを上下に並べて 1 つの親にまとめ、親ごと下へ流す。地面は消す
+    const shaft = layout.shaft;
+    let shaftRoot = null;
+    if (shaft) {
+        shaftRoot = new THREE.Group();
+        root.add(shaftRoot);
+        for (const [list, shadow] of [[shaft.walls, false], [shaft.tile, true]]) {
+            for (const group of groupStageBoxes(shaftCopies(list, shaft.period))) {
+                const mesh = addBoxes(group, stageMaterial(group[0], true), (b) => b.light, shaftRoot, false, stageGeo(group[0]));
+                mesh.castShadow = shadow;
+            }
+        }
+    }
+    setShaft(shaft ?? null, shaftRoot);
+    setLiftTraps(shaft ?? null, DIFFICULTIES[difficultyIndex], bounds, root);
+    showGround(!shaft);
+    // リフトの床の外は底なし（倒した敵の破片は落ちていく）。床の板は動ける範囲より少し広い
+    groundArea.value = shaft ? { minX: bounds.minX - 0.4, maxX: bounds.maxX + 0.4, minZ: bounds.minZ - 0.4, maxZ: bounds.maxZ + 0.4 } : null;
     for (const line of addStageLines(layout, root))
         riseLines.push(line);
+    stageProps.length = 0;
+    clearBoss();
+    if (layout.boss) {
+        // ボスが突き破る外壁: 壊れる前と後を、ほかの箱とは別のメッシュにして、突き破った瞬間に入れ替える
+        const wall = { intact: new THREE.Group(), broken: new THREE.Group() };
+        const breach = layout.boss.breach;
+        for (const [list, g] of [[breach?.intact ?? [], wall.intact], [breach?.broken ?? [], wall.broken]]) {
+            root.add(g);
+            for (const group of groupStageBoxes(list))
+                addBoxes(group, stageMaterial(group[0]), (b) => b.light, g, true, stageGeo(group[0]));
+        }
+        wall.broken.visible = false;
+        stageProps.push(spawnBoss(root, layout.boss, bounds, wall, multiplayerRun ? multiplayerPartySize() : 1));
+    }
     // 前後の端（線路が続いていく先）に、近づくと浮かぶ境界の壁を立てる
     const width = bounds.maxX - bounds.minX;
     for (const z of [bounds.minZ, bounds.maxZ]) {
@@ -2833,7 +3845,7 @@ function enterStage(id) {
         root.add(wall);
     }
     // ストライカーの道のりは、床と出現位置の高さの分を入る前（暗転の間）に調べておく（遊んでいる途中で調べると引っかかる）
-    resetStrikerNav(stageLead === 'striker' || stageGuest === 'striker' ? [...new Set([0, ...enemySpawns.map((s) => s.y)])] : []);
+    resetStrikerNav(stageLead === 'striker' || stageGuest === 'striker' || DIFFICULTIES.some((d) => stageMix?.[d].striker) ? [...new Set([0, ...enemySpawns.map((s) => s.y)])] : []);
     applyStageRise(-Infinity);
 }
 // タイトルの見た目にする: カメラを見下ろしの位置へ置き、ステージをすべて地面の下へしまう
@@ -2873,17 +3885,17 @@ function getStagePreview(id) {
     const root = new THREE.Group();
     // 動く物は動き出す前の位置に置いておく
     const movers = (layout.movers ?? []).flatMap((m) => m.parts.flatMap((p) => [...p.boxes, ...p.decor]));
-    for (const group of groupStageBoxes([...layout.boxes, ...layout.decor, ...layout.scenery, ...movers])) {
+    const shaft = layout.shaft ? shaftCopies([...layout.shaft.walls, ...layout.shaft.tile], layout.shaft.period) : [];
+    for (const group of groupStageBoxes([...layout.boxes, ...layout.decor, ...layout.scenery, ...movers, ...shaft])) {
         const mesh = new THREE.InstancedMesh(stageGeo(group[0]), stageMaterial(group[0]), group.length);
         group.forEach((b, i) => {
-            const y0 = b.y0 ?? 0;
-            mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));
+            mesh.setMatrixAt(i, boxMatrixFor(b, b.h - (b.y0 ?? 0), boxMatrix));
             mesh.setColorAt(i, boxColor.setHSL(0, 0, b.light));
         });
         mesh.castShadow = mesh.receiveShadow = true;
         root.add(mesh);
     }
-    for (const group of groupStageBoxes(layout.ramps ?? [])) {
+    for (const group of groupStageBoxes((layout.ramps ?? []).filter((r) => !r.hidden))) {
         const mesh = new THREE.InstancedMesh(wedgeGeo, stageMaterial(group[0]), group.length);
         group.forEach((r, i) => {
             mesh.setMatrixAt(i, rampMatrix(r, r.h - r.y0, boxMatrix));
@@ -2943,9 +3955,11 @@ function updateStagePreview(dt) {
                 const { root, layout } = previews.get(previewShown);
                 root.visible = true;
                 riseOrigin.value.set(layout.start.x, layout.start.z);
+                showGround(!layout.shaft);
             }
             else {
                 riseOrigin.value.copy(TITLE_RISE_ORIGIN);
+                showGround(true);
             }
         }
     }
@@ -3001,6 +4015,7 @@ function switchToStage() {
     if (pendingStage) {
         enterStage(pendingStage);
         game.wantWeapon = game.shownWeapon = selectedLoadout(); // 選んだ武器を構えた状態で始める
+        game.weaponLocked = true;
         game.holster = 0;
     }
     endOverlayLeave();
@@ -3018,9 +4033,11 @@ function updateStageIntro(dt) {
             switchToStage();
         return;
     }
-    // 帯が抜けるのに合わせて、少し広げた視野から元へ縮めて像を結ぶ
+    updateBossEntrance(dt);
+    setLetterbox(bossEntranceView.bars);
+    // 帯が抜けるのに合わせて、少し広げた視野から元へ縮めて像を結ぶ（ボスの登場では、その演出の視野を足す）
     const k = THREE.MathUtils.clamp((introT - INTRO_REVEAL_TIME) / INTRO_APPEAR_TIME, 0, 1);
-    camera.fov = BASE_FOV + (1 - easeOutQuart(k)) * INTRO_FOV_BONUS;
+    camera.fov = BASE_FOV + (1 - easeOutQuart(k)) * INTRO_FOV_BONUS + bossEntranceView.fov;
     camera.updateProjectionMatrix();
     // ゲームの時間は止めているので、柱が収まったときの揺れはここで進めて収める
     cameraFx.trauma = Math.max(0, cameraFx.trauma - dt * 1.5);
@@ -3039,7 +4056,10 @@ function updateStageIntro(dt) {
         // 叩きつけの少し前から高まる音を鳴らし始め、鳴り終わる瞬間に叩きつける
         const untilAppear = INTRO_REVEAL_TIME + INTRO_APPEAR_TIME - introT;
         const untilBuilt = riseT < 0 ? 0 : arenaRiseEnd - (riseT - INTRO_RISE_DELAY);
-        if (titleRiserT < 0 && Math.max(untilAppear, untilBuilt) <= sfx.TITLE_RISER_TIME) {
+        // ボスのいるステージでは、組み上がりきってからボスが降ってくる。タイトルはボスが砲を向けた瞬間に叩きつける
+        if (bossEntranceLeft() === Infinity && k >= 1 && arenaDone)
+            startBossEntrance();
+        if (titleRiserT < 0 && Math.max(untilAppear, untilBuilt, bossEntranceLeft()) <= sfx.TITLE_RISER_TIME) {
             titleRiserT = 0;
             sfx.playTitleRiser();
         }
@@ -3072,6 +4092,8 @@ function startStageTitle() {
 }
 function finishStageIntro() {
     introT = -1;
+    endBossEntrance();
+    setLetterbox(0);
     titleT = -1;
     camera.fov = BASE_FOV;
     camera.updateProjectionMatrix();
@@ -3094,6 +4116,7 @@ const debugAttack = ATTACKS[debugParams.get('attack') ?? ''];
 const debugSword = SWORD_ATTACKS[debugParams.get('sword') ?? ''];
 const debugAxe = AXE_ATTACKS[debugParams.get('axe') ?? ''];
 const debugBat = BAT_ATTACKS[debugParams.get('bat') ?? ''];
+const debugSpear = SPEAR_ATTACKS[debugParams.get('spear') ?? ''];
 if (debugAttack) {
     runAttackDebug(debugAttack, debugParams);
 }
@@ -3105,6 +4128,9 @@ else if (debugAxe) {
 }
 else if (debugBat) {
     runBatDebug(debugBat, debugParams);
+}
+else if (debugSpear) {
+    runSpearDebug(debugSpear, debugParams);
 }
 else if ((debugParams.get('stage') ?? '') in STAGE_BUILDERS) {
     runStageDebug(debugParams);
@@ -3153,26 +4179,35 @@ else {
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
         const rawFrame = clock.getDelta();
+        endPerfFrame(rawFrame); // 前のフレームの分を数えてから、このフレームの数え直しを始める
+        beginPerfFrame();
         const realFrame = Math.min(rawFrame, 0.05);
+        updateMultiplayer(realFrame);
+        if (multiplayerSessionLost)
+            return;
         // パッドの視点は「倒している時間 × 速さ」で回すので、重いフレームで時間を切ると回り足りずに引っかかる。
         // 視点だけは実際にかかった時間で回す（タブを離れていたときの大きな飛びだけは抑える）
         updatePad(Math.min(rawFrame, 0.25));
-        // タイトルと一時停止の間はゲームの時間を止める。画が止まっている間は描き直さず、キャンバスに残った画を見せておく
+        // ひとり用の一時停止とタイトルは止める。マルチプレイのメニュー中は入力だけ止め、世界を進める
         if (!controls.isLocked) {
             pressed.clear();
             game.attackPressed = false;
-            if (updateStagePreview(realFrame) || menuRedraw) {
-                menuRedraw = false;
-                applyCameraOffset();
-                composer.render(0);
-                camera.quaternion.copy(savedQuat);
+            const runningBehindMenu = multiplayerRun && !multiplayerSessionLost && (overlay.classList.contains('pause') || overlay.classList.contains('leaving')) && !overlay.classList.contains('over') && !overlay.classList.contains('result');
+            if (!runningBehindMenu) {
+                if (updateStagePreview(realFrame) || menuRedraw) {
+                    menuRedraw = false;
+                    applyCameraOffset();
+                    composer.render(0);
+                    camera.quaternion.copy(savedQuat);
+                }
+                return;
             }
-            return;
         }
         updateStageRise(realFrame);
         // 訓練場へ入る演出の間は、ゲームの時間を進めない（見回すことだけできる）
         if (introT >= 0) {
             updateStageIntro(realFrame);
+            updateHitFx(realFrame); // ボスの登場で出す火花や床のひび
             applyCameraOffset();
             renderTitleMask();
             composer.render(realFrame);
@@ -3182,21 +4217,32 @@ else {
         updateStageRun(realFrame);
         updatePlayerDown(realFrame);
         // 倒した直後とパリィの後、倒れた後のスローは、演出も含めて全体にかける
-        const slow = killSlowFactor(realFrame) * parrySlowFactor(realFrame) * downSlowFactor();
+        const killSlow = killSlowFactor(realFrame);
+        const parrySlow = parrySlowFactor(realFrame);
+        const downSlow = downSlowFactor();
+        sharedBossBreakTime += realFrame;
+        const sharedElapsed = Math.max(0, sharedBossBreakTime - KILL_HIT_STOP);
+        const sharedRelease = THREE.MathUtils.clamp((sharedElapsed - KILL_SLOW_HOLD) / KILL_SLOW_RELEASE, 0, 1);
+        const sharedSlow = THREE.MathUtils.lerp(KILL_SLOW_SCALE, 1, sharedRelease * sharedRelease);
+        const slow = multiplayerRun ? sharedSlow : killSlow * parrySlow * downSlow;
         const dt = realFrame * slow;
-        if (game.hitStop > 0) {
+        if (multiplayerRun)
+            game.hitStop = 0; // 個人のヒットストップは共有世界を止めない
+        if (multiplayerRun ? sharedBossBreakTime < KILL_HIT_STOP : game.hitStop > 0) {
             // ヒットストップ中は全体を止める（入力は溜めておき、揺れだけ続ける）
-            game.hitStop -= realFrame;
+            if (!multiplayerRun)
+                game.hitStop -= realFrame;
             cameraFx.shakeTime += realFrame;
         }
         else {
             game.realDt = realFrame;
-            update(dt * game.timeScale);
+            update(dt * (multiplayerRun ? 1 : game.timeScale));
         }
         updateDummyShake();
         updateHitFx(dt); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
         updateSpeedFx(dt);
         updateHpHud(realFrame);
+        updateBossHud();
         updateScoreHud(realFrame);
         updateHudSway(realFrame);
         sfx.updateAudio({
@@ -3204,11 +4250,12 @@ else {
             airborne: !player.onGround && !player.wallRunning,
             sliding: player.sliding && controls.isLocked,
             focusing: swordState.focusing,
-            timeScale: game.timeScale * slow * kunaiState.worldSlow, // 世界だけのスローでも音はこもらせる
+            timeScale: (multiplayerRun ? 1 : game.timeScale) * slow * kunaiState.worldSlow, // 世界だけのスローでも音はこもらせる
         });
         applyCameraOffset();
         updateFinishMark();
         placeDeadEyeMarks();
+        prepareReplayFrame(realFrame, !!stageRun && (stageRun.running || stageRun.clearedT >= 0));
         composer.render(dt);
         camera.quaternion.copy(savedQuat);
     });

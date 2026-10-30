@@ -19,7 +19,7 @@ function dummyBone(parent: THREE.Object3D, x: number, y: number, z = 0) {
   parent.add(g);
   return g;
 }
-const DUMMY_HIP_Y = 0.9;
+export const DUMMY_HIP_Y = 0.9;
 const DUMMY_KNEE_Y = 0.52;
 export const DUMMY_ANKLE_Y = 0.09;
 export const DUMMY_LEG_X = 0.11;

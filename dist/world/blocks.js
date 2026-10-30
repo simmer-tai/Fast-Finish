@@ -10,6 +10,20 @@ export const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 boxGeo.translate(0.5, 0.5, 0.5);
 export const boxMatrix = new THREE.Matrix4();
 export const boxColor = new THREE.Color();
+// 箱を置く行列。height は底面からの高さ（せり上がりの途中では縮める）。
+// slope のある箱は、行列にずらしを入れて、up の向きへ進むほど rise だけ持ち上げる（StageBox の slope）
+export function boxMatrixFor(b, height, out) {
+    out.makeScale(b.maxX - b.minX, height, b.maxZ - b.minZ).setPosition(b.minX, b.y0 ?? 0, b.minZ);
+    const sl = b.slope;
+    if (!sl)
+        return out;
+    const e = out.elements; // 列ごとに並ぶ: e[4 * 列 + 行]
+    const sign = sl.up[0] === '+' ? 1 : -1;
+    e[4 * (sl.up[1] === 'x' ? 0 : 2) + 1] = sign * sl.rise;
+    if (sign < 0)
+        e[13] += sl.rise; // 負の向きへ上るものは、原点の側（最小の角）が高い端
+    return out;
+}
 export const ramps = [];
 // 坂の上面の高さ。(x, z) は坂の範囲に収めてから渡す
 export function rampTop(r, x, z) {
@@ -122,17 +136,26 @@ export const EDGE_DARK = 0.5;
 export const EDGE_FADE_NEAR = 25;
 export const EDGE_FADE_FAR = 90;
 // origin を渡すと、その点を格子の起点にする（省けば世界の原点）。格子からずれた所に置く物の縁に線を乗せるのに使う。
-// local なら、メッシュの位置を動かしても格子が面に付いてくる（動く物に使う）
+// local なら、メッシュの位置を動かしても格子が面に付いてくる（動く物に使う）。
+// 'part' なら、置いた形ごとに、その形の縁を起点にして形の面に沿った格子を引く（回して置く部品の組み立て。ボスの機体に使う）
 export const gridMaterial = (body, origin, local = false) => {
     const o = origin ? `vec3(${origin.x.toFixed(3)}, ${origin.y.toFixed(3)}, ${origin.z.toFixed(3)})` : 'vec3(0.0)';
     const model = local ? '' : 'modelMatrix * ';
+    // 形の中の位置 (m): 0..1 の立方体に収めた形を、置いたときの伸ばし方（行列の各軸の長さ）で引き伸ばしたもの
+    const gridPos = local === 'part'
+        ? 'transformed * vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz))'
+        : `(${model}instanceMatrix * vec4(transformed, 1.0)).xyz - ${o}`;
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    // three.js はシェーダーの使い回しを onBeforeCompile の中身で見分けるので、線の引き方・起点・座標の取り方ごとに別の名前を付ける
+    // （付けないと、先に作った別の引き方のシェーダーが使い回される）
+    const key = `grid|${body}|${o}|${local}`;
+    mat.customProgramCacheKey = () => key;
     mat.onBeforeCompile = (shader) => {
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', '#include <common>\nvarying vec3 vGridPos;\nvarying vec3 vGridNormal;\nvarying vec2 vEdgeUv;')
             .replace('#include <project_vertex>', `#include <project_vertex>
-        vGridPos = (${model}instanceMatrix * vec4(transformed, 1.0)).xyz - ${o};
-        vGridNormal = ${INSTANCE_NORMAL};
+        vGridPos = ${gridPos};
+        vGridNormal = ${local === 'part' ? 'objectNormal' : INSTANCE_NORMAL};
         vEdgeUv = uv;`);
         shader.fragmentShader = shader.fragmentShader
             .replace('#include <common>', `#include <common>
@@ -186,8 +209,7 @@ export const STRUCT_GRID = `
 export function addBoxes(list, mat, lightness, parent, inArena = true, geo = boxGeo) {
     const mesh = new THREE.InstancedMesh(geo.clone(), withRiseBuild(mat), list.length);
     list.forEach((b, i) => {
-        const y0 = b.y0 ?? 0;
-        mesh.setMatrixAt(i, boxMatrix.makeScale(b.maxX - b.minX, b.h - y0, b.maxZ - b.minZ).setPosition(b.minX, y0, b.minZ));
+        mesh.setMatrixAt(i, boxMatrixFor(b, b.h - (b.y0 ?? 0), boxMatrix));
         mesh.setColorAt(i, boxColor.setHSL(0, 0, lightness(b)));
         addRiser(mesh, i, b, inArena);
     });
@@ -207,9 +229,13 @@ export function addRamps(list, mat, parent) {
     parent.add(mesh);
     return mesh;
 }
+// 地面の広がり。null なら果てまで地面（y = 0）。宙に浮いたリフトのステージでは、リフトの床の外を底なしにする
+export const groundArea = { value: null };
+const NO_FLOOR = -1e4;
 // 足元の高さ: 箱の上に落ちたら箱の上面、それ以外は地面
 export function floorAt(x, z, y) {
-    let floor = 0;
+    const g = groundArea.value;
+    let floor = !g || (x >= g.minX && x <= g.maxX && z >= g.minZ && z <= g.maxZ) ? 0 : NO_FLOOR;
     for (const b of blocks) {
         if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && y >= b.h - 0.1)
             floor = Math.max(floor, b.h);

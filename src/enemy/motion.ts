@@ -15,6 +15,7 @@ import { position } from '../player/state.js';
 import { rand } from '../random.js';
 import { impact, spawnSparks } from '../fx/hitFx.js';
 import { moverThreat } from '../world/movers.js';
+import { camera } from '../core.js';
 
 // ---- 打ち上げられた敵 ----
 // 斧の打ち上げで真上へ飛び、プレイヤーと同じ重力で落ちる。浮いている間は歩かず撃たない。
@@ -43,6 +44,54 @@ export function updateEnemyAir(dt: number) {
     }
   }
   en.root.position.y = en.baseY + en.airY;
+}
+
+// ---- 飛び移る ----
+// 今いる所から to の床へ、少し跳ね上がってから重力で落ちて着く（ストライカーの飛び降り、リフトへの飛び乗り）。
+// 横へは着くまでの時間で一定に進む。浮いている間は脚を縮め、着く少し前から伸ばして床を迎える
+export const LEAP_HOP = 3.5; // 踏み切るときに跳ね上がる速さ (m/s)
+export function startLeap(to: THREE.Vector3) {
+  const p = en.root.position;
+  en.dropFrom.copy(p);
+  en.dropTo.copy(to);
+  en.dropT = 0;
+  en.dropDur = (LEAP_HOP + Math.sqrt(LEAP_HOP ** 2 + 2 * GRAVITY * Math.max(0, p.y - to.y))) / GRAVITY;
+  en.vel.set(0, 0, 0);
+  en.knockVel.set(0, 0, 0);
+  en.airY = en.airVel = 0;
+  en.pelvisSpring.v.y -= 1.2; // 膝を沈めて踏み切る
+}
+// 着いたフレームだけ true を返す
+const leapSparkAt = new THREE.Vector3();
+export function updateLeap(dt: number): boolean {
+  const p = en.root.position;
+  en.dropT = Math.min(en.dropT + dt, en.dropDur);
+  const u = en.dropT / en.dropDur;
+  p.x = THREE.MathUtils.lerp(en.dropFrom.x, en.dropTo.x, u);
+  p.z = THREE.MathUtils.lerp(en.dropFrom.z, en.dropTo.z, u);
+  const y = en.dropFrom.y + LEAP_HOP * en.dropT - 0.5 * GRAVITY * en.dropT ** 2;
+  en.baseY = Math.max(en.dropTo.y, y);
+  p.y = en.baseY + en.airY;
+  en.airPose = Math.min(1, en.dropT / 0.12) * THREE.MathUtils.clamp((en.baseY - en.dropTo.y) / 1.2, 0, 1);
+  if (u < 1) return false;
+  // 着地: 速さに応じて膝を深く沈め、上体を前へ倒し込む
+  const impact = GRAVITY * en.dropDur - LEAP_HOP;
+  en.baseY = en.dropTo.y;
+  p.y = en.baseY + en.airY;
+  en.pelvisSpring.v.y -= Math.min(3, impact * 0.18);
+  addImpulse(en.leanSpring, LEG_FWD_X, Math.min(2, impact * 0.12));
+  spawnSparks(leapSparkAt.set(p.x, en.baseY + 0.05, p.z), UP, 6, 0.6, 0.5);
+  const s = enemySoundAt(Math.hypot(position.x - p.x, position.z - p.z));
+  sfx.playStrikerLand(impact, s.volume, s.pan);
+  return true;
+}
+// 敵のいる向きの左右と距離から、音の左右と大きさを決める
+const panTmp = new THREE.Vector3();
+export function enemySoundAt(dist: number) {
+  camera.updateMatrixWorld();
+  panTmp.copy(en.root.position).applyMatrix4(camera.matrixWorldInverse);
+  const pan = THREE.MathUtils.clamp(panTmp.x / Math.max(Math.hypot(panTmp.x, panTmp.z), 1e-3), -1, 1) * 0.8;
+  return { volume: THREE.MathUtils.clamp(3 / Math.max(dist, 1), 0.3, 1), pan };
 }
 
 // ---- 床への叩きつけ ----
@@ -261,10 +310,12 @@ export function enemyApartAt(x: number, z: number): boolean {
 }
 
 // 次の立ち位置を選ぶ。間合いに合わせた向きで探し、見つからなければどの向きでも探す
+const enemyPlayerTarget = new THREE.Vector3();
 export function pickMoveTarget(): boolean {
   const p = en.root.position;
-  const toPlayer = Math.atan2(position.x - p.x, position.z - p.z);
-  const dist = Math.hypot(position.x - p.x, position.z - p.z);
+  if (!env.targetPlayer(enemyPlayerTarget)) return false;
+  const toPlayer = Math.atan2(enemyPlayerTarget.x - p.x, enemyPlayerTarget.z - p.z);
+  const dist = Math.hypot(enemyPlayerTarget.x - p.x, enemyPlayerTarget.z - p.z);
   let base = toPlayer + (Math.random() < 0.5 ? -1 : 1) * (Math.PI / 2); // 程よい間合いなら横へ回り込む
   let spread = 45 * DEG;
   if (dist > ENEMY_KEEP_FAR) {
@@ -311,6 +362,7 @@ export function carEvadeDir(): THREE.Vector3 | null {
 export function updateEnemyMove(dt: number) {
   if (!en.mobile) return;
   const p = en.root.position;
+  if (!env.targetPlayer(enemyPlayerTarget)) enemyPlayerTarget.copy(position);
   moveWant.set(0, 0, 0);
   const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || env.isHeld() || env.playerHp() <= 0 || en.airY > 0
     || en.knockVel.lengthSq() > ENEMY_KNOCK_STOP ** 2;
@@ -321,7 +373,7 @@ export function updateEnemyMove(dt: number) {
     en.dodgeT = Math.max(en.dodgeT, 0.15); // 車が来なくなるまで、毎フレーム延ばす
     en.moving = false;
   }
-  const playerDist = Math.hypot(position.x - p.x, position.z - p.z);
+  const playerDist = Math.hypot(enemyPlayerTarget.x - p.x, enemyPlayerTarget.z - p.z);
   if (en.dodgeT > 0) {
     en.dodgeT -= dt;
     moveWant.copy(en.dodgeVel);
@@ -332,7 +384,7 @@ export function updateEnemyMove(dt: number) {
     const d = Math.hypot(dx, dz);
     // 行く手のすぐ先に、ほかの敵かプレイヤーがいたら止まる
     const blocked =
-      Math.hypot(position.x - p.x, position.z - p.z) < ENEMY_PLAYER_GAP ||
+      Math.hypot(enemyPlayerTarget.x - p.x, enemyPlayerTarget.z - p.z) < ENEMY_PLAYER_GAP ||
       enemies.some((e) => {
         if (e === en || !e.alive) return false;
         const ox = e.root.position.x - p.x;

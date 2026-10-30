@@ -3,12 +3,15 @@ import * as sfx from '../audio.js';
 
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
+// 音量は 0〜1 で、音の出口に掛ける（audio.ts の setMasterVolume）。
 // 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。次に開いたときのために覚えておく
 const OPTIONS_STORE = 'fast-finish.options';
 const RANGES = {
   mouseSens: { min: 0.1, max: 3, step: 0.1 },
   padSens: { min: 0.1, max: 3, step: 0.1 },
+  padVibration: { min: 0, max: 1, step: 0.1 },
   brightness: { min: 0.5, max: 2, step: 0.1 },
+  volume: { min: 0, max: 1, step: 0.1 },
 };
 const QUALITIES = ['low', 'medium', 'high'] as const;
 export type Quality = (typeof QUALITIES)[number];
@@ -19,7 +22,7 @@ const QUALITY_NOTES: Record<Quality, string> = {
   medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
   high: '高解像度（最大 2 倍）に、細かい影と 4x アンチエイリアス',
 };
-export const options = { mouseSens: 1, padSens: 1, brightness: 1, quality: 'high' as Quality };
+export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, volume: 1, quality: 'high' as Quality };
 try {
   const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
   for (const k of Object.keys(RANGES) as RangeKey[]) {
@@ -29,6 +32,7 @@ try {
 } catch {
   // 読めなければ初期値のまま
 }
+sfx.setMasterVolume(options.volume);
 function saveOptions() {
   try {
     localStorage.setItem(OPTIONS_STORE, JSON.stringify(options));
@@ -60,7 +64,7 @@ export function renderOptions() {
     const v = options[key];
     const { min, max } = RANGES[key];
     row.querySelector<HTMLElement>('.bar i')!.style.setProperty('--p', `${((v - min) / (max - min)) * 100}%`);
-    row.querySelector('.val')!.textContent = v.toFixed(1);
+    row.querySelector('.val')!.textContent = key === 'padVibration' && v === 0 ? 'OFF' : v.toFixed(1);
   });
   for (const b of qualityButtons) b.classList.toggle('active', b.dataset.quality === options.quality);
   qualityNote.textContent = QUALITY_NOTES[options.quality];
@@ -73,6 +77,7 @@ function setRange(key: RangeKey, v: number) {
   options[key] = v;
   saveOptions();
   if (key === 'brightness') hooks.onBrightness();
+  if (key === 'volume') sfx.setMasterVolume(v);
   renderOptions();
   return true;
 }
@@ -104,10 +109,10 @@ export function onOptionsClick(target: HTMLElement) {
   renderOptions();
 }
 export function onOptionsKey(e: KeyboardEvent) {
-  const dir = { ArrowUp: -1, KeyW: -1, ArrowDown: 1, KeyS: 1 }[e.code];
-  const side = { ArrowLeft: -1, KeyA: -1, ArrowRight: 1, KeyD: 1 }[e.code];
+  const dir = { ArrowUp: -1, ArrowDown: 1 }[e.code];
+  const side = { ArrowLeft: -1, ArrowRight: 1 }[e.code];
   if (e.code === 'Escape' || e.code === 'KeyO') return hooks.onClose();
-  if (e.code === 'Enter' || e.code === 'NumpadEnter') return e.preventDefault(); // 開いている間は始めない
+  if (e.code === 'Enter') return e.preventDefault(); // 開いている間は始めない
   if (dir) {
     e.preventDefault();
     const next = THREE.MathUtils.clamp(optionIndex + dir, 0, optionRows.length - 1);

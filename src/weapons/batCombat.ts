@@ -12,6 +12,7 @@ import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js';
 import { knockEnemy } from '../enemy/motion.js';
 import { SWING_SAMPLE, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
+import { tryWallHit } from './wallHit.js';
 
 // ---- バット ----
 // 取り出しと攻撃。攻撃は左クリックで 3 段: 右から左へ横に振り抜き、左から右へ切り返し、締めに頭上から叩きつける。
@@ -269,14 +270,16 @@ function batPointAt(def: BatAttackDef, t: number, out: THREE.Vector3) {
 }
 const batTmpHit = newBatPose();
 function tryBatHit(def: BatAttackDef) {
-  if (!hooks.dummyInReach(BAT_REACH, BAT_HIT_ANGLE)) return;
+  const reached = hooks.dummyInReach(BAT_REACH, BAT_HIT_ANGLE);
   camera.updateMatrixWorld();
   batPointAt(def, Math.max(0, batState.time - SWING_SAMPLE), batSwing);
   batSwing.subVectors(batPointAt(def, batState.time + SWING_SAMPLE, batHitAt), batSwing);
+  if (!reached) return void tryWallHit('bat', BAT_REACH, 'blunt', batSwing, def.fx ?? 1); // 空振り: 壁や床に届いていれば弾かれる
   batPointAt(def, batState.time, batHitAt);
   hooks.hitPointFromTip(batHitAt, hitPoint);
+  const onBoss = hooks.bossTargeted(); // ボスはかっ飛ばさない
   hooks.applyHit(def, hitPoint, 'bat', batSwing);
-  if (!en.alive) return;
+  if (onBoss || !en.alive) return;
   if (def.fling) flingBatEnemy(def.fling);
   else knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK); // 普通の振りは、当たった向きへ押し下げる
 }

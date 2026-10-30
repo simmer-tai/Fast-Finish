@@ -1,18 +1,21 @@
 import * as THREE from 'three';
+import { rumble } from '../player/rumble.js';
 import * as sfx from '../audio.js';
-import { DEG } from '../math.js';
+import { DEG, UP } from '../math.js';
 import { camera, scene } from '../core.js';
 import { swordState } from '../weapons/swordCombat.js';
 import { batState } from '../weapons/batCombat.js';
+import { SPEAR_GUARD_ON, spearState } from '../weapons/spearCombat.js';
 import { SWORD_DRAW } from '../weapons/swordAttacks.js';
 import { bullets, tracerGeo } from '../weapons/handgunCombat.js';
 import { kunaiState } from '../weapons/kunaiCombat.js';
 import { spawnSparks } from '../fx/hitFx.js';
 import { ENEMY_BULLET_RANGE, aimTarget, enemyBody, enemyOnBody, enemyOnPath, enemyPath } from '../enemy/fire.js';
+import { bossReturnPoint } from '../enemy/boss.js';
 import { game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
 // ---- パリィ ----
-// クナイや刀を振っている間（斬撃の軌跡が出ている前後）に、正面から体へ向かってくる弾が間合いへ入ったら弾き返す。
+// クナイや刀を振っている間（斬撃の軌跡が出ている前後）や、槍の風車受けの間に、正面から体へ向かってくる弾が間合いへ入ったら弾き返す。
 // 弾き返した弾は敵の胸へまっすぐ飛び、自分の銃弾と同じように当たる
 // 本体からも読み書きする値
 export const parryState = {
@@ -23,7 +26,7 @@ export const PARRY_THREAT = 0.7; // 弾の進む線が体の芯からこれ以�
 export const PARRY_ANGLE = 80 * DEG; // 視線からこの角度以内の向きから来た弾だけを弾く
 export const PARRY_EARLY = 0.05; // 軌跡が出る少し前から
 export const PARRY_LATE = 0.08; // 軌跡が消えた少し後まで
-export const PARRY_HIT_STOP = 0.18; // 世界を止める長さ（実時間）。この間は画面を白黒にする
+export const PARRY_HIT_STOP = 0.10; // 世界を止める長さ（実時間）。この間は画面を白黒にする
 export const PARRY_INVERT_TIME = 0.035; // 弾いた瞬間だけ白黒を反転させる
 // 止まったあと、いきなり戻さずスローを挟み、跳ね返った弾が敵へ飛んでいくのを見せる（どれも実時間）
 export const PARRY_SLOW_SCALE = 0.3;
@@ -74,6 +77,9 @@ export function parryActive() {
     // バットは振り抜いている間、弾を打ち返す
     if (batParrying())
         return batState.attack.trails.some((w) => inParryWindow(batState.time, w));
+    // 槍は風車受けで回しきっている間ずっと
+    if (game.shownWeapon === 'spear' && spearState.guard > SPEAR_GUARD_ON)
+        return true;
     return false;
 }
 // enemyPath（この 1 歩で弾が進む線分）が入っている前提で呼ぶ
@@ -99,7 +105,9 @@ export function tryParry(b) {
     const bat = batParrying(); // バットで打ち返した弾は打球にする（handgunCombat.ts）
     const dir = new THREE.Vector3();
     const shooter = b.from;
-    if (shooter?.alive)
+    if (b.bossPart && bossReturnPoint(b.bossPart, dir))
+        dir.sub(parryAt).normalize(); // ボスの弾は撃った砲へ
+    else if (shooter?.alive)
         dir.set(shooter.root.position.x, shooter.root.position.y + 1.3, shooter.root.position.z).sub(parryAt).normalize();
     else
         dir.copy(b.dir).negate();
@@ -116,6 +124,7 @@ export function tryParry(b) {
     game.hitStopTotal = game.hitStop;
     game.hitStopShakesDummy = false;
     parryState.parryFxAge = 0;
+    rumble('parry');
     spawnSparks(parryAt, parryAim.copy(dir), 12 + Math.floor(Math.random() * 5), 0.8, 0.7);
     sfx.playParry(PARRY_HIT_STOP);
     if (bat)
@@ -123,6 +132,31 @@ export function tryParry(b) {
     hooks.addTrauma(bat ? 0.25 : 0.15);
     kickVel.x += 0.8 * DEG * 22;
     return true;
+}
+// 参加者が弾いた弾はホスト側で飛ばし、ボスへの命中もホストが処理する。
+export function reflectRemoteBossBullet(b, at, bat) {
+    const dir = new THREE.Vector3();
+    if (b.bossPart && bossReturnPoint(b.bossPart, dir))
+        dir.sub(at).normalize();
+    else if (b.from?.alive)
+        dir.set(b.from.root.position.x, b.from.root.position.y + 1.3, b.from.root.position.z).sub(at).normalize();
+    else
+        dir.copy(b.dir).negate();
+    const mesh = new THREE.Mesh(tracerGeo, parryTracerMat);
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    bullets.push({ pos: at.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, parried: true, batted: bat });
+    spawnSparks(at, dir, 14, 0.8, 0.7);
+}
+export function remoteParryEffect(at, mine) {
+    spawnSparks(at, UP, 14, 0.8, 0.7);
+    if (!mine)
+        return;
+    rumble('parry');
+    parryState.parryFxAge = 0;
+    sfx.playParry(PARRY_HIT_STOP);
+    hooks.addTrauma(0.15);
+    kickVel.x += 0.8 * DEG * 22;
 }
 // 2 本の線分の、互いにいちばん近い点
 export const segD1 = new THREE.Vector3();

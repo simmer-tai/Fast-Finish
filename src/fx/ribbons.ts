@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { addGlow, removeGlow, type GlowSource } from './glow.js';
+import type { SkinTrail } from '../weapons/skins.js';
 
 // ---- 軌跡の帯 ----
 // 時刻つきの 2 点（tip, base）を順に並べて帯にする。古いものほど細くなり、根元側から削れて消える
@@ -192,3 +194,22 @@ export class Ribbon {
 
 // 1 フレームの間にも振りは大きく進むので、ポーズを細かい時間刻みで計算し直して弧を滑らかにする
 export const TRAIL_STEP = 1 / 240;
+
+// スキンが軌跡の色を持つときは、本体・縁・芯をその色にする（元の色は共有の値なので、書き換えずに差し替える）。
+// trail が無ければ元の色に戻す。glow なら軌跡のまわりにも光をにじませる。
+// Ribbon でない帯（クナイの斬撃の軌跡）も Mesh を持たせれば渡せる。元の色はマテリアルに覚える（いくつかの帯で共有するので）
+const ribbonGlows = new Map<THREE.Mesh, GlowSource>();
+export function tintRibbon(ribbon: { mesh: THREE.Mesh }, trail: SkinTrail | undefined) {
+  const mat = ribbon.mesh.material as THREE.ShaderMaterial;
+  const u = mat.uniforms;
+  const base = (mat.userData.baseColor ??= u.uColor.value) as THREE.Color;
+  u.uColor.value = trail ? new THREE.Color(trail.body) : base;
+  u.uEdgeColor.value = trail ? new THREE.Color(trail.edge) : RIBBON_EDGE_COLOR;
+  u.uCoreColor.value = trail ? new THREE.Color(trail.core) : RIBBON_CORE_COLOR;
+  const glow = ribbonGlows.get(ribbon.mesh);
+  if (trail?.glow && !glow) ribbonGlows.set(ribbon.mesh, addGlow(ribbon.mesh, 0, true));
+  else if (!trail?.glow && glow) {
+    removeGlow(glow);
+    ribbonGlows.delete(ribbon.mesh);
+  }
+}

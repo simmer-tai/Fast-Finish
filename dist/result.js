@@ -1,28 +1,34 @@
 // ---- ステージの結果 ----
 // 倒しきった後の結果の画面。見出しを出してから、記録を 1 行ずつ数え上げる。最後に合計を数え上げて叩きつけ、右へ巨大なランクを落として画面を揺らす。
 // 一時停止中に出すので、時間は実時間（performance.now）で進め、音は UI の AudioContext で鳴らす。
-// 途中で決定を押すと、残りを飛ばして最後の形にする
+// 途中で決定を押すと、残りを飛ばして最後の形にする。
+// 出しきって MASTERY_WAIT 秒たったら、左の記録と合計を武器の熟練度に入れ替え、稼いだ XP でゲージを伸ばす（ここは飛ばさない）。
+// 同時に、右のランクの枠をいちばん良かったキルの映像に入れ替える
 import * as sfx from './audio.js';
+import { masteryOf } from './mastery.js';
 export function fmtTime(t) {
     const cs = Math.floor(t * 100);
     return `${Math.floor(cs / 6000)}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}`;
 }
 const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
 // 最終スコア: 倒して稼いだ点数に、速く倒しきるほど大きい倍率を掛ける。受けたダメージは関係させない
-// 時間の倍率は開始時がいちばん高く、時間とともに下がって、倒した数から決める基準タイムで ×1.0 になる。
+// 時間の倍率は開始時がいちばん高く、時間とともに下がって、基準タイム par（ふつうは倒した数から決める）で ×1.0 になる。
 // それより遅くても ×1.0 のまま（下回らない）。基準タイムは画面には出さない
 const PAR_PER_KILL = 10; // 1 体あたりの基準秒数
+export const killPar = (kills) => PAR_PER_KILL * Math.max(1, kills);
 const TIME_MAX = 3; // 開始時の倍率
-function timeMultiplier(time, kills) {
-    const r = Math.min(1, time / (PAR_PER_KILL * Math.max(1, kills))); // 基準タイムとの比
+function timeMultiplier(time, par) {
+    const r = Math.min(1, time / par); // 基準タイムとの比
     return TIME_MAX - (TIME_MAX - 1) * r;
 }
-export function finalScore(killScore, time, kills) {
-    return Math.round(killScore * timeMultiplier(time, kills));
+export function finalScore(killScore, time, par) {
+    return Math.round(killScore * timeMultiplier(time, par));
 }
 // ランク: 最終スコアだけで決める。ステージごとに敵の数が違うので、しきい値は「1 体あたりの点数 × 倒した数」（目安。遊びながら詰める）
-// 時間の倍率が乗るので、1 体 5 秒ペース（×2.0）を中心に据えている。SS は S の上に置いた、詰めきった人向けの段
+// 時間の倍率が乗るので、1 体 5 秒ペース（×2.0）を中心に据えている。SS は S の上に置いた、詰めきった人向けの段。
+// SSS はほぼ届かない段: 毎回加点を +4 前後積み（500 点）、しかも 1 体 2 秒を切るペース（×2.6 以上）でやっと届く
 const RANKS = [
+    ['SSS', 1400, 'IMPOSSIBLE'],
     ['SS', 800, 'ULTIMATE'],
     ['S', 600, 'SUPERB'],
     ['A', 420, 'GREAT'],
@@ -35,7 +41,7 @@ const CHEATER_HEADSHOT_RATE = 0.9;
 function rankOf(d) {
     if (d.headshotRate !== null && d.headshotRate > CHEATER_HEADSHOT_RATE)
         return CHEATER_RANK;
-    return RANKS.find(([, per]) => d.score >= per * d.kills);
+    return RANKS.find(([, per]) => d.score >= per * d.rankScale);
 }
 // 出す順番（秒）
 const T_HEAD = 0.1; // 見出し
@@ -52,6 +58,8 @@ const timesAfterRows = (n) => {
     return { score, slam, rank, tags, menu: tags + 0.45 };
 };
 const TICK_GAP = 0.045; // 数え上げの刻みの間隔
+const MASTERY_WAIT = 3; // 出しきってから熟練度に入れ替えるまで
+const MASTERY_COUNT = 1.6; // XP を数え上げてゲージを伸ばす時間（入れ替えが出きってから）
 const view = document.querySelector('#overlay .result-view');
 const q = (sel) => view.querySelector(sel);
 const shake = q('.rv-shake');
@@ -69,7 +77,7 @@ const score = q('.rv-score');
 const scoreVal = score.querySelector('b');
 const meter = q('.rv-meter');
 const meterFill = meter.querySelector('.fill');
-// メーターの右端は S の地点。目印の位置は 1 体あたりのしきい値の比なので、倒した数によらず同じ
+// メーターの右端は SSS の地点（遠さがそのまま見えるようにする）。目印の位置は 1 体あたりのしきい値の比なので、倒した数によらず同じ
 const METER_MAX = RANKS[0][1];
 const marks = RANKS.map(([letter, per]) => {
     const mk = document.createElement('i');
@@ -89,7 +97,29 @@ function setMeter(p) {
 const rank = q('.rv-rank');
 const rankLetter = q('.rv-letter');
 const rankNote = q('.rv-rank-note');
+const clipCanvas = q('.rv-clip');
 const menu = q('.rv-menu');
+const main = q('.rv-main');
+const rowsBox = q('.rv-rows');
+const mastery = q('.rv-mastery');
+const wait = q('.rv-wait');
+wait.style.setProperty('--wait', `${MASTERY_WAIT}s`);
+const msName = q('.rv-ms-name');
+const msJa = q('.rv-ms-ja');
+const msLevel = q('.rv-ms-lv b');
+const msUp = q('.rv-ms-up');
+const msBar = q('.rv-ms-bar');
+const msGain = q('.rv-ms-gain');
+const msNext = q('.rv-ms-next');
+// 熟練度の表示を XP の量に合わせる。上がったレベルを返す
+function setMastery(xp, gained) {
+    const m = masteryOf(xp);
+    msLevel.textContent = String(m.level);
+    msBar.style.setProperty('--xp', String(m.into / m.need));
+    msGain.textContent = `+${fmtInt(gained)} XP`;
+    msNext.textContent = `${fmtInt(m.into)} / ${fmtInt(m.need)}`;
+    return m.level;
+}
 const tags = {
     time: q('[data-tag="time"]'),
     damage: q('[data-tag="damage"]'),
@@ -98,7 +128,9 @@ const tags = {
 let steps = [];
 let counts = [];
 let t0 = 0;
-let running = false;
+let running = false; // 決定で飛ばせる間（メニューを出すまで）
+let menuAt = 0; // メニューを出す時刻。飛ばしたらここまで進める
+let loop = 0; // 出し直したら前の回の毎フレームを止める
 let quiet = false; // 飛ばしている間は、途中の音を鳴らさない
 let onDone = null;
 // クラスを外して付け直し、CSS のアニメーションを最初からやり直す
@@ -154,8 +186,8 @@ export function showResult(d, done) {
     steps = [];
     counts = [];
     quiet = false;
-    for (const node of view.querySelectorAll('.show, .lock, .on, .slam'))
-        node.classList.remove('show', 'lock', 'on', 'slam');
+    for (const node of view.querySelectorAll('.show, .lock, .on, .slam, .swapped, .clip'))
+        node.classList.remove('show', 'lock', 'on', 'slam', 'swapped', 'clip');
     const [letter, , note] = rankOf(d);
     kicker.textContent = `STAGE ${d.stageNo} — ${d.stageName} / ${d.difficulty}`;
     ghost.textContent = `${d.stageName} ${d.stageName} `;
@@ -164,7 +196,7 @@ export function showResult(d, done) {
     rankNote.textContent = note;
     scoreVal.textContent = '0';
     setMeter(0);
-    const meterTo = Math.min(1, d.score / (METER_MAX * Math.max(1, d.kills)));
+    const meterTo = Math.min(1, d.score / (METER_MAX * Math.max(1, d.rankScale)));
     steps.push({
         at: T_HEAD,
         run: () => {
@@ -217,7 +249,7 @@ export function showResult(d, done) {
             // 文字が落ちきる瞬間に合わせて鳴らし、揺らす
             setTimeout(() => {
                 sfx.playResultRank(letter);
-                shakeView(letter === 'SS' ? 24 : letter === 'S' ? 18 : 12);
+                shakeView(letter === 'SSS' ? 34 : letter === 'SS' ? 24 : letter === 'S' ? 18 : 12);
                 restart(flash, 'on');
             }, quiet ? 0 : 180);
         },
@@ -244,11 +276,69 @@ export function showResult(d, done) {
             onDone?.();
         },
     });
+    menuAt = T.menu;
+    if (d.mastery)
+        addMastery(d.mastery, T.menu + MASTERY_WAIT);
+    const clip = d.clip;
+    if (clip) {
+        clipCanvas.style.aspectRatio = String(clip.aspect);
+        steps.push({
+            at: T.menu + MASTERY_WAIT,
+            run: () => {
+                rank.classList.add('clip');
+                clip.play(clipCanvas);
+            },
+        });
+    }
     steps.sort((a, b) => a.at - b.at);
     document.body.classList.add('result-shown');
     running = true;
     t0 = performance.now();
-    requestAnimationFrame(frame);
+    const id = ++loop;
+    requestAnimationFrame((now) => frame(now, id));
+}
+// 記録と合計を引っ込めて熟練度を出し、XP を数え上げる。レベルが上がったら数字を締めて LEVEL UP を添え、小さく鳴らす
+function addMastery(ms, at) {
+    steps.push({ at: at - MASTERY_WAIT, run: () => show(wait) }); // メニューと一緒に、入れ替わるまでの残りを伸ばし始める
+    msName.textContent = ms.name;
+    msJa.textContent = ms.ja;
+    let level = setMastery(ms.before, 0);
+    steps.push({
+        at,
+        run: () => {
+            main.classList.add('swapped');
+            mastery.style.top = `${rowsBox.offsetTop}px`;
+            show(mastery);
+        },
+    });
+    steps.push({
+        at: at + 0.5,
+        run: () => {
+            counts.push({
+                start: at + 0.5,
+                dur: MASTERY_COUNT,
+                lastTick: -1,
+                silent: true,
+                set: (k) => {
+                    const e = 1 - (1 - k) ** 3;
+                    const now = setMastery(ms.before + ms.gained * e, ms.gained * e);
+                    if (now > level) {
+                        level = now;
+                        restart(msLevel, 'lock');
+                        show(msUp);
+                        sfx.playResultLock();
+                    }
+                },
+                done: () => {
+                    if (setMastery(ms.before + ms.gained, ms.gained) > level) {
+                        restart(msLevel, 'lock');
+                        show(msUp);
+                        sfx.playResultLock();
+                    }
+                },
+            });
+        },
+    });
 }
 function advance(t) {
     while (steps.length && steps[0].at <= t)
@@ -260,26 +350,29 @@ function advance(t) {
             return false;
         }
         c.set(Math.max(0, k));
-        if (!quiet && t - c.lastTick >= TICK_GAP) {
+        if (!quiet && !c.silent && t - c.lastTick >= TICK_GAP) {
             c.lastTick = t;
             sfx.playResultTick(k);
         }
         return true;
     });
 }
-function frame(now) {
-    if (!running)
+// メニューを出した後も、熟練度の入れ替えが終わるまでは進める。タイトルへ戻って画面が消えたらやめる
+function frame(now, id) {
+    if (id !== loop || !view.offsetParent)
         return;
     advance((now - t0) / 1000);
-    if (running)
-        requestAnimationFrame(frame);
+    if (steps.length || counts.length)
+        requestAnimationFrame((n) => frame(n, id));
 }
-// 演出の途中なら最後まで飛ばして true を返す。もう終わっていれば false（呼んだ側でタイトルへ戻す）
+// 演出の途中ならメニューまで飛ばして true を返す。もう終わっていれば false（呼んだ側でタイトルへ戻す）
 export function skipResult() {
     if (!running)
         return false;
+    // メニューを出すところまで飛ばし、熟練度の入れ替えはそこから MASTERY_WAIT 秒後に回す
     quiet = true;
-    advance(Infinity);
+    advance(menuAt);
     quiet = false;
+    t0 = performance.now() - menuAt * 1000;
     return true;
 }

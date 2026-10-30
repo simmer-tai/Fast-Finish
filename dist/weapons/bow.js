@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { loftRings } from '../geometry.js';
-const RISER_C = 0.05; // 柄の中心の高さ（握りより少し上）。上下のリムはここを境に対称
+export const RISER_C = 0.05; // 柄の中心の高さ（握りより少し上）。上下のリムはここを境に対称
 const RISER_HALF = 0.36; // 柄の長さの半分
 const SHELF_Y = 0.058; // 矢を載せる棚の高さ
 const LIMB_LEN = 0.4; // リムの長さ
 const LIMB_IN = 0.035; // リムを柄に差し込む深さ
 const STRING_R = 0.0016; // 弦の太さ（半径）
-// 柄やリムの断面: 角を落とした八角形。u は厚み（front: 前へ向く向き）、v は横幅（Z）の向き。
+// 柄やリムの断面: 角を落とした八角形（スキンの飾りも使う）。u は厚み（front: 前へ向く向き）、v は横幅（Z）の向き。
 // 並びは -front → +Z → +front → -Z（loftRings の進む向きから見て表が外を向く順）
-function section(c, front, d, w, zOff = 0) {
+export function section(c, front, d, w, zOff = 0) {
     const at = (u, v) => c.clone().addScaledVector(front, u).setZ(c.z + zOff + v);
     return [
         at(-d / 2, -w * 0.3), at(-d / 2, w * 0.3), at(-d * 0.3, w / 2), at(d * 0.3, w / 2),
@@ -16,7 +16,7 @@ function section(c, front, d, w, zOff = 0) {
     ];
 }
 // 断面の並びを両端も閉じた立体にする（始まりの側は並びを逆にして表を外へ向ける）
-function loftClosed(rings, start, end, mat) {
+export function loftClosed(rings, start, end, mat) {
     const g = new THREE.Group();
     g.add(new THREE.Mesh(loftRings([...rings, [end]]), mat));
     g.add(new THREE.Mesh(loftRings([rings[0].slice().reverse(), [start]]), mat));
@@ -41,7 +41,7 @@ const GRIP_TO = 0.042;
 // リムの中心線（上のリム）: 差し込み口から先端へ、少しずつ向きを変えながら進める。
 // 向き θ は +Y から測り、正が射手の側（-X）。根元から 7 割まではしなって θ が増え、そこから先端は前へ反り返る
 const LIMB_STEPS = 18;
-function limbPath() {
+export function limbPath() {
     const pts = [];
     const p = new THREE.Vector3(0.026, RISER_C + RISER_HALF - LIMB_IN, 0);
     let th = 0.1;
@@ -64,7 +64,8 @@ export function createBow(mats) {
     const riserRings = RISER_KEYS.map(([y, x, d, w, z]) => section(new THREE.Vector3(x, y, 0), X, d, w, z));
     const first = RISER_KEYS[0];
     const last = RISER_KEYS[RISER_KEYS.length - 1];
-    bow.add(loftClosed(riserRings, new THREE.Vector3(first[1], first[0] - 0.006, 0), new THREE.Vector3(last[1], last[0] + 0.006, 0), mats.riser));
+    const riser = loftClosed(riserRings, new THREE.Vector3(first[1], first[0] - 0.006, 0), new THREE.Vector3(last[1], last[0] + 0.006, 0), mats.riser);
+    bow.add(riser);
     // 握りの巻き: 握りの範囲の柄を一回り太らせて覆う
     const gripKeys = RISER_KEYS.filter(([y]) => y > GRIP_FROM && y < GRIP_TO);
     const lerpKey = (y) => {
@@ -76,7 +77,11 @@ export function createBow(mats) {
     };
     const wrapKeys = [lerpKey(GRIP_FROM), ...gripKeys, lerpKey(GRIP_TO)];
     const wrapRings = wrapKeys.map(([y, x, d, w]) => section(new THREE.Vector3(x, y, 0), X, d + 0.005, w + 0.005));
-    bow.add(loftClosed(wrapRings, new THREE.Vector3(wrapKeys[0][1], GRIP_FROM, 0), new THREE.Vector3(wrapKeys[wrapKeys.length - 1][1], GRIP_TO, 0), mats.grip));
+    const wrap = loftClosed(wrapRings, new THREE.Vector3(wrapKeys[0][1], GRIP_FROM, 0), new THREE.Vector3(wrapKeys[wrapKeys.length - 1][1], GRIP_TO, 0), mats.grip);
+    bow.add(wrap);
+    // 柄と握りには名前を付けておく（形を作り直すスキンが隠せるように。skins.ts の dressModel）
+    riser.children.forEach((o, i) => (o.name = `riser${i}`));
+    wrap.children.forEach((o, i) => (o.name = `wrap${i}`));
     // 矢を載せる棚: 窓の下端から -Z の側へ小さく張り出す
     const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.005, 0.012), mats.riser);
     shelf.position.set(0.001, SHELF_Y + 0.0025, -0.0075 - 0.006);
@@ -95,7 +100,9 @@ export function createBow(mats) {
         });
         const end = path[path.length - 1];
         const tip = flip(end.p.clone().addScaledVector(end.t, 0.008));
-        bow.add(loftClosed(rings, flip(path[0].p.clone().addScaledVector(path[0].t, -0.004)), tip, mats.limb));
+        const limb = loftClosed(rings, flip(path[0].p.clone().addScaledVector(path[0].t, -0.004)), tip, mats.limb);
+        limb.children.forEach((o, i) => (o.name = `limb${sign > 0 ? 'Up' : 'Low'}${i}`)); // 形を作り直すスキンが隠せるように
+        bow.add(limb);
         // 弦を掛ける先端の筈（はず）: 弦の通る側に小さな溝の出っ張り
         const nock = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.02, 6), mats.riser);
         nock.rotation.x = Math.PI / 2;

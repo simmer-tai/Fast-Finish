@@ -9,6 +9,7 @@ import { swordState } from '../weapons/swordCombat.js';
 import { gunState } from '../weapons/handgunCombat.js';
 import { sickleState } from '../weapons/sickleCombat.js';
 import { bowState } from '../weapons/bowCombat.js';
+import { spearThrow } from '../weapons/spearCombat.js';
 import { viewState } from '../weapons/viewModelMotion.js';
 import { options } from '../ui/options.js';
 import { overlay } from '../ui/overlay.js';
@@ -16,6 +17,7 @@ import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget } from './aimAs
 import { turnView, zoomLookScale } from './look.js';
 import { game } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
+import { assistMeleeAttack, clearLockOn, updateLockOn } from './lockOn.js';
 
 // ---- ゲームパッドの割り当て ----
 // ボタンはキーに置き換えて keys / pressed に入れ、キーボードと同じ処理を通す
@@ -37,12 +39,12 @@ export const PAD_WEAPONS: [number, WeaponId][] = [
   [PAD.DOWN, 'sword'],
   [PAD.LEFT, 'sickle'],
 ];
-export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'bow']; // LB / RB で順に回す
+export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'bow', 'bat', 'spear']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 export const PAD_MENU_KEYS: [number, string][] = [
-  [PAD.A, 'Enter'],
+  [PAD.B, 'Enter'],
   [PAD.START, 'Enter'],
-  [PAD.B, 'Escape'],
+  [PAD.A, 'Escape'],
   [PAD.Y, 'KeyQ'], // 一時停止からタイトルへ
   [PAD.X, 'KeyO'], // オプション
   [PAD.UP, 'ArrowUp'],
@@ -79,6 +81,8 @@ if (padAssistEl) {
 }
 let padLastStamp = 0;
 let padDebugT = 0;
+let menuStickDirection = '';
+let menuStickTimer = 0;
 export const padGaps: number[] = [];
 export const frameGaps: number[] = [];
 export function updatePadDebug(dt: number, stamp: number) {
@@ -109,13 +113,25 @@ export function updatePad(dt: number) {
   if (pad.up[PAD.LT]) game.throwHeld = false;
   padMove.x = padMove.y = 0;
   padState.padSprint = false;
-  if (!pad.connected) return;
+  if (!pad.connected) { clearLockOn(); return; }
 
   if (!controls.isLocked) {
+    clearLockOn();
     if (overlay.classList.contains('hidden') || overlay.classList.contains('leaving')) return;
     for (const [b, code] of PAD_MENU_KEYS) if (pad.down[b]) return sendPadKey(code);
+    const direction = Math.max(Math.abs(pad.lx), Math.abs(pad.ly)) < 0.5 ? '' :
+      Math.abs(pad.lx) > Math.abs(pad.ly) ? (pad.lx < 0 ? 'ArrowLeft' : 'ArrowRight') : (pad.ly < 0 ? 'ArrowUp' : 'ArrowDown');
+    if (direction !== menuStickDirection) {
+      menuStickDirection = direction;
+      menuStickTimer = 0.4;
+      if (direction) sendPadKey(direction);
+    } else if (direction && (menuStickTimer -= dt) <= 0) {
+      menuStickTimer = 0.12;
+      sendPadKey(direction);
+    }
     return;
   }
+  menuStickDirection = '';
   if (pad.down[PAD.START]) return hooks.pauseGame();
 
   for (const [b, code] of PAD_KEYS) {
@@ -124,11 +140,11 @@ export function updatePad(dt: number) {
     pressed.add(code);
   }
   if (pad.down[PAD.RT]) game.attackPressed = game.attackHeld = true;
-  if (pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = true;
-  if (pad.down[PAD.X]) gunState.reloadQueued = sickleState.tossPressed = true;
-  const cycle = (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
+  if (pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
+  if (pad.down[PAD.X] && game.shownWeapon === 'handgun') gunState.reloadQueued = true;
+  const cycle = game.weaponLocked ? 0 : (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
   if (cycle) game.wantWeapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(game.wantWeapon) + cycle + WEAPON_ORDER.length) % WEAPON_ORDER.length];
-  for (const [b, id] of PAD_WEAPONS) if (pad.down[b]) game.wantWeapon = id;
+  for (const [b, id] of PAD_WEAPONS) if (pad.down[b] && !game.weaponLocked) game.wantWeapon = id;
 
   padMove.x = pad.lx;
   padMove.y = -pad.ly;
@@ -136,7 +152,9 @@ export function updatePad(dt: number) {
 
   const m = Math.hypot(pad.rx, pad.ry);
   if (m > 0 || padState.padSprint || pad.lx || pad.ly || pad.down.some(Boolean)) game.usingPad = true;
-  const target = findAssistTarget();
+  if (pad.down[PAD.RT]) assistMeleeAttack();
+  const locking = updateLockOn(dt, m);
+  const target = locking ? null : findAssistTarget();
   // 敵の近くでは視点を遅くし、スティックか体を動かしている間だけ照準を胸へ寄せる（止まっていると勝手には動かさない）
   let slow = 1;
   if (target) {

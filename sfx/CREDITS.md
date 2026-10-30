@@ -5,7 +5,7 @@
 
 | グループ | 元素材 | 作者 / 配布元 |
 |---|---|---|
-| impact 系（punch / thud / wood / plank / plate / metal_tick / ricochet / bell / step_hard / gun_sub） | Impact Sounds, Sci-Fi Sounds | Kenney — https://kenney.nl/assets/impact-sounds, https://kenney.nl/assets/sci-fi-sounds |
+| impact 系（punch / thud / wood / plank / plate / metal_tick / ricochet / bell / step_hard / gun_sub）、explosion（explosionCrunch_000〜003） | Impact Sounds, Sci-Fi Sounds | Kenney — https://kenney.nl/assets/impact-sounds, https://kenney.nl/assets/sci-fi-sounds |
 | step / cloth / gear / knife_draw / slice / gun_latch | RPG Audio | Kenney — https://kenney.nl/assets/rpg-audio |
 | focus / glass | Sci-Fi Sounds, Interface Sounds | Kenney — https://kenney.nl/assets/interface-sounds |
 | gun_body | Gunshot sounds（CZ-52, SKS） | Tabasco — https://opengameart.org/content/gunshot-sounds |

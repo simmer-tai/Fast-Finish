@@ -10,9 +10,9 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - `weapons/`: 武器ごとのモデル（`kunai.ts`, `sword.ts` …）、攻撃の定義（`*Attacks.ts`）、攻撃の処理（`*Combat.ts`）、手元の武器の動き（`viewModelMotion.ts`）。
 - `enemy/`: 敵の体・状態・動き・よろめき・破片・射撃。
 - `player/`: 動きの設定・状態・移動・視点・パッドの割り当て・エイムアシスト・倒れたとき。
-- `fx/`: カメラ演出・当たりの光・切り跡・斬撃の帯・ポストエフェクト。
+- `fx/`: カメラ演出・当たりの光・切り跡・斬撃の帯・ポストエフェクト・結果で流すハイライト（`replayClip.ts`。点数がいちばん高いキルの前後を GPU に貯めておく）。
 - `ui/`: HUD・オプション・武器選択・操作一覧・タイトルと一時停止の画面。
-- `world/`: アリーナ・箱と坂・せり上がり・床のグリッドの広がり・レイの当たり判定。
+- `world/`: アリーナ・箱と坂・せり上がり・床のグリッドの広がり・レイの当たり判定・動く物・リフトのシャフト（`shaft.ts`。シャフトを下へ流し、足場の敵を飛び乗らせる）とその罠（`liftTraps.ts`。難易度で種類と間隔が変わる）。
 - `combat/`: パリィ。
 - `game/`: 武器や演出をまたいで共有する値（`state.ts`）と、本体へのフック（`hooks.ts`）。
 - 直下: 描画の土台（`core.ts`）、入力、音（`audio.ts`）、ステージの組み立て（`station.ts` など）、記録とスコア。
@@ -31,9 +31,11 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - `?sword=kesa`（剣: kesa / gyaku / karatake / sweep / charge / issen / thrust）
 - `?axe=kesa`（斧: draw / kesa / nagi / kabuto / sweep / air / launch / rush / drive）
 - `?bat=swing1`（バット: swing1 / swing2 / smash / charge）
+- `?spear=twirl1`（槍: twirl1 / twirl2 / wheel / heli / finisher / spin）
 - `?striker=windup&yaw=70`（ストライカーの姿勢: ready / windup / slash。yaw は正面から回り込んで見る角度）
 - `?sniper&t=1&yaw=50`（狙撃手の構えと照準線。t は狙い始めてからの時間で、1.45 を過ぎるとロックして線が点滅する）
-- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?bow`（弓の構え。`&t=0.3` で引いて止め、`&fly=0.1` で射ってから止める。`&volley` でホイールの 3 本射ち、`&ricochet` で右クリックの跳弾矢にする）、`?bowEquip&t=0.2`（弓の取り出し）、`?batEquip&t=0.2`（バットの取り出し）、`?stage=station`（station / warehouse / parking）
+- `?devmode`（スキンを全部解放した状態で遊ぶ。公開版でも効く。0 キーで無敵のオン・オフ）
+- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?bow`（弓の構え。`&t=0.3` で引いて止め、`&fly=0.1` で射ってから止める。`&volley` でホイールの 3 本射ち、`&ricochet` で右クリックの跳弾矢にする）、`?bowEquip&t=0.2`（弓の取り出し）、`?batEquip&t=0.2`（バットの取り出し）、`?stage=station`（station / warehouse / lift / mall / ruins。選択画面から外した parking もこれで見られる）
 
 ## 武器のプレビュー動画
 

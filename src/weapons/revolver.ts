@@ -11,8 +11,8 @@ const chamberXY = (i: number): [number, number] => {
   return [Math.cos(a) * 0.0105, Math.sin(a) * 0.0105];
 };
 
-// 弾 1 発。原点は後端の縁で、弾頭は -Z。live = false なら撃ち終わった空の薬莢
-const ROUND_LEN = 0.03;
+// 弾 1 発。原点は後端の縁で、弾頭は -Z。live = false なら撃ち終わった空の薬莢。子は縁・胴・弾頭の順（スキンが差し替える）
+export const ROUND_LEN = 0.03;
 const roundGeos = {
   rim: new THREE.CylinderGeometry(0.005, 0.005, 0.0015, 10).rotateX(Math.PI / 2).translate(0, 0, -0.00075),
   body: new THREE.CylinderGeometry(0.0042, 0.0042, ROUND_LEN, 10).rotateX(Math.PI / 2).translate(0, 0, -ROUND_LEN / 2),
@@ -195,5 +195,9 @@ export function createRevolver(mats: WeaponMats): THREE.Group {
   gripGeo.computeVertexNormals();
   gun.add(new THREE.Mesh(gripGeo, mats.grip));
 
+  // フレームの部品に名前を付ける（形を作り直すスキンが隠せるように。skins.ts の dressModel）
+  gun.children.forEach((o, i) => {
+    if (o instanceof THREE.Mesh) o.name = `frame${i}`;
+  });
   return gun;
 }

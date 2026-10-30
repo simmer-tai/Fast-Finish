@@ -84,12 +84,17 @@ export interface Enemy extends EnemyBody {
   strikePose: number[]; // 今の腕と上体の姿勢（STRIKER_POSES と同じ並び）。狙う姿勢へばねで追いかける
   strikePoseVel: number[]; // 姿勢の変わる速さ
   turnVel: number; // 体の向きを変える角速度 (rad/s)
-  // 高い所から飛び降りる（ストライカー）
+  // 高い所から飛び降りる（ストライカー。リフトへの飛び乗りでは銃撃役も使う）
   dropCell: number; // 飛び降りようとしている縁のマス（-1 = 降りない）
   dropFrom: THREE.Vector3; // 縁を選んだ間はその縁の中心、跳んだ後は踏み切った所
   dropTo: THREE.Vector3; // 降りる先の足もと
   dropT: number; // 踏み切ってからの時間
   dropDur: number; // 降りる先へ着くまでの時間
+  // リフトの足場に乗って下りてくる（world/shaft.ts）
+  ride: 'none' | 'ledge' | 'leap'; // 足場に乗っている / リフトへ飛び乗っている
+  rideLedge: number; // 乗っている足場
+  rideY: number; // その足場の、シャフトの中での高さ（昇った高さを引くとワールドの高さ）
+  rideSlot: number; // 足場の上で立つ所のずれ（壁に沿う向き, m）
   // 狙撃手の溜め（ほかの敵では使わない）
   charge: number; // 狙い始めてからの時間（-1 = 狙っていない）
   laser: THREE.Line | null; // 照準線

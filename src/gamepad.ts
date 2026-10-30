@@ -43,7 +43,7 @@ function readStick(x: number, y: number): [number, number] {
   return [x * k, y * k];
 }
 
-function findPad(): Gamepad | null {
+export function findPad(): Gamepad | null {
   const pads = navigator.getGamepads?.() ?? [];
   let fallback: Gamepad | null = null;
   for (const p of pads) {

@@ -4,10 +4,9 @@ import { DEG, UP, wrapAngle } from '../math.js';
 import { camera } from '../core.js';
 import { env } from './env.js';
 import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en, enemies, hitDir, type StrikePhase } from './state.js';
-import { ENEMY_KNOCK_STOP, LEG_FWD_X, carEvadeDir, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, knockEnemy } from './motion.js';
-import { addImpulse, solveDummyLegs, staggerDummy } from './stagger.js';
+import { ENEMY_KNOCK_STOP, carEvadeDir, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, enemySoundAt, knockEnemy, startLeap, updateLeap } from './motion.js';
+import { solveDummyLegs, staggerDummy } from './stagger.js';
 import { floorAt } from '../world/blocks.js';
-import { GRAVITY } from '../player/config.js';
 import { playBounds } from '../world/arena.js';
 import { castWorld } from '../world/raycast.js';
 import { player, position, velocity } from '../player/state.js';
@@ -49,7 +48,6 @@ export const STRIKER_REPATH = 0.15; // 行き先を選び直す間隔
 export const STRIKER_DROP_BELOW = 0.6; // プレイヤーの足もとがこれより低ければ、飛び降りて追う
 export const STRIKER_DROP_MAX = 9; // これより高い所からは飛び降りない
 export const STRIKER_DROP_REACH = 0.45; // 縁のマスの中心にここまで寄ったら踏み切る
-export const STRIKER_DROP_HOP = 3.5; // 踏み切るときに跳ね上がる速さ (m/s)
 export const STRIKER_VAULT = 1.2; // 縁にあるこの高さまでの手すりは跳び越える
 export const STRIKER_APART = 1.4; // ほかの敵とこれより近づいたら押し離す
 export const STRIKER_APART_PUSH = 5; // 重なりかけたときに離れる速さ (m/s)
@@ -75,6 +73,7 @@ interface Nav {
 }
 // 床の高さごとに調べておく（棚の上・中二階・床は別の格子）。1 つ作るのに数十 ms かかるので、ステージに入るときにまとめて作る
 const navs = new Map<number, Nav>();
+export const strikerNavStats = { builds: 0 }; // 格子を作った回数（?perf で出す。ステージに入るとき以外に増えたら重さの元）
 let navLevels: number[] = []; // 調べておく床の高さ。飛び降りる先もこの高さの床に限る（荷の山の上などへは降りない）
 // ステージを入れ替えたら、箱と動ける範囲を入れた後に呼ぶ
 export function resetStrikerNav(levels: number[]) {
@@ -123,6 +122,7 @@ function navFor(y: number): Nav {
   }
   const n: Nav = { y, minX, minZ, nx, nz, open, dist: new Int32Array(nx * nz).fill(-1), from: -1, fromY: NaN, drops };
   navs.set(y, n);
+  strikerNavStats.builds++;
   return n;
 }
 const navCell = (n: Nav, x: number, z: number) => {
@@ -295,37 +295,17 @@ function pickDropTarget(): boolean {
   return true;
 }
 function startDrop() {
-  const p = en.root.position;
-  const h = en.baseY - en.dropTo.y;
   setPhase('drop');
-  en.dropFrom.copy(p);
-  en.dropT = 0;
-  en.dropDur = (STRIKER_DROP_HOP + Math.sqrt(STRIKER_DROP_HOP ** 2 + 2 * GRAVITY * h)) / GRAVITY;
+  startLeap(en.dropTo);
   en.dropCell = -1;
-  en.vel.set(0, 0, 0);
-  en.pelvisSpring.v.y -= 1.2; // 膝を沈めて踏み切る
+}
+// リフトの足場から飛び乗る（world/shaft.ts）。着くまでは飛び降りと同じに扱う
+export function leapStriker(to: THREE.Vector3) {
+  setPhase('drop');
+  startLeap(to);
 }
 function updateDrop(dt: number) {
-  const p = en.root.position;
-  en.dropT = Math.min(en.dropT + dt, en.dropDur);
-  const u = en.dropT / en.dropDur;
-  p.x = THREE.MathUtils.lerp(en.dropFrom.x, en.dropTo.x, u);
-  p.z = THREE.MathUtils.lerp(en.dropFrom.z, en.dropTo.z, u);
-  const y = en.dropFrom.y + STRIKER_DROP_HOP * en.dropT - 0.5 * GRAVITY * en.dropT ** 2;
-  en.baseY = Math.max(en.dropTo.y, y);
-  p.y = en.baseY + en.airY;
-  // 跳んだらすぐ脚を縮め、着く少し前から伸ばして床を迎える
-  en.airPose = Math.min(1, en.dropT / 0.12) * THREE.MathUtils.clamp((en.baseY - en.dropTo.y) / 1.2, 0, 1);
-  if (u < 1) return;
-  // 着地: 速さに応じて膝を深く沈め、上体を前へ倒し込む
-  const impact = GRAVITY * en.dropDur - STRIKER_DROP_HOP;
-  en.baseY = en.dropTo.y;
-  p.y = en.baseY + en.airY;
-  en.pelvisSpring.v.y -= Math.min(3, impact * 0.18);
-  addImpulse(en.leanSpring, LEG_FWD_X, Math.min(2, impact * 0.12));
-  spawnSparks(sparkAt.set(p.x, en.baseY + 0.05, p.z), UP, 6, 0.6, 0.5);
-  const s = soundAt(Math.hypot(position.x - p.x, position.z - p.z));
-  sfx.playStrikerLand(impact, s.volume, s.pan);
+  if (!updateLeap(dt)) return;
   setPhase('chase');
   en.waitT = 0;
 }
@@ -457,14 +437,7 @@ function canStrike(dist: number): boolean {
   const d = toPlayer.length();
   return castWorld(chest, toPlayer.divideScalar(d), d) >= d;
 }
-// 敵のいる向きの左右と距離から、音の左右と大きさを決める
-const panTmp = new THREE.Vector3();
-function soundAt(dist: number) {
-  camera.updateMatrixWorld();
-  panTmp.copy(en.root.position).applyMatrix4(camera.matrixWorldInverse);
-  const pan = THREE.MathUtils.clamp(panTmp.x / Math.max(Math.hypot(panTmp.x, panTmp.z), 1e-3), -1, 1) * 0.8;
-  return { volume: THREE.MathUtils.clamp(3 / Math.max(dist, 1), 0.3, 1), pan };
-}
+const soundAt = enemySoundAt;
 
 export function updateStrikerMove(dt: number) {
   if (!en.mobile) return;

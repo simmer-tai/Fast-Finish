@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { camera, controls, scene } from '../core.js';
 import { ARROW_LEN, createArrow, setBowDraw } from './bow.js';
-import { bowModel, kunaiMat, weaponMats } from './viewModels.js';
+import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js';
 import { findThrowAim } from './kunaiCombat.js';
 import type { HitDef } from './kunaiAttacks.js';
 import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js';
+import { addGlow } from '../fx/glow.js';
+import { hitWithArcs } from '../fx/arcs.js';
+import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { en, enemies, hitDir, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow, castWorld } from '../world/raycast.js';
 import { enemyChest } from '../player/aimAssist.js';
@@ -41,6 +44,7 @@ export const bowState = {
   ricochetStock: BOW_RICOCHET_STOCK, // 跳弾矢の残り
   ricochetEmptyFlash: 0,
   ricochetHitting: false, // 跳弾矢の当たりを処理している最中（その当たりで倒しても跳弾矢は戻さない）
+  volleyHitting: false, // 3 本射ちの矢の当たりを処理している最中
   equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 
@@ -142,7 +146,7 @@ export const ARROW_HIT: HitDef = { kick: [-1, 0, 0], knock: 110, hitStop: 0.03, 
 export const ARROW_SWISH = { at: 0, dur: 0.18, f0: 600, f1: 2400, gain: 0.12 };
 
 // 弦につがえて見せる矢（弓の子）。鏃を的の側（+X）へ向ける
-const arrowMats = { shaft: weaponMats.swordHilt, head: kunaiMat, fletch: weaponMats.lead };
+const arrowMats = { shaft: skinMats.bow.trim, head: skinMats.bow.metal, fletch: weaponMats.lead };
 const nockedArrow = createArrow(arrowMats);
 nockedArrow.rotation.z = -Math.PI / 2;
 bowModel.add(nockedArrow);
@@ -154,8 +158,32 @@ const volleyArrows = [-1, 1].map((side) => {
   bowModel.add(a);
   return a;
 });
+receiveShadows();
 const nockRest = bowModel.userData.nockRest as THREE.Vector3;
 const arrowTemplate = createArrow(arrowMats);
+// スキンの矢（爪など）を、つがえた矢・3 本射ちの矢・飛ばす矢の元に着せる（飛ばす矢は元を写すので、マテリアルも同じになる）
+let undressArrows: (() => void)[] = [];
+function dressArrows() {
+  for (const undo of undressArrows) undo();
+  const dress = skinOf('bow').arrow;
+  const env = (skinMats.bow.metal as THREE.MeshStandardMaterial).envMap;
+  undressArrows = dress ? [nockedArrow, ...volleyArrows, arrowTemplate].map((a) => dress(a, env)) : [];
+}
+dressArrows();
+onSkinChange((id) => id === 'bow' && dressArrows());
+// スキンが軌跡の色を持つときは、飛ぶ矢の筋をその色にする（色ごとに 1 つ作って使い回す）
+const skinArrowRibbonMats = new Map<number, THREE.ShaderMaterial>();
+function arrowTrailMat(trail: SkinTrail | undefined) {
+  if (!trail) return arrowRibbonMat;
+  let mat = skinArrowRibbonMats.get(trail.body);
+  if (!mat) {
+    mat = arrowRibbonMat.clone();
+    mat.uniforms.uEdgeColor.value = new THREE.Color(trail.core);
+    mat.uniforms.uFlight.value.copy(arrowRibbonMat.uniforms.uFlight.value);
+    skinArrowRibbonMats.set(trail.body, mat);
+  }
+  return mat;
+}
 const ARROW_AXIS = new THREE.Vector3(0, 1, 0);
 const ARROW_Z = -0.004; // 矢は柄の左（-Z）に寄せて載せる
 
@@ -167,6 +195,7 @@ interface Arrow {
   age: number;
   bounces: number; // 跳ねた回数
   ricochet: boolean; // 跳弾矢（どの角度でも跳ねる）。普通の矢は跳ねずに刺さる
+  volley: boolean; // 3 本射ちの矢
   bank: Enemy | null; // 跳弾の狙いの補助で覚えた敵。最初の面では必ず跳ね、跳ねたらこの敵へ向け直す
   seek: Enemy | null; // 跳ねた後に追いかけている敵
   stuck: number; // 刺さってから残しておく時間。0 なら飛んでいる
@@ -188,13 +217,15 @@ export const bowReady = () => game.shownWeapon === 'bow' && game.wantWeapon === 
 const launchFrom = new THREE.Vector3();
 const launchAim = new THREE.Vector3();
 const launchDir = new THREE.Vector3();
-function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gravity: number, dmg: number, ricochet: boolean, bank: Enemy | null) {
+function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gravity: number, dmg: number, ricochet: boolean, bank: Enemy | null, volley = false) {
   const mesh = arrowTemplate.clone();
   mesh.position.copy(from);
   mesh.quaternion.setFromUnitVectors(ARROW_AXIS, dir);
   scene.add(mesh);
-  const trail = new Ribbon(256, ARROW_TRAIL_LIFE, arrowRibbonMat);
+  const skinTrail = skinOf('bow').trail;
+  const trail = new Ribbon(256, ARROW_TRAIL_LIFE, arrowTrailMat(skinTrail));
   scene.add(trail.mesh);
+  if (skinTrail?.glow) addGlow(trail.mesh, 0, true); // 筋が捨てられてシーンから外れたら、にじみの登録も外れる
   arrows.push({
     mesh,
     vel: dir.clone().multiplyScalar(speed),
@@ -203,6 +234,7 @@ function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gra
     age: 0,
     bounces: 0,
     ricochet,
+    volley,
     bank,
     seek: null,
     stuck: 0,
@@ -247,7 +279,7 @@ function releaseVolley(draw: number) {
     launchDir.subVectors(launchAim, launchFrom).normalize();
     launchDir.applyQuaternion(spreadQ.setFromAxisAngle(camUp, -side * BOW_VOLLEY_SPREAD + jitter()));
     launchDir.applyQuaternion(spreadQ.setFromAxisAngle(camRight, jitter()));
-    launchArrow(launchFrom, launchDir, speed, gravity, dmg, false, null);
+    launchArrow(launchFrom, launchDir, speed, gravity, dmg, false, null, true);
   }
   afterRelease(draw);
 }
@@ -256,6 +288,7 @@ function afterRelease(draw: number) {
   nockedArrow.visible = false;
   nockWait = BOW_NOCK_TIME;
   bowState.release = 1;
+  skinFx.flare = 1; // スキンの飾りを光らせる
   kickVel.x += (0.6 + draw) * DEG * 22;
   endDrawSound();
   sfx.playBowRelease(draw);
@@ -265,6 +298,22 @@ function removeArrow(i: number) {
   arrows[i].mesh.removeFromParent();
   arrows[i].trail?.dispose();
   arrows.splice(i, 1);
+}
+
+// 飛んでいる矢が、この 1 歩（dt の間に進んだ線分）で at から radius 以内を通ったら、その矢を消して true（ボスのミサイルを撃ち落とす）
+const arrowBack = new THREE.Vector3();
+const arrowSeg = new THREE.Line3();
+const arrowNear = new THREE.Vector3();
+export function catchArrowNear(at: THREE.Vector3, radius: number, dt: number) {
+  for (let i = arrows.length - 1; i >= 0; i--) {
+    const a = arrows[i];
+    if (a.stuck > 0) continue;
+    arrowSeg.set(arrowBack.copy(a.mesh.position).addScaledVector(a.vel, -dt), a.mesh.position);
+    if (arrowSeg.closestPointToPoint(at, true, arrowNear).distanceTo(at) > radius) continue;
+    removeArrow(i);
+    return true;
+  }
+  return false;
 }
 
 const trailSide = new THREE.Vector3();
@@ -295,8 +344,11 @@ function stickArrow(a: Arrow, at: THREE.Vector3, dir: THREE.Vector3, onEnemy: En
   if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
   hitDir.normalize();
   bowState.ricochetHitting = a.ricochet;
-  hooks.applyHit(ARROW_HIT, at, 'bullet', undefined, false, a.dmg);
-  bowState.ricochetHitting = false;
+  bowState.volleyHitting = a.volley;
+  // 稲妻を出すスキンは、当たりの光も稲妻と同じ色にする
+  hitWithArcs(skinOf('bow'), ARROW_HIT.fx ?? 1, dir, () => hooks.applyHit(ARROW_HIT, at, 'bullet', undefined, false, a.dmg), at);
+  skinFx.flare = 1;
+  bowState.ricochetHitting = bowState.volleyHitting = false;
   if (!onEnemy.alive) a.stuck = 1e-3; // 砕けた敵に刺さった矢は一緒に消す
 }
 
@@ -392,6 +444,12 @@ function updateArrows(dt: number) {
     tip.copy(a.mesh.position).addScaledVector(flyDir, ARROW_LEN);
     if (castThrow(tip, flyDir, step)) {
       hitAt.copy(castHit.point);
+      // ボスの機体には刺さらず（動く機体に残すと浮いて見える）、当てて消す
+      if (castHit.boss) {
+        hooks.hitBoss(ARROW_HIT, hitAt, 'bullet', castHit.boss, flyDir, a.dmg);
+        removeArrow(i);
+        continue;
+      }
       if (!castHit.enemy && a.ricochet && a.bounces < ARROW_RICOCHET_MAX) {
         ricochetArrow(a, hitAt, flyDir, castHit.normal);
         continue;

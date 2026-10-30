@@ -7,10 +7,12 @@ import { easeOutBack } from '../ease.js';
 import { camera, controls, scene } from '../core.js';
 import { createChainSickle, createLongChain, layChain, layLongChain } from './chainSickle.js';
 import { RETURN_SWISH, THROW_SWISH, type HitDef, type SwishDef, type V3 } from './kunaiAttacks.js';
-import { kunaiMat, leftSickle, rightSickle, sickleMats } from './viewModels.js';
+import { leftSickle, rightSickle, sickleMats, skinMats } from './viewModels.js';
+import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js';
+import { hitWithArcs } from '../fx/arcs.js';
 import { swordState } from './swordCombat.js';
 import { spawnSparks } from '../fx/hitFx.js';
-import { Ribbon, SICKLE_RIBBON, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js';
+import { Ribbon, SICKLE_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js';
 import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
 import { env } from '../enemy/env.js';
 import { en, enemies, hitDir, hitPoint, setEn, type Enemy } from '../enemy/state.js';
@@ -21,6 +23,7 @@ import { PLAYER_GRAVITY, JUMP_SPEED } from '../player/config.js';
 import { endWallRun, hasHeadroom } from '../player/movement.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
+import { tryWallHit } from './wallHit.js';
 
 // ---- 鎖鎌 ----
 // 右クリックで投げて引き寄せる・左クリックの近接・R キーの投げ回し
@@ -36,10 +39,10 @@ export const sickleState = {
   hookRecharge: 0,
   hookEmptyFlash: 0, // 残りが無いのに投げようとしたとき、ゲージを点滅させる残り時間
   sickleMelee: null as SickleMelee | null,
+  inspectLower: 0, // 武器を眺めている間に左手を下げる量（0〜1。weapons/viewModelMotion.ts が書く）
   sicklePressed: false,
   sickleCombo: 0,
   sickleAirCombo: 0,
-  tossPressed: false,
   drawT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 
@@ -109,7 +112,6 @@ export interface GrappleHook {
   punch: number; // 投げた手の突き出し (1 → 0)
   yank: number; // 引き寄せる間、手を手前へ引いている量 (0〜1)
   catchT: number; // 受け止めてからの時間。負なら回していない
-  toss: SickleToss | null; // 宙へ投げ回している
   sickle: THREE.Group;
   chain: THREE.InstancedMesh;
   dir: THREE.Vector3; // 柄の先を向ける向き（飛ぶ向き、刺さった向き、戻るときは手元と反対）
@@ -124,15 +126,19 @@ export interface GrappleHook {
 export function createHook(hand: THREE.Group, side: number): GrappleHook {
   const sickle = createChainSickle(sickleMats, true); // 飛ぶのは頭だけ
   sickle.visible = false;
+  // 手元の鎌と同じスキンを着せる
+  const dress = () => dressModel(sickle, skinOf('sickle'), skinMats.sickle);
+  dress();
+  onSkinChange((id) => id === 'sickle' && dress());
   scene.add(sickle);
-  const chain = createLongChain(kunaiMat, GRAPPLE_RANGE + 5);
+  const chain = createLongChain(sickleMats.metal, GRAPPLE_RANGE + 5);
   chain.visible = false;
   scene.add(chain);
   return {
     side, hand, handPos: hand.position.clone(), rest: hand.userData.rest,
     restQuat: (hand.userData.rest as THREE.Group).quaternion.clone(), shortChain: hand.userData.chain,
     held: hand.userData.sickle, head: hand.userData.sickle.userData.head, point: 0,
-    aim: 0, slide: 0, launchIn: -1, windT: -1, thrown: false, punch: 0, yank: 0, catchT: -1, toss: null,
+    aim: 0, slide: 0, launchIn: -1, windT: -1, thrown: false, punch: 0, yank: 0, catchT: -1,
     sickle, chain, dir: new THREE.Vector3(), flyLeft: 0, flyTotal: 0, spin: 0, spinRate: 0, stuckTime: -1, back: false, twang: 0,
   };
 }
@@ -509,10 +515,12 @@ export function updateGrapple(dt: number) {
 }
 
 // 手元の鎌: 普段の構え・振りかぶり・投げた手の突き出し・鎖をたぐる手・受け止めての 1 回転
+const INSPECT_LOWER = 0.14;
 export function poseHand(h: GrappleHook, dt: number, aiming: boolean) {
   h.aim += ((aiming ? 1 : 0) - h.aim) * Math.min(1, dt * 14);
   h.punch = Math.max(0, h.punch - dt * 6);
   const p = h.hand.position.copy(h.handPos);
+  if (h.side < 0) p.y -= INSPECT_LOWER * sickleState.inspectLower; // 右手で眺めている間は、左手を下げてよける
   p.x += AIM_HAND_LIFT.x * h.side * h.aim;
   p.y += AIM_HAND_LIFT.y * h.aim;
   p.z += AIM_HAND_LIFT.z * h.aim;
@@ -534,7 +542,6 @@ export function poseHand(h: GrappleHook, dt: number, aiming: boolean) {
   h.rest.position.set(0, 0, 0);
   applyMeleeHandPose(h, p);
   applySlidePose(h, p, dt);
-  applyToss(h, p, dt);
   applyDrawHandPose(h, p);
   // 頭は普段は握りに組んだまま
   h.head.position.set(0, 0, 0);
@@ -645,7 +652,8 @@ export function updateHook(h: GrappleHook, dt: number) {
           hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
           if (hitDir.lengthSq() < 1e-6) hitDir.set(h.dir.x, 0, h.dir.z);
           hitDir.normalize();
-          hooks.applyHit(GRAPPLE_STICK_HIT, capPoint, 'throw');
+          hitWithArcs(skinOf('sickle'), GRAPPLE_STICK_HIT.fx ?? 1, h.dir, () => hooks.applyHit(GRAPPLE_STICK_HIT, capPoint, 'throw'), capPoint);
+          skinFx.flare = 1;
         }
       } else if (sickleState.grapple?.block) {
         // 刺さった: 鎖がビンと張り、小さな火花を散らす
@@ -1292,6 +1300,14 @@ export const SICKLE_AIR_COMBO = [SICKLE_AIR_SWEEP, SICKLE_AIR_RISE, SICKLE_AIR_W
 export const SICKLE_TRAIL_LIFE = 0.17;
 export const sickleTrails = [new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(SICKLE_RIBBON)), new Ribbon(240, SICKLE_TRAIL_LIFE, makeRibbonMaterial(SICKLE_RIBBON))];
 for (const r of sickleTrails) camera.add(r.mesh);
+// スキンが軌跡の色を持つときは、その色にする
+const tintSickleTrails = () => {
+  for (const r of sickleTrails) tintRibbon(r, skinOf('sickle').trail);
+};
+tintSickleTrails();
+onSkinChange((id) => id === 'sickle' && tintSickleTrails());
+// 振り音はスキンが替えることがある（爪は暗い刃の鳴りを足す）
+const sickleSwish = () => skinOf('sickle').swish ?? 'sickle';
 
 export interface SickleMelee {
   def: SickleMoveDef;
@@ -1437,18 +1453,25 @@ export function sampleSickleTrails(m: SickleMelee) {
 }
 
 export function trySickleHit(m: SickleMelee, imp: SickleImpact) {
-  if (!hooks.dummyInReach(m.def.reach, m.def.angle)) return;
   const h = imp.hand === 'main' ? m.h : otherHook(m.h);
+  if (!hooks.dummyInReach(m.def.reach, m.def.angle)) {
+    // 空振り: 壁や床に届いていれば弾かれる
+    camera.updateMatrixWorld();
+    meleeSwing.set(imp.swing[0] * h.side, imp.swing[1], imp.swing[2]).transformDirection(camera.matrixWorld);
+    tryWallHit('sickle', m.def.reach, 'blade', meleeSwing, imp.hit.fx ?? 1);
+    return;
+  }
   setHandPoseAt(h, imp.hand === 'main' ? m.def.keys : m.def.offKeys!, imp.t);
   hooks.hitPointFromTip(meleeTip, hitPoint);
   camera.updateMatrixWorld();
   meleeSwing.set(imp.swing[0] * h.side, imp.swing[1], imp.swing[2]).transformDirection(camera.matrixWorld);
-  hooks.applyHit(imp.hit, hitPoint, 'sword', meleeSwing, true, SICKLE_DAMAGE_SCALE);
+  // 稲妻を出すスキンは、当たりの斬撃の線と光線も稲妻と同じ色にする
+  hitWithArcs(skinOf('sickle'), imp.hit.fx ?? 1, meleeSwing, () => hooks.applyHit(imp.hit, hitPoint, 'sword', meleeSwing, true, SICKLE_DAMAGE_SCALE));
+  skinFx.flare = 1; // スキンの飾りを光らせる
 }
 
 export function updateSickleMelee(dt: number) {
   sickleComboTimer -= dt;
-  updateTossInput();
   updateSlideDir(dt);
   if (player.onGround && !sickleState.sickleMelee) sickleState.sickleAirCombo = 0; // 着地したら空中の連携は 1 段目から
   for (const p of meleeHands) {
@@ -1494,7 +1517,7 @@ export function stepSickleMelee(dt: number) {
   const def = m.def;
   m.t += dt;
 
-  while (m.swishes < def.swishes.length && m.t >= def.swishes[m.swishes].at) playSwish(def.swishes[m.swishes++], 'sickle');
+  while (m.swishes < def.swishes.length && m.t >= def.swishes[m.swishes].at) playSwish(def.swishes[m.swishes++], sickleSwish());
   const rings = def.rings ?? [];
   while (m.rings < rings.length && m.t >= rings[m.rings][0]) playRing(rings[m.rings++][1] * 1.3, 0.6, 0.3);
   const grips = def.grips ?? [];
@@ -1553,9 +1576,9 @@ export function stepSickleMelee(dt: number) {
 
 // ダッシュした瞬間、構えている鎌を両手で前回りにくるりと回す
 export function twirlSickles() {
-  if (!sickleReady() || sickleState.sickleMelee || sickleState.grapple || tossing()) return;
+  if (!sickleReady() || sickleState.sickleMelee || sickleState.grapple) return;
   for (const h of grappleHooks) if (!h.thrown) h.catchT = 0;
-  playSwish({ at: 0, dur: 0.18, f0: 600, f1: 2000, gain: 0.12 }, 'sickle');
+  playSwish({ at: 0, dur: 0.18, f0: 600, f1: 2000, gain: 0.12 }, sickleSwish());
   playRing(1.7, 0.3, 0.06);
   sfx.playChain('ready');
 }
@@ -1624,113 +1647,6 @@ export function applySlidePose(h: GrappleHook, handPos: THREE.Vector3, dt: numbe
   applyHandRotation(h, slideTmpPose);
 }
 
-// ---- 投げ回し: 鎌を宙へ回しながら放り上げて受け止める ----
-// R キーを押すたびに: 右手の片手投げ → 左右の持ち替え投げ（空中で交差させて反対の手で受け止める）→ 左手の片手投げ。
-// ダッシュしたときも、確率でどれかを投げる（外れたら手元でくるりと回すだけ）。投げている途中で攻撃や右クリックをしたら、
-// 時間を速めて素早く手元へ戻す
-export interface SickleToss {
-  t: number;
-  to: SickleHookRef; // 受け止める手（自分なら片手投げ、反対の手なら持ち替え）
-  apex: number; // 投げ上げる高さ (m)
-  turns: number; // 宙で回る数（前回り）
-  depth: number; // 持ち替えで 2 本がぶつからないよう、奥・手前へずらす量 (m)
-  inward: number; // 宙で内側（画面の中央寄り）へ寄せる量 (m)。片手投げが画面の端で見切れないように
-  hurry: boolean; // 攻撃などで急いで戻している
-}
-export type SickleHookRef = 0 | 1; // hooks の添字
-export const TOSS_RELEASE = 0.05; // 手を沈めて放すまで
-export const TOSS_FLIGHT = 0.3; // 宙にある時間
-export const TOSS_SETTLE = 0.12; // 受け止めて手が沈み、戻るまで
-export const TOSS_DASH_CHANCE = 0.3; // ダッシュしたときに投げる確率
-export const TOSS_HURRY = 4; // 急いで戻すときの時間の速さ
-export const TOSS_DIP = 0.04; // 放す前と受け止めたときに手が沈む量
-export const TOSS_PIVOT = new THREE.Vector3(0, 0.12, 0); // 宙で回る中心（鎌の重心あたり、握る位置からの高さ）
-let tossVariant = 0;
-export const tossOffset = new THREE.Vector3();
-export const tossQuat = new THREE.Quaternion();
-export const tossBase = new THREE.Quaternion();
-export const tossPivotA = new THREE.Vector3();
-export const tossPivotB = new THREE.Vector3();
-export const TOSS_SPIN_AXIS = new THREE.Vector3(0, 0, 1);
-
-export const tossing = () => grappleHooks.some((h) => h.toss);
-export const canToss = () => sickleReady() && !sickleState.sickleMelee && !sickleState.grapple && !tossing() && grappleHooks.every((h) => !h.thrown);
-
-export function startToss(h: GrappleHook, to: GrappleHook, apex: number, turns: number, depth = 0, inward = 0) {
-  h.toss = { t: 0, to: grappleHooks.indexOf(to) as SickleHookRef, apex, turns, depth, inward, hurry: false };
-  h.catchT = -1;
-}
-
-export function startTossVariant(variant: number) {
-  if (variant === 0) startToss(grappleHooks[0], grappleHooks[0], 0.32, 2, -0.1, 0.14);
-  else if (variant === 2) startToss(grappleHooks[1], grappleHooks[1], 0.32, 2, -0.1, 0.14);
-  else {
-    // 持ち替え: 右は高く手前を、左は低く奥を通して、空中で交差させる
-    startToss(grappleHooks[0], grappleHooks[1], 0.3, 1, -0.04);
-    startToss(grappleHooks[1], grappleHooks[0], 0.2, 1, 0.05);
-  }
-  setTimeout(() => playSwish({ at: 0, dur: 0.2, f0: 500, f1: 1600, gain: 0.12 }, 'sword'), TOSS_RELEASE * 1000);
-}
-
-// 毎フレーム、updateSickleMelee から呼ぶ: R キーで投げ、攻撃などが始まったら急いで戻す
-export function updateTossInput() {
-  if (sickleState.tossPressed && game.shownWeapon === 'sickle' && canToss()) {
-    startTossVariant(tossVariant);
-    tossVariant = (tossVariant + 1) % 3;
-  }
-  sickleState.tossPressed = false;
-  if (sickleState.sickleMelee || sickleState.grapple || !sickleReady()) for (const h of grappleHooks) if (h.toss) h.toss.hurry = true;
-}
-
-// ダッシュした瞬間: 確率でどれかを投げる。投げたら true
-export function tossOnDash(): boolean {
-  if (!canToss() || Math.random() >= TOSS_DASH_CHANCE) return false;
-  startTossVariant(Math.floor(Math.random() * 3));
-  return true;
-}
-
-// poseHand から呼ぶ: 投げている鎌を、手の座標で宙に置く。放す前は手を沈め、受け止めたら手が沈んでから戻る
-export function applyToss(h: GrappleHook, handPos: THREE.Vector3, dt: number) {
-  const tz = h.toss;
-  if (!tz) return;
-  tz.t += dt * (tz.hurry ? TOSS_HURRY : 1);
-  const to = grappleHooks[tz.to];
-  const end = TOSS_RELEASE + TOSS_FLIGHT;
-  if (tz.t < TOSS_RELEASE) {
-    // 放す前: 手を沈めて鎌を少し後ろへ倒す
-    const k = Math.sin((tz.t / TOSS_RELEASE) * Math.PI * 0.5);
-    handPos.y -= TOSS_DIP * k;
-    h.rest.quaternion.premultiply(tossQuat.setFromAxisAngle(TOSS_SPIN_AXIS.set(1, 0, 0), 0.3 * k));
-    return;
-  }
-  if (tz.t < end) {
-    // 宙: 放物線で受け止める手まで飛び、重心を中心に前回りする（受け止める直前に回りきる）
-    const u = (tz.t - TOSS_RELEASE) / TOSS_FLIGHT;
-    tossOffset.subVectors(to.handPos, h.handPos).multiplyScalar(u);
-    tossOffset.y += 4 * tz.apex * u * (1 - u);
-    tossOffset.z += tz.depth * Math.sin(Math.PI * u);
-    tossOffset.x -= tz.inward * h.side * Math.sin(Math.PI * u);
-    tossBase.copy(h.rest.quaternion);
-    if (to !== h) tossBase.slerp(to.restQuat, u); // 持ち替えは、受け止める手の構えの向きへ移る
-    const spin = -Math.PI * 2 * tz.turns * (1 - (1 - u) ** 1.6);
-    h.rest.quaternion.copy(tossBase).multiply(tossQuat.setFromAxisAngle(TOSS_SPIN_AXIS.set(0, 0, 1), spin));
-    // 重心を中心に回す: 回す前と後で重心が同じ所に来るよう、握る位置をずらす
-    tossPivotA.copy(TOSS_PIVOT).applyQuaternion(tossBase);
-    tossPivotB.copy(TOSS_PIVOT).applyQuaternion(h.rest.quaternion);
-    h.rest.position.copy(tossOffset).add(tossPivotA).sub(tossPivotB);
-    return;
-  }
-  // 受け止めた: 両方の手がそれぞれ自分の鎌を持った状態に戻る（2 本は同じ形なので、持ち替えても見分けはつかない）
-  const settle = (tz.t - end) / TOSS_SETTLE;
-  if (settle === 0 || tz.t - dt * (tz.hurry ? TOSS_HURRY : 1) < end) {
-    playGrip(); // 受け止めた「チャキッ」
-    kickVel.x -= 0.3 * DEG * 22;
-  }
-  // 受け止めた手が沈む（片手投げは自分の手、持ち替えは両手とも何かを受け止めている）
-  handPos.y -= TOSS_DIP * Math.sin(Math.PI * Math.min(1, settle));
-  if (settle >= 1) h.toss = null;
-}
-
 // poseHand から呼ぶ: 近接の手の動きを、普段の構えに足す
 export function applyMeleeHandPose(h: GrappleHook, handPos: THREE.Vector3) {
   const p = handPoseOf(h).cur;
@@ -1756,7 +1672,7 @@ const drawLocalT = (h: GrappleHook) => sickleState.drawT - (h.side < 0 ? DRAW_ST
 
 export function startSickleDraw() {
   sickleState.drawT = 0;
-  playSwish(DRAW_SWISH, 'sickle');
+  playSwish(DRAW_SWISH, sickleSwish());
   playRing(1.4, 0.35, 0.03); // 継ぎ目が外れる「カチン」
   sfx.playChain('windup');
 }
@@ -1764,14 +1680,14 @@ export function startSickleDraw() {
 export function updateSickleDraw(dt: number) {
   if (sickleState.drawT >= SICKLE_DRAW_TIME) return;
   // 振り始めたり投げたりしたら、取り出しはやめてそちらの動きにする
-  if (game.shownWeapon !== 'sickle' || sickleState.sickleMelee || sickleState.grapple || tossing()) {
+  if (game.shownWeapon !== 'sickle' || sickleState.sickleMelee || sickleState.grapple) {
     sickleState.drawT = Infinity;
     return;
   }
   const prev = sickleState.drawT;
   sickleState.drawT += dt;
   const t = sickleState.drawT;
-  if (prev < DRAW_SPIN_TIME * 0.4 && t >= DRAW_SPIN_TIME * 0.4) playSwish(DRAW_SWISH, 'sickle'); // 2 周目の風切り
+  if (prev < DRAW_SPIN_TIME * 0.4 && t >= DRAW_SPIN_TIME * 0.4) playSwish(DRAW_SWISH, sickleSwish()); // 2 周目の風切り
   for (const h of grappleHooks) {
     const dock = DRAW_SPIN_TIME + (h.side < 0 ? DRAW_STAGGER : 0);
     if (prev < dock && t >= dock) {

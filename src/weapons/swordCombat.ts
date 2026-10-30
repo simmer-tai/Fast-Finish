@@ -10,13 +10,18 @@ import {
   SWORD_ISSEN, SWORD_REACH, SWORD_SWEEP, SWORD_THRUST, SWORD_TIP, type SwordAttackDef, type SwordKey,
 } from './swordAttacks.js';
 import { sword, swordRest, swordRestQuat, swordSpin } from './viewModels.js';
-import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js';
-import { en, enemies, hitPoint, setEn, type Enemy } from '../enemy/state.js';
+import { onSkinChange, skinFx, skinOf } from './skins.js';
+import { hitWithArcs } from '../fx/arcs.js';
+import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js';
+import { en, enemies, hitDir, hitPoint, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow } from '../world/raycast.js';
+import { boss, bossPartOpen, bossTargetAt, bossTargetCount, bossTargetPart } from '../enemy/boss.js';
 import { forward, lookEuler, player, position, velocity } from '../player/state.js';
 import { endWallRun } from '../player/movement.js';
 import { DASH_ATTACK_WINDOW, DEADEYE_MAX, SWING_SAMPLE, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
+import { tryWallHit } from './wallHit.js';
+import { startMeleePull, stopMeleePull } from './meleePull.js';
 
 // ---- 剣の攻撃 ----
 // 振り・溜め斬り・居合（構えと突進）。技の定義は swordAttacks.ts
@@ -47,7 +52,13 @@ let swordComboTimer = 0;
 let swordFiredSwishes = 0;
 let swordFiredGrips = 0;
 let swordFiredRings = 0;
+// 振りの風切り音。スキンに音があればそちら（爪は光る刃のうなりを重ねる）
+const swordSwish = () => skinOf('sword').swish ?? 'sword';
 let swordFiredLunge = false;
+export const SWORD_ATTACK_SPEED = 1.2; // 振りを進める速さの倍率（技の定義の時間をまとめて縮める）
+// 踏み込みで照準の近くの敵へ寄る（meleePull.ts）。速さ × 時間が寄れる距離の上限
+export const SWORD_PULL_SPEED = 12; // (m/s)
+export const SWORD_PULL_TIME = 0.18; // (s)
 // ダッシュしたときに、握った手を軸に刀を縦に 2 回転させる
 export const SWORD_TWIRL_TIME = 0.5;
 export const SWORD_TWIRL_TURNS = 2;
@@ -144,9 +155,18 @@ export const SWORD_FOCUS_QUAT = new THREE.Quaternion();
 }
 
 let lockEnemy: Enemy | null = null; // ロックオンしている敵
-// 照準からの角度がいちばん小さい敵にロックオンする（間に壁や別の敵がある敵は選ばない）
+let lockBoss = -1; // ロックオンしているボスの目印（-1 = ボスではない）。突進の間も覚えておく
+// ロックオンしている所（敵なら胸の高さ、ボスなら目印の今の位置）
+function lockedAt(out: THREE.Vector3) {
+  if (lockBoss >= 0) return bossTargetAt(lockBoss, out);
+  setEn(swordState.rushEnemy ?? lockEnemy ?? en);
+  return out.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z);
+}
+// 照準からの角度がいちばん小さい敵にロックオンする（間に壁や別の敵がある敵は選ばない）。
+// ボスは、今ダメージが通る部位の目印も候補にする（間に機体の別の部品があってもよい）
 export function canLockOn(): boolean {
   lockEnemy = null;
+  lockBoss = -1;
   let bestAngle = LOCK_ANGLE;
   camera.getWorldDirection(lockLook);
   for (const e of enemies) {
@@ -162,14 +182,47 @@ export function canLockOn(): boolean {
     bestAngle = angle;
     lockEnemy = e;
   }
-  if (lockEnemy) lockPoint.set(lockEnemy.root.position.x, lockEnemy.root.position.y + LOCK_HEIGHT, lockEnemy.root.position.z);
-  return lockEnemy !== null;
+  for (let i = 0, n = bossTargetCount(); i < n; i++) {
+    if (!bossPartOpen(bossTargetPart(i))) continue;
+    lockTo.copy(bossTargetAt(i, lockAt)).sub(camera.position);
+    const dist = lockTo.length();
+    if (dist > LOCK_RANGE || dist < 1e-3) continue;
+    lockTo.divideScalar(dist);
+    const angle = lockLook.angleTo(lockTo);
+    if (angle > bestAngle) continue;
+    if (!castThrow(camera.position, lockTo, dist + 1) || !castHit.boss) continue;
+    bestAngle = angle;
+    lockEnemy = null;
+    lockBoss = i;
+  }
+  if (lockEnemy || lockBoss >= 0) lockedAt(lockPoint);
+  return lockEnemy !== null || lockBoss >= 0;
 }
+const lockAt = new THREE.Vector3();
+let issenBoss = -1; // 突進の後の一閃を当てるボスの目印（-1 = ボスではない）
+const issenDir = new THREE.Vector3();
+const BOSS_RUSH_STOP = 0.8; // ボスへの突進は、目印のこれだけ手前（RUSH_STOP に足す）で止まる（目印は機体の表面より少し内側）
 
 // 敵へ与えたダメージの分だけゲージを溜める。構えている間と突進中は溜めない
 export function chargeFocus(damage: number) {
   if (swordState.focusing || swordState.rushTime >= 0) return;
   swordState.focusCharge = Math.min(1, swordState.focusCharge + damage / FOCUS_CHARGE_DAMAGE);
+}
+
+// 振り・溜め・溜め斬りの踏み込みをやめる。振っていた形からは滑らかに戻す
+function cancelSwordAttack() {
+  if (swordState.swordAttack) {
+    swordExit.pos.copy(swordCur.pos);
+    swordExit.quat.copy(swordCur.quat);
+    swordExit.spin = ((((swordCur.spin + 180) % 360) + 360) % 360) - 180;
+    swordExitBlend = 1;
+    swordState.swordAttack = null;
+    swordComboTimer = SWORD_COMBO_RESET;
+  }
+  swordQueued = false;
+  swordState.swordHold = -1;
+  swordState.chargeDashTime = 0;
+  stopMeleePull();
 }
 
 export function startFocus() {
@@ -179,6 +232,7 @@ export function startFocus() {
   focusLocked = false;
   swordTwirlTime = Infinity;
   sfx.playFocusStart();
+  if (skinOf('sword').focus?.enterSpin) playSwish({ at: 0.02, dur: 0.3, f0: 250, f1: 1100, gain: 0.25 }, swordSwish());
 }
 
 export function endFocus() {
@@ -188,14 +242,19 @@ export function endFocus() {
 
 export function startRush() {
   endFocus();
-  setEn(swordState.rushEnemy = lockEnemy ?? en);
+  // ボスにロックオンしていれば、目印の真下の地面を的にする（一閃はその目印の部位へ当てる）
+  swordState.rushEnemy = lockBoss >= 0 ? null : lockEnemy ?? en;
+  issenBoss = lockBoss;
+  const at = lockedAt(lockAt);
+  const footY = lockBoss >= 0 ? boss.pos.y : en.root.position.y;
+  const stop = RUSH_STOP + (lockBoss >= 0 ? BOSS_RUSH_STOP : 0);
   // 敵の手前（こちら側）で止まる位置へ、空中からでもまっすぐ飛び込む
-  rushDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
+  rushDir.set(at.x - position.x, 0, at.z - position.z);
   const d = rushDir.length();
   if (d > 1e-4) rushDir.divideScalar(d);
   else camera.getWorldDirection(rushDir).setY(0).normalize();
-  rushTarget.copy(en.root.position).addScaledVector(rushDir, -RUSH_STOP);
-  if (d < RUSH_STOP) rushTarget.set(position.x, en.root.position.y, position.z);
+  rushTarget.set(at.x, footY, at.z).addScaledVector(rushDir, -stop);
+  if (d < stop) rushTarget.set(position.x, footY, position.z);
   swordState.rushTime = 0;
   rushArrived = false;
   game.timeScale = 1; // スローを一気に解く
@@ -206,14 +265,18 @@ export function startRush() {
   hooks.addTrauma(0.3);
   kickVel.x += 1.2 * DEG * 22;
   sfx.playRush();
+  // 専用の突進の形を持つスキンは、刀を振り上げる音と刃の光を足す
+  if (skinOf('sword').focus?.rush) {
+    playSwish({ at: 0, dur: 0.16, f0: 400, f1: 1800, gain: 0.3 }, swordSwish());
+    skinFx.flare = 1;
+  }
 }
 
 // update() の移動の中で呼ぶ。止まる位置へ RUSH_SPEED でまっすぐ向かい、届く 1 歩はぴったり合わせる
 export function updateRush(dt: number) {
   swordState.rushTime += dt;
-  setEn(swordState.rushEnemy ?? en);
   // 突進しながら視線を敵へ吸い寄せる
-  lockTo.set(en.root.position.x, en.root.position.y + LOCK_HEIGHT, en.root.position.z).sub(camera.position);
+  lockTo.copy(lockedAt(lockAt)).sub(camera.position);
   lookEuler.setFromQuaternion(camera.quaternion);
   const k = 1 - Math.exp(-dt * 25);
   const yaw = Math.atan2(-lockTo.x, -lockTo.z);
@@ -234,17 +297,21 @@ export function updateRush(dt: number) {
 export function finishRush() {
   swordState.rushTime = -1;
   rushArrived = false;
-  setEn(swordState.rushEnemy ?? en);
-  rushDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z).normalize();
+  const at = lockedAt(lockAt);
+  rushDir.set(at.x - position.x, 0, at.z - position.z).normalize();
   velocity.set(rushDir.x * RUSH_EXIT_SPEED, 0, rushDir.z * RUSH_EXIT_SPEED);
   startSwordAttack(SWORD_ISSEN);
 }
 
 // 構え・ロックオン・突進の状態を進める（実時間で動かす）
 export function updateFocus() {
-  const can = controls.isLocked && swordReady() && !swordState.swordAttack && swordState.rushTime < 0 && swordState.swordHold < 0;
+  // 振っている途中・溜めている途中でも、それをやめてすぐ構えられる
+  const can = controls.isLocked && swordReady() && swordState.rushTime < 0;
   if (swordState.focusPressed && can && !swordState.focusing) {
-    if (swordState.focusCharge >= 1) startFocus();
+    if (swordState.focusCharge >= 1) {
+      cancelSwordAttack();
+      startFocus();
+    }
     else {
       swordState.focusEmptyFlash = FOCUS_EMPTY_FLASH;
       playRing(0.5, 0.25, 0.04); // 溜まっていない鈍い「カッ」
@@ -373,7 +440,10 @@ export function startSwordAttack(def: SwordAttackDef) {
   swordFiredRings = 0;
   swordState.swordFiredImpact = false;
   swordFiredLunge = false;
+  stopMeleePull();
   swordHitLanded = false;
+  swordHits.clear();
+  swordBossHit = false;
   swordLastTrail = -Infinity;
   swordRibbon.cut();
   if (def.windKick) {
@@ -408,15 +478,53 @@ export function swordTipAt(def: SwordAttackDef, t: number, out: THREE.Vector3) {
   return out.copy(SWORD_TRAIL_TIP).applyMatrix4(sword.matrixWorld);
 }
 export function trySwordHit(def: SwordAttackDef): boolean {
-  if (!hooks.dummyInReach(def.reach ?? SWORD_REACH, SWORD_HIT_ANGLE)) return false;
-  camera.updateMatrixWorld();
-  swordTipAt(def, Math.max(0, swordState.swordTime - SWING_SAMPLE), swordSwing);
-  swordSwing.subVectors(swordTipAt(def, swordState.swordTime + SWING_SAMPLE, swordHitTip), swordSwing);
-  swordTipAt(def, swordState.swordTime, swordHitTip);
-  hooks.hitPointFromTip(swordHitTip, hitPoint);
-  hooks.applyHit(def, hitPoint, 'sword', swordSwing);
-  return true;
+  // ボスへの一閃は、届く範囲を測らずにロックオンした目印の部位へ当てる（高い所の腕にも届かせる）
+  if (def === SWORD_ISSEN && issenBoss >= 0) {
+    const i = issenBoss;
+    issenBoss = -1;
+    camera.updateMatrixWorld();
+    swordTipAt(def, Math.max(0, swordState.swordTime - SWING_SAMPLE), swordSwing);
+    swordSwing.subVectors(swordTipAt(def, swordState.swordTime + SWING_SAMPLE, swordHitTip), swordSwing);
+    bossTargetAt(i, hitPoint);
+    issenDir.subVectors(hitPoint, camera.position);
+    hitWithArcs(skinOf('sword'), def.fx ?? 1, swordSwing, () => hooks.hitBoss(def, hitPoint, 'sword', bossTargetPart(i), issenDir, 1, swordSwing));
+    skinFx.flare = 1;
+    return true;
+  }
+  // 届く範囲にいる敵（今の振りでまだ当てていないもの）すべてに当てる
+  const reach = def.reach ?? SWORD_REACH;
+  let any = false;
+  const hitOne = () => {
+    if (!any) {
+      // 当たったら吸い寄せをやめる（ヒットストップの後に位置だけ前へずれると、敵が瞬間移動したように見える）
+      stopMeleePull();
+      camera.updateMatrixWorld();
+      swordTipAt(def, Math.max(0, swordState.swordTime - SWING_SAMPLE), swordSwing);
+      swordSwing.subVectors(swordTipAt(def, swordState.swordTime + SWING_SAMPLE, swordHitTip), swordSwing);
+      swordTipAt(def, swordState.swordTime, swordHitTip);
+    }
+    any = true;
+    hooks.hitPointFromTip(swordHitTip, hitPoint);
+    // 稲妻を出すスキンは、当たりの斬撃の線と光線も稲妻と同じ色にし、斬撃の線を太くする
+    hitWithArcs(skinOf('sword'), def.fx ?? 1, swordSwing, () => hooks.applyHit(def, hitPoint, 'sword', swordSwing));
+    skinFx.flare = 1; // スキンの飾りを光らせる（金継ぎの継ぎ目など）
+  };
+  for (const e of enemies) {
+    if (swordHits.has(e)) continue;
+    setEn(e);
+    if (!hooks.inReachOf(reach, SWORD_HIT_ANGLE)) continue;
+    swordHits.add(e);
+    hitOne();
+  }
+  // ボスの機体（1 回の振りで 1 回）
+  if (!swordBossHit && hooks.bossInReach(reach, SWORD_HIT_ANGLE)) {
+    swordBossHit = true;
+    hitOne();
+  }
+  return any;
 }
+const swordHits = new Set<Enemy>(); // 今の振りで当てた敵
+let swordBossHit = false;
 export const swordTmpHit = newSwordPose();
 let swordHitLanded = false;
 
@@ -465,7 +573,7 @@ export function updateSwordAttack(dt: number) {
       if (!wasStance && swordState.swordHold >= CHARGE_DELAY) {
         swordTwirlTime = Infinity; // ダッシュで回している途中でも、溜めの構えへ移る
         playGrip();
-        playSwish({ at: 0, dur: 0.25, f0: 250, f1: 800, gain: 0.25 }, 'sword');
+        playSwish({ at: 0, dur: 0.25, f0: 250, f1: 800, gain: 0.25 }, swordSwish());
       }
       if (!wasCharged && swordCharged()) {
         sfx.playCharge(2); // 溜めきった「キン」
@@ -481,11 +589,11 @@ export function updateSwordAttack(dt: number) {
   }
 
   if (swordState.swordAttack) {
-    swordState.swordTime += dt;
+    swordState.swordTime += dt * SWORD_ATTACK_SPEED;
     const def = swordState.swordAttack;
 
     while (swordFiredSwishes < def.swishes.length && swordState.swordTime >= def.swishes[swordFiredSwishes].at) {
-      playSwish(def.swishes[swordFiredSwishes++], 'sword');
+      playSwish(def.swishes[swordFiredSwishes++], swordSwish());
     }
     const grips = def.grips ?? [];
     while (swordFiredGrips < grips.length && swordState.swordTime >= grips[swordFiredGrips]) {
@@ -499,6 +607,7 @@ export function updateSwordAttack(dt: number) {
     if (!swordFiredLunge && swordState.swordTime >= def.lungeAt) {
       swordFiredLunge = true;
       hooks.applyLunge(def.lunge);
+      if (def.lunge > 0) startMeleePull(def.reach ?? SWORD_REACH, SWORD_PULL_SPEED, SWORD_PULL_TIME); // 踏み込む技だけ（連撃・突き）
     }
     if (!swordState.swordFiredImpact && swordState.swordTime >= def.impact) {
       swordState.swordFiredImpact = true;
@@ -509,8 +618,15 @@ export function updateSwordAttack(dt: number) {
       game.fovKick += def.fovPunch ?? 0;
       game.landDipVel -= def.dip ?? 0;
       swordHitLanded = trySwordHit(def);
-    } else if (swordState.swordFiredImpact && !swordHitLanded && def.hitUntil !== undefined && swordState.swordTime <= def.hitUntil) {
-      swordHitLanded = trySwordHit(def);
+      if (!swordHitLanded) {
+        // 空振り: 壁や床に届いていれば弾かれる（あとで届いた敵には、そのまま当たる）
+        camera.updateMatrixWorld();
+        swordTipAt(def, Math.max(0, swordState.swordTime - SWING_SAMPLE), swordSwing);
+        swordSwing.subVectors(swordTipAt(def, swordState.swordTime + SWING_SAMPLE, swordHitTip), swordSwing);
+        tryWallHit('sword', def.reach ?? SWORD_REACH, 'blade', swordSwing, def.fx ?? 1);
+      }
+    } else if (swordState.swordFiredImpact && def.hitUntil !== undefined && swordState.swordTime <= def.hitUntil) {
+      if (trySwordHit(def)) swordHitLanded = true; // 当てたあとも、届いた別の敵には当てる
     }
 
     // 押し続けている間は、離すか溜めに移るまで次の段を待つ
@@ -539,6 +655,7 @@ export function updateSwordAttack(dt: number) {
   const stance = swordState.swordHold >= CHARGE_DELAY;
   swordState.swordChargeBlend += ((stance ? 1 : 0) - swordState.swordChargeBlend) * Math.min(1, dt * (stance ? 14 : 10));
 
+  skinFx.focus = swordState.focusBlend; // スキンの飾りを構えに合わせて光らせる
   if (swordState.swordAttack) {
     swordExitBlend = 0;
     sampleSwordTrail();
@@ -553,13 +670,34 @@ export function updateSwordAttack(dt: number) {
       playGrip();
     }
     // 居合の構え。構えている間はゆっくり呼吸するように上下させる
+    // スキンが専用の構えを持っていれば、そちらで構える
     if (swordState.focusBlend > 1e-3) {
       const w = easeInOutCubic(swordState.focusBlend);
-      swordFocusPos.copy(SWORD_FOCUS_POS);
+      const focus = skinOf('sword').focus;
+      swordFocusPos.copy(focus?.pos ?? SWORD_FOCUS_POS);
       swordFocusPos.y += Math.sin(performance.now() * 0.004) * 0.004;
       swordCur.pos.lerp(swordFocusPos, w);
-      swordCur.quat.slerp(SWORD_FOCUS_QUAT, w);
+      swordCur.quat.slerp(focus?.quat ?? SWORD_FOCUS_QUAT, w);
       swordCur.spin *= 1 - w;
+      // スキン専用の動き（見た目だけ。構え・突進・振りの時間と当たりは変えない）
+      // 構えに入るときは、手の中で刀を回しながら構える（enterSpin から 0 へ減らして、同じ向きに 1 回転させる）
+      if (focus?.enterSpin && swordState.focusing) {
+        swordCur.spin += focus.enterSpin * (1 - easeOutCubic(Math.min(1, focusTime / FOCUS_ENTER_SPIN_TIME)));
+      }
+      // 突進中は、構え → スキンの形 → 一閃の振りかぶり（最初の key）へ寄せる。振り始めの形が振りかぶりに近いので、そのまま振りへつながる
+      if (focus?.rush && swordState.rushTime >= 0) {
+        const p = 1 - Math.exp(-swordState.rushTime / RUSH_POSE_TIME);
+        evalSwordAttack(SWORD_ISSEN, SWORD_ISSEN.keys[1].t, rushDraw);
+        if (p < 0.5) {
+          const u = easeInOutCubic(p * 2);
+          swordCur.pos.lerp(focus.rush.pos, u);
+          swordCur.quat.slerp(focus.rush.quat, u);
+        } else {
+          const u = easeInOutCubic((p - 0.5) * 2);
+          swordCur.pos.lerpVectors(focus.rush.pos, rushDraw.pos, u);
+          swordCur.quat.slerpQuaternions(focus.rush.quat, rushDraw.quat, u);
+        }
+      }
     }
     // 溜めの構え。溜まるにつれて少しずつ引き絞り、溜めきったら刀を小刻みに震わせる
     if (swordState.swordChargeBlend > 1e-3) {
@@ -589,6 +727,9 @@ export function updateSwordAttack(dt: number) {
 }
 
 export const swordFocusPos = new THREE.Vector3();
+const rushDraw = newSwordPose(); // 一閃の振りかぶりの形（突進中にスキンの形から寄せる先）
+const FOCUS_ENTER_SPIN_TIME = 0.4; // 構えに入るときに手の中で回す時間（実時間の秒）
+const RUSH_POSE_TIME = 0.05; // 突進中にスキンの形を通って振りかぶりへ寄せる速さ（時定数）
 export const SWORD_EXIT_TIME = 0.15;
 export const swordExit = newSwordPose();
 let swordExitBlend = 0;
@@ -613,8 +754,8 @@ export function startSwordTwirl() {
   swordTwirlTime = 0;
   swordTwirlGripped = false;
   swordRibbon.cut();
-  playSwish({ at: 0, dur: 0.18, f0: 600, f1: 2200, gain: 0.2 }, 'sword');
-  setTimeout(() => playSwish({ at: 0, dur: 0.2, f0: 500, f1: 1800, gain: 0.14 }, 'sword'), 150);
+  playSwish({ at: 0, dur: 0.18, f0: 600, f1: 2200, gain: 0.2 }, swordSwish());
+  setTimeout(() => playSwish({ at: 0, dur: 0.2, f0: 500, f1: 1800, gain: 0.14 }, swordSwish()), 150);
 }
 
 // 回している間の軌跡（勢いのある前半だけ）
@@ -639,6 +780,9 @@ export const SWORD_TRAIL_TIP = new THREE.Vector3(0, SWORD_TIP + 0.03, 0); // 剣
 export const SWORD_TRAIL_BASE = new THREE.Vector3(0, SWORD_BLADE_BASE_Y + 0.01, 0);
 export const swordRibbon = new Ribbon(240, 0.2, makeRibbonMaterial(SWORD_RIBBON));
 camera.add(swordRibbon.mesh);
+// スキンが軌跡の色を持つときは、その色にする
+tintRibbon(swordRibbon, skinOf('sword').trail);
+onSkinChange((id, skin) => id === 'sword' && tintRibbon(swordRibbon, skin.trail));
 let swordLastTrail = -Infinity;
 export const swordTrailPose = newSwordPose();
 export const swordTrailTip = new THREE.Vector3();

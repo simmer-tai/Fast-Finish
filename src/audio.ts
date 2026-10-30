@@ -8,12 +8,23 @@ let noiseBuffer: AudioBuffer;
 let bus: GainNode; // すべての音の入り口（ここから先は共通の加工）
 let reverbIn: GainNode; // 残響へ送る入り口
 let reverbReturn: GainNode;
+let hallIn: GainNode; // 広い所の響きへ送る入り口
+let boomBus: GainNode; // 特大の一撃の出口（全体のコンプレッサーを通さない）
 let slowFilter: BiquadFilterNode; // スロー中に全体をこもらせる
 let worldGain: GainNode; // パリィで世界が止まっている間、ここで世界の音（残響の尾も）を消す
 let parryBus: GainNode; // パリィの音だけはこもりも消音も通さず、コンプレッサーへ直接出す
+let master: GainNode | null = null; // 最後の出口。オプションの音量をここで掛ける
 const bank: Record<string, AudioBuffer[]> = {};
 const reversedBank: Record<string, AudioBuffer[]> = {};
 const lastPick: Record<string, number> = {};
+
+// オプションの音量（0〜1）。耳の感じ方に合わせて 2 乗した値を、ゲームと UI の両方の出口に掛ける
+let masterVolume = 1;
+export function setMasterVolume(v: number) {
+  masterVolume = v;
+  if (master) master.gain.value = v * v;
+  if (uiMaster) uiMaster.gain.value = v * v;
+}
 
 // スローの深さ（0 = 通常, 1 = 最大）。素材の再生速度を落として、音も引き伸ばす
 let slowAmt = 0;
@@ -37,9 +48,20 @@ export function ensureAudio() {
     slowFilter.Q.value = 0.9;
     bus = ctx.createGain();
     worldGain = ctx.createGain();
-    bus.connect(worldGain).connect(slowFilter).connect(comp).connect(ctx.destination);
+    master = ctx.createGain();
+    master.gain.value = masterVolume * masterVolume;
+    bus.connect(worldGain).connect(slowFilter).connect(comp).connect(master).connect(ctx.destination);
     parryBus = ctx.createGain();
     parryBus.connect(comp);
+    // 特大の一撃だけは、全体のコンプレッサーで潰さずに、割れない上限だけを掛けて出す
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.25;
+    boomBus = ctx.createGain();
+    boomBus.connect(limiter).connect(master);
 
     const conv = ctx.createConvolver();
     conv.buffer = makeImpulse(ctx, 1.3);
@@ -47,6 +69,13 @@ export function ensureAudio() {
     reverbReturn = ctx.createGain();
     reverbReturn.gain.value = 0.5;
     reverbIn.connect(conv).connect(reverbReturn).connect(worldGain);
+    // 広い所の響き（ボスの登場の大きな一撃だけに使う）
+    const hallConv = ctx.createConvolver();
+    hallConv.buffer = makeHall(ctx, 3.2);
+    hallIn = ctx.createGain();
+    const hallReturn = ctx.createGain();
+    hallReturn.gain.value = 0.6;
+    hallIn.connect(hallConv).connect(hallReturn).connect(boomBus); // 大きな一撃の響きなので、潰さずに出す
 
     startLoops(ctx);
     loadBank(ctx);
@@ -75,9 +104,31 @@ function makeImpulse(c: AudioContext, seconds: number) {
   return ir;
 }
 
+// 広い所の響き: ビルに囲まれた広場で鳴ったような、暗くゆっくり消える長い尾。遅れて返ってくる跳ね返りを数本混ぜる
+function makeHall(c: AudioContext, seconds: number) {
+  const len = Math.floor(c.sampleRate * seconds);
+  const ir = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / c.sampleRate;
+      // 初めから高い音を強く削り、時間とともにさらにこもらせる
+      const k = Math.min(0.985, 0.7 + t * 0.4);
+      lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
+      d[i] = lp * Math.exp(-t * 1.5) * (t < 0.03 ? t / 0.03 : 1) * 4;
+    }
+    for (const [at, g] of [[0.09, 0.25], [0.21, 0.2], [0.37, 0.14], [0.6, 0.09]]) {
+      const i0 = Math.floor((at + ch * 0.013) * c.sampleRate);
+      for (let j = 0; j < 400; j++) d[i0 + j] += g * Math.exp(-j / 120) * (j % 2 ? -1 : 1) * 0.5; // 鈍い跳ね返り
+    }
+  }
+  return ir;
+}
+
 async function loadBank(c: AudioContext) {
   try {
-    const manifest: Record<string, string[]> = await (await fetch('./sfx/manifest.json')).json();
+    const manifest: Record<string, string[]> = await (await fetch('./sfx/manifest.json', { cache: 'no-cache' })).json(); // 素材を足したとき古い一覧が残らないように
     await Promise.all(
       Object.entries(manifest).flatMap(([group, files]) =>
         files.map(async (file, i) => {
@@ -120,6 +171,7 @@ interface Layer {
   lp?: number;
   pan?: number; // -1〜1。省くと少しだけ左右に散らす
   reverb?: number; // 残響へ送る量
+  hall?: number; // 広い所の響きへ送る量
   reversed?: boolean;
   cut?: number; // この秒数で尾を絞って止める（録音の長い響きを切る）
   out?: AudioNode; // 省くとバス
@@ -152,6 +204,14 @@ function sample(group: string, o: Layer = {}) {
     const s = ctx.createGain();
     s.gain.value = o.reverb;
     p.connect(s).connect(reverbIn);
+  }
+  if (o.hall) {
+    // 響きへは cut で絞る前の音量のまま送る（絞った後も響きの尾は長く残る）
+    const s = ctx.createGain();
+    s.gain.value = o.hall * level;
+    let pre: AudioNode = src;
+    if (o.lp) pre = pre.connect(filter('lowpass', o.lp));
+    pre.connect(s).connect(hallIn);
   }
   src.start(t0);
   if (o.cut) src.stop(t0 + o.cut + 0.02);
@@ -439,16 +499,17 @@ export interface SwishParams {
   f1: number;
   gain: number;
 }
-export type SwishKind = 'kunai' | 'sword' | 'gun' | 'sickle' | 'axe' | 'bat';
+export type SwishKind = 'kunai' | 'sword' | 'talon' | 'gun' | 'sickle' | 'axe' | 'talonAxe' | 'talonSickle' | 'talonGun' | 'talonKunai' | 'bat';
 
 // 風切り音: ノイズを帯域フィルタに通し、振りの速さに合わせて高さと音量を山なりに動かす。
 // そこへ録音の振り音を、合成の山に合わせて少し遅らせて重ねる。剣は刃が空気を裂く「シュイン」も足す。
-// 鎌は全体を高く細くして、薄い刃が鋭く空気を切る「ヒュイン」にし、振り抜きの頂点に澄んだ金属のきらめきを添える
+// 鎌は全体を高く細くして、薄い刃が鋭く空気を切る「ヒュイン」にし、振り抜きの頂点に澄んだ金属のきらめきを添える。
+// 剣のスキン「爪」（talon）は、剣の録音を低く暗く重くする。斧の「爪」（talonAxe）は、斧の音の下に低く暗い金属の唸りを足す。鎖鎌の「爪」（talonSickle）は、鎌の音の下に暗い刃の鳴りを敷く。リボルバーの「爪」（talonGun）は、回す音を低く暗くする。クナイの「爪」（talonKunai）は、振り音を少し低く暗くして刃の鳴りを薄く敷く
 export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   if (!ctx) return;
   const t0 = ctx.currentTime;
-  const sickle = kind === 'sickle';
-  const axe = kind === 'axe';
+  const sickle = kind === 'sickle' || kind === 'talonSickle';
+  const axe = kind === 'axe' || kind === 'talonAxe';
   const bat = kind === 'bat';
   const v = rand(0.9, 1.1) * (sickle ? 1.6 : axe ? 0.55 : bat ? 0.7 : 1);
   const src = ctx.createBufferSource();
@@ -470,7 +531,12 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
   // 振りが速い（高い）ほど、録音も速く回す
   const speed = Math.min(1.5, Math.max(0.6, s.f1 / 1700));
   const at = s.dur * 0.3;
-  if (kind === 'sword') {
+  if (kind === 'talon') {
+    // 剣の録音を、黒い機械の刀に合わせて少し低く暗くする。下には同じ刃の録音をずっと低く回して敷き、重さを足す
+    sample('blade', { gain: Math.min(0.85, s.gain * 1.3), rate: 0.75 * speed, delay: at * 0.6, lp: 6000, reverb: 0.14 });
+    sample('blade', { gain: Math.min(0.45, s.gain * 0.8), rate: 0.5 * speed, delay: at * 0.6, lp: 2500, cut: s.dur * 1.4 });
+    sample('swish', { gain: Math.min(0.8, s.gain * 1.2), rate: 0.6 * speed, delay: at, lp: 5000, reverb: 0.1 });
+  } else if (kind === 'sword') {
     sample('blade', { gain: Math.min(0.9, s.gain * 1.3), rate: 0.85 * speed, delay: at * 0.6, lp: 9000, reverb: 0.12 });
     sample('swish', { gain: Math.min(0.8, s.gain * 1.2), rate: 0.7 * speed, delay: at, reverb: 0.08 });
   } else if (axe) {
@@ -483,6 +549,8 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
     sample('swish', { gain: Math.min(0.8, s.gain * 1.4), rate: swishRate, delay: swishAt, lp: 2200, reverb: 0.1, cut: end - swishAt });
     sample('blade', { gain: Math.min(0.4, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.8, lp: 3000, cut: end - at * 0.8 });
     noise('lowpass', 500, 260, Math.min(0.3, s.gain * 0.5), s.dur * 1.1, { attack: s.dur * 0.35 });
+    // 爪: 刃の録音をさらに遅く回して暗く敷き、重い機械の刃が唸るようにする
+    if (kind === 'talonAxe') sample('blade', { gain: Math.min(0.45, s.gain * 0.8), rate: 0.38 * speed, delay: at * 0.6, lp: 1600, reverb: 0.14, cut: end - at * 0.6 });
   } else if (bat) {
     // バットは丸い筒が空気を押しのける「ブン」。斧より軽く高く、刃の鳴りは入れない
     sample('swish', { gain: Math.min(0.8, s.gain * 1.5), rate: 0.75 * speed, delay: at, lp: 3500, reverb: 0.06, cut: s.dur * 1.2 });
@@ -494,6 +562,14 @@ export function playSwish(s: SwishParams, kind: SwishKind = 'kunai') {
     // 振り抜きの頂点の「キィン」: ごく短い高い帯域のノイズと、高く短い金属音
     noise('bandpass', 7000, 12000, Math.min(0.12, s.gain * 0.3), 0.07, { q: 3, attack: 0.004, delay: s.dur * 0.42, reverb: 0.15 });
     if (s.gain >= 0.2) setTimeout(() => playRing(2.1, 0.3, 0.09), s.dur * 420);
+    // 爪: 刃の録音を遅く回して暗く敷き、黒い機械の刃の重さを足す
+    if (kind === 'talonSickle') sample('blade', { gain: Math.min(0.4, s.gain * 0.7), rate: 0.6 * speed, delay: at * 0.6, lp: 2500, reverb: 0.12, cut: s.dur * 1.2 });
+  } else if (kind === 'talonKunai') {
+    sample('swish', { gain: Math.min(0.7, s.gain * 1.8), rate: speed * 0.85, delay: at, lp: 5000, reverb: 0.08 });
+    sample('blade', { gain: Math.min(0.3, s.gain * 0.5), rate: 0.7 * speed, delay: at * 0.6, lp: 2500, cut: s.dur * 1.2 });
+  } else if (kind === 'talonGun') {
+    sample('swish', { gain: Math.min(0.7, s.gain * 1.8), rate: speed * 0.9, delay: at, lp: 4500, reverb: 0.1 });
+    sample('blade', { gain: Math.min(0.35, s.gain * 0.6), rate: 0.55 * speed, delay: at * 0.6, lp: 2000, cut: s.dur * 1.2 });
   } else {
     sample('swish', { gain: Math.min(0.7, s.gain * 1.8), rate: speed * (kind === 'gun' ? 1.15 : 1), delay: at });
   }
@@ -560,22 +636,48 @@ export function playAxeGround(power = 1) {
   tone(95, 38, 0.5 * power, 0.3, { attack: 0.004 });
 }
 
-// とどめで砕け散る: 低く重い「ドッ」に、低く落としたガラスの割れる音を乾いたまま重ねる
-export function playKill() {
+// 近接の空振りが壁や床を叩いた（weapons/wallHit.ts）。肉に入る「ザシュッ」は入れず、硬い面に弾かれた乾いた音だけ。
+// 刃は短い金属の「キッ」、斧は重い「ガゴッ」、バットは中空の「カンッ」
+export function playWallHit(kind: 'blade' | 'heavy' | 'blunt', power = 1) {
   if (!ctx) return;
-  sample('thud_heavy', { gain: 0.9, rate: 0.6, reverb: 0.15 });
-  sample('gun_sub', { gain: 0.6, rate: 0.9 });
-  sample('glass', { gain: 0.45, rate: 0.55, lp: 5000, cut: 0.5 });
-  sample('glass', { gain: 0.3, rate: 0.8, lp: 7000, delay: 0.03, cut: 0.35 });
+  if (kind === 'blade') {
+    sample('clash', { gain: 0.2 * power, rate: rand(1.05, 1.25), lp: 7000, cut: 0.18, reverb: 0.08 });
+    sample('step_hard', { gain: 0.35 * power, rate: rand(0.85, 1), lp: 2500, cut: 0.12 });
+    noise('highpass', 4000, 4000, 0.25 * power, 0.02, { attack: 0.001 });
+  } else if (kind === 'heavy') {
+    sample('step_hard', { gain: 0.5 * power, rate: rand(0.6, 0.7), lp: 1800, cut: 0.2, reverb: 0.12 });
+    sample('thud_heavy', { gain: 0.4 * power, rate: 0.85 });
+    sample('clash', { gain: 0.12 * power, rate: 0.55, lp: 3000, cut: 0.3 });
+    noise('lowpass', 1400, 250, 0.2 * power, 0.18, { attack: 0.003, delay: 0.005 });
+  } else {
+    sample('metal_small', { gain: 0.3 * power, rate: rand(0.75, 0.85), lp: 4500, cut: 0.25, reverb: 0.08 });
+    sample('step_hard', { gain: 0.4 * power, rate: rand(0.75, 0.85), lp: 2200, cut: 0.15 });
+    sample('thud', { gain: 0.25 * power, rate: 0.9, lp: 900, cut: 0.12 });
+  }
+}
+
+// とどめで砕け散る: 低く重い「ドッ」に、低く落としたガラスの割れる音を乾いたまま重ねる
+// 連続するたびに半音ずつ上げ、極端に高くならないよう 1 オクターブで止める。
+function killPitch(chain: number) {
+  return 2 ** (Math.min(12, Math.max(0, chain - 1)) / 12);
+}
+export function playKill(chain = 1) {
+  if (!ctx) return;
+  const pitch = killPitch(chain);
+  sample('thud_heavy', { gain: 0.9, rate: 0.6 * pitch, reverb: 0.15 });
+  sample('gun_sub', { gain: 0.6, rate: 0.9 * pitch });
+  sample('glass', { gain: 0.45, rate: 0.55 * pitch, lp: 5000, cut: 0.5 });
+  sample('glass', { gain: 0.3, rate: 0.8 * pitch, lp: 7000, delay: 0.03, cut: 0.35 });
   noise('lowpass', 1800, 300, 0.35, 0.3, { attack: 0.003 });
-  tone(95, 30, 0.9, 0.45, { attack: 0.004 });
+  tone(95 * pitch, 30 * pitch, 0.9, 0.45, { attack: 0.004 });
 }
 
 // 最後の 1 体: 砕けた瞬間に世界の音をすべて消し、砕ける一撃だけを乾いたまま太く鳴らす。
 // 止まっている間は細い耳鳴りだけを残し、明ける瞬間に腹へ沈む低い「ドォン」と長い地鳴りを落とす。
 // 世界の音はスローが明けるのに合わせてゆっくり戻す。どれもこもりを通さない parryBus へ出す
-export function playFinale(freeze: number) {
+export function playFinale(freeze: number, chain = 1) {
   if (!ctx) return;
+  const pitch = killPitch(chain);
   const t0 = ctx.currentTime;
   worldGain.gain.cancelScheduledValues(t0);
   worldGain.gain.setValueAtTime(worldGain.gain.value, t0);
@@ -586,14 +688,14 @@ export function playFinale(freeze: number) {
   const dry = { out, pan: 0, jitter: 0.02 };
 
   // 砕ける一撃: 鋭い頭・重い胴・低く落としたガラス・鉄板の重さ
-  sample('gun_crack', { ...dry, gain: 0.4, rate: 0.6, lp: 5000, cut: 0.1 });
-  sample('punch_heavy', { ...dry, gain: 0.95, rate: 0.5 });
-  sample('thud_heavy', { ...dry, gain: 1.0, rate: 0.5, lp: 1400 });
-  sample('glass', { ...dry, gain: 0.55, rate: 0.5, lp: 5000, cut: 0.6 });
-  sample('glass', { ...dry, gain: 0.35, rate: 0.72, lp: 7000, delay: 0.03, cut: 0.45, pan: 0.2 });
-  sample('plate', { ...dry, gain: 0.28, rate: 0.4, lp: 2500, cut: 0.5 });
+  sample('gun_crack', { ...dry, gain: 0.4, rate: 0.6 * pitch, lp: 5000, cut: 0.1 });
+  sample('punch_heavy', { ...dry, gain: 0.95, rate: 0.5 * pitch });
+  sample('thud_heavy', { ...dry, gain: 1.0, rate: 0.5 * pitch, lp: 1400 });
+  sample('glass', { ...dry, gain: 0.55, rate: 0.5 * pitch, lp: 5000, cut: 0.6 });
+  sample('glass', { ...dry, gain: 0.35, rate: 0.72 * pitch, lp: 7000, delay: 0.03, cut: 0.45, pan: 0.2 });
+  sample('plate', { ...dry, gain: 0.28, rate: 0.4 * pitch, lp: 2500, cut: 0.5 });
   noise('lowpass', 2400, 200, 0.45, 0.35, { attack: 0.002, out });
-  tone(110, 28, 1.0, 0.5, { attack: 0.003, out });
+  tone(110 * pitch, 28 * pitch, 1.0, 0.5, { attack: 0.003, out });
 
   // 止まっている間の耳鳴り: わずかにずらした 2 本の高いサイン波を、ふくらませてから細く消す
   for (const [freq, gain] of [[3950, 0.02], [3963, 0.014]]) {
@@ -751,7 +853,7 @@ export function playBatGrip() {
 }
 
 // 武器を持ち替えた: 武器ごとに抜く音を変える
-export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'bow' | 'bat') {
+export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'axe' | 'bow' | 'bat' | 'spear') {
   sample('gear', { gain: 0.35 });
   sample('cloth', { gain: 0.2, rate: 1.2 });
   if (weapon === 'kunai') {
@@ -759,8 +861,8 @@ export function playEquip(weapon: 'kunai' | 'handgun' | 'sword' | 'sickle' | 'ax
   } else if (weapon === 'handgun') {
     sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
     sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
-  } else if (weapon === 'bat') {
-    sample('metal_tick', { gain: 0.25, rate: 0.6, lp: 3000, delay: 0.04 }); // バットは鞘から抜かないので、握り直す小さな音だけ
+  } else if (weapon === 'bat' || weapon === 'spear') {
+    sample('metal_tick', { gain: 0.25, rate: 0.6, lp: 3000, delay: 0.04 }); // バットと槍は鞘から抜かないので、握り直す小さな音だけ
   } else if (weapon !== 'bow') { // 弓は金物の音を鳴らさない
     // 斧は重いので低く遅く
     sample('unsheathe', { gain: 0.55, rate: weapon === 'sickle' ? 1.2 : weapon === 'axe' ? 0.8 : 1, delay: 0.02, reverb: 0.15 });
@@ -811,8 +913,8 @@ export function playStick() {
 }
 
 // クナイを投げる: 腕の振りの風切りに、袖のはためきを添える
-export function playThrow(s: SwishParams) {
-  playSwish(s);
+export function playThrow(s: SwishParams, kind: SwishKind = 'kunai') {
+  playSwish(s, kind);
   sample('cloth', { gain: 0.18, rate: 1.4 });
 }
 
@@ -1032,6 +1134,245 @@ export function playSniperShot(volume = 1, pan = 0) {
   sample('thud_heavy', { gain: 0.6 * volume, rate: 0.5, lp: 500, pan, reverb: 0.5 });
 }
 
+// ---- ボス ----
+// 大きな機体なので、どれも低く重く鳴らす。volume と pan は機体の距離と向きから決める
+
+// 左右の位置を付けた出口（合成音を機体のいる向きから鳴らす）
+function panOut(pan: number, out: AudioNode = bus) {
+  const p = ctx!.createStereoPanner();
+  p.pan.value = pan;
+  p.connect(out);
+  return p;
+}
+
+
+// ボスの音の作り方（聴き比べて決めたこと）:
+// ・音の大きさは耳がよく聞く 150Hz〜5kHz で決まる。重さは素材をごく低く落とした層で出し、大きさは速度をあまり落とさない層で出す。
+//   重さの層の 40Hz より下（BOSS_SUB_HP）は、ほぼ聞こえずに音量の上限だけを食うので削る
+// ・音程が動くのこぎり波やサイン波の唸り、高い音域で長く続くノイズは、安っぽく（「プー」「砂嵐」に）聞こえるので使わない。
+//   機械が動く音は歯車の素材、動力の高まりは低い所だけを通したノイズで作る
+// ・大きな衝撃には爆発の素材を混ぜ、特に大きなものは広い所の響き（hall）へ送る
+const BOSS_SUB_HP = 40;
+
+// 足を着いた「ズゥン」: 鉄の足が床を打つ低い重さと、聞こえる高さの鈍い一打、関節の小さな軋み
+export function playBossStep(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('thud_heavy', { gain: 0.5 * volume, rate: 0.5, hp: BOSS_SUB_HP, lp: 450, pan, reverb: 0.15 });
+  sample('thud_heavy', { gain: 0.3 * volume, rate: 0.8, lp: 2200, pan, cut: 0.25 });
+  sample('step_hard', { gain: 0.35 * volume, rate: 0.6, lp: 2200, pan, cut: 0.15 });
+  sample('metal_small', { gain: 0.08 * volume, rate: 0.5, lp: 2000, pan, delay: 0.03, cut: 0.2 });
+}
+
+// 機体の重い衝撃（跳ぶ・降りる・床を叩く・突進で激突する・柱をもぎ取る）。power は強さ（0.5〜6 ほど）。
+// 強いほど低く重い層と爆発の層を足し、広い所に響かせる
+export function playBossImpact(power = 1, pan = 0) {
+  if (!ctx) return;
+  const k = Math.min(power, 3) / 3; // 0〜1
+  sample('thud_heavy', { gain: 0.3 + 0.5 * k, rate: 0.5, hp: BOSS_SUB_HP, lp: 900, pan, cut: 0.8 });
+  sample('gun_sub', { gain: 0.2 + 0.4 * k, rate: 0.55, hp: BOSS_SUB_HP, pan, cut: 0.6 });
+  sample('thud_heavy', { gain: 0.25 + 0.35 * k, rate: 0.8, lp: 2500, pan, cut: 0.35, hall: 0.3 * k });
+  sample('step_hard', { gain: 0.3 + 0.2 * k, rate: 0.55, lp: 2000, pan, cut: 0.2 });
+  sample('plate', { gain: 0.1 + 0.15 * k, rate: 0.5, lp: 1800, pan, cut: 0.3 });
+  noise('lowpass', 700, 100, 0.15 + 0.15 * k, 0.3, { attack: 0.003, out: panOut(pan) });
+  if (k > 0.35) {
+    sample('explosion', { gain: 0.75 * k, rate: 0.75, lp: 3500, pan, cut: 0.9, hall: 0.6 * k });
+    sample('punch_heavy', { gain: 0.5 * k, rate: 0.6, lp: 3000, pan, cut: 0.3 });
+  }
+}
+
+// 噴射で一気に動く（突進・跳躍・横へ滑る・投げる）: 噴射口が火を噴く短く太い「ドシュッ」
+export function playBossThrust(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('punch_heavy', { gain: 0.45 * volume, rate: 0.6, lp: 2500, pan, cut: 0.3 });
+  sample('thud_heavy', { gain: 0.35 * volume, rate: 0.7, lp: 1500, pan, cut: 0.3 });
+  sample('swish', { gain: 0.45 * volume, rate: 0.45, lp: 2000, pan, reversed: true });
+  noise('bandpass', 400, 1100, 0.22 * volume, 0.35, { attack: 0.01, q: 0.7, out: panOut(pan) });
+}
+
+// 油圧で脚や胴体を動かす: 構える瞬間の「ガチャ」と、だんだん速く回る歯車、低く膨らむ動力の音。
+// 攻撃の合図でもあるので、背後からでも気づけるくらいの大きさにする
+export function playBossServo(dur: number, volume = 1, pan = 0, pitch = 1) {
+  if (!ctx) return;
+  sample('gun_latch', { gain: 0.35 * volume, rate: 0.6 * pitch, lp: 2500, pan });
+  const n = Math.max(1, Math.ceil(dur / 0.22));
+  for (let i = 0; i < n; i++) {
+    sample('gear', { gain: 0.24 * volume, rate: (0.5 + 0.2 * (i / n)) * pitch, lp: 1800, pan, cut: 0.3, delay: i * 0.22 * (1 - 0.15 * (i / n)) });
+  }
+  noise('lowpass', 250 * pitch, 650 * pitch, 0.12 * volume, dur, { attack: dur * 0.8, out: panOut(pan) });
+}
+
+// 蒸気を逃がす「プシュー」: 高すぎる所は削って、ざらつきを抑える
+export function playBossHiss(dur: number, volume = 1, pan = 0, delay = 0) {
+  if (!ctx) return;
+  const out = panOut(pan);
+  noise('bandpass', 2500, 1200, 0.045 * volume, dur, { attack: 0.03, q: 0.7, delay, out });
+  noise('bandpass', 900, 500, 0.04 * volume, dur * 0.7, { attack: 0.02, q: 0.8, delay, out });
+}
+
+// ミサイルの発射口を開ける「ガコン」
+export function playBossHatch(volume = 1, pan = 0) {
+  sample('gun_latch', { gain: 0.45 * volume, rate: 0.55, lp: 1800, pan });
+  sample('plate', { gain: 0.12 * volume, rate: 0.5, lp: 1200, pan, delay: 0.05, cut: 0.25 });
+}
+
+// ミサイルの打ち上げ「シュボッ」: 短い噴射の吹き出しと、筒から押し出す鈍い音
+export function playMissileLaunch(volume = 1, pan = 0) {
+  if (!ctx) return;
+  const out = panOut(pan);
+  noise('bandpass', 500, 2200, 0.2 * volume, 0.22, { attack: 0.01, q: 0.7, out });
+  noise('lowpass', 700, 150, 0.18 * volume, 0.15, { attack: 0.002, out });
+  sample('thud', { gain: 0.3 * volume, rate: 0.7, lp: 800, pan });
+  sample('punch', { gain: 0.25 * volume, rate: 0.8, lp: 2500, pan, cut: 0.15 });
+}
+
+// ミサイルの爆発「ボゴッ」: 爆発の素材を少し低く落とし、空気を押しつぶす低い圧と鈍い一打を重ねる
+export function playMissileBlast(volume = 1) {
+  if (!ctx) return;
+  sample('explosion', { gain: 0.7 * volume, rate: 0.85, lp: 3500, cut: 0.7, hall: 0.25 });
+  sample('thud_heavy', { gain: 0.4 * volume, rate: 0.8, lp: 2000, cut: 0.3 });
+  sample('thud_heavy', { gain: 0.6 * volume, rate: 0.6, hp: BOSS_SUB_HP, lp: 700 });
+  sample('gun_sub', { gain: 0.4 * volume, rate: 1.0, hp: BOSS_SUB_HP });
+  noise('lowpass', 900, 90, 0.3 * volume, 0.3, { attack: 0.002 });
+}
+
+// 背中・かかとの噴射の音（鳴り続ける）。level は噴射の強さ（0 で止める）。毎フレーム呼ぶ
+let jetGain: GainNode | null = null;
+let jetFilter: BiquadFilterNode;
+let jetPan: StereoPannerNode;
+export function setBossJet(level: number, volume = 1, pan = 0) {
+  if (!ctx) return;
+  if (!jetGain) {
+    if (level <= 0.01) return;
+    // 低い「ゴォォ」: 低い所だけを通したノイズ（ざらつく中域は足さない）
+    jetFilter = filter('lowpass', 300, 0.9);
+    jetGain = ctx.createGain();
+    jetGain.gain.value = 0;
+    jetPan = ctx.createStereoPanner();
+    const src = loopNoise(ctx);
+    src.connect(jetFilter).connect(jetGain);
+    jetGain.connect(jetPan).connect(bus);
+  }
+  const t = ctx.currentTime;
+  const k = Math.min(level, 1.2);
+  jetGain.gain.setTargetAtTime(0.4 * k * volume * rand(0.9, 1.1), t, 0.04);
+  jetFilter.frequency.setTargetAtTime(200 + 450 * k, t, 0.05);
+  jetPan.pan.setTargetAtTime(pan, t, 0.05);
+}
+
+// 装甲に弾かれた「コッ」: 部位が残っていて本体に通らない・故障済みの部位に当てた。
+// 何も起きていないことが分かるよう、小さく乾いた音だけ。連射で鳴りすぎないよう間を空ける
+let lastArmor = 0;
+export function playBossArmor() {
+  if (!ctx || ctx.currentTime - lastArmor < 0.09) return;
+  lastArmor = ctx.currentTime;
+  sample('metal_tick', { gain: 0.14, rate: 0.55, lp: 1800 });
+  sample('plate', { gain: 0.06, rate: 0.7, lp: 1500, cut: 0.08 });
+}
+
+// 部位や本体に通った: いつもの当たりの音に重ねる、厚い鉄板の鈍い「ガン」
+export function playBossPlate(power = 1) {
+  sample('plate', { gain: 0.16 * Math.min(power, 2), rate: 0.45, lp: 1600, cut: 0.25 });
+}
+
+// 部位が故障した: 装甲の中で弾ける「バゴッ」と、鉄がねじ切れる「ガギャッ」、飛び散った装甲が床で鳴る音
+export function playBossBreak(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('explosion', { gain: 0.45 * volume, rate: 1.0, lp: 3500, pan, cut: 0.5, hall: 0.3 });
+  sample('punch_heavy', { gain: 0.5 * volume, rate: 0.7, lp: 3000, pan, cut: 0.3 });
+  sample('plate', { gain: 0.4 * volume, rate: 0.45, lp: 2500, pan, cut: 0.45 });
+  sample('clash', { gain: 0.22 * volume, rate: 0.55, lp: 3000, pan, delay: 0.02, cut: 0.3 });
+  for (let i = 0; i < 3; i++) sample('metal_small', { gain: 0.1 * volume, rate: rand(0.55, 0.7), lp: 2500, pan, cut: 0.15, delay: 0.3 + i * rand(0.1, 0.18) });
+  playBossHiss(0.5, 0.7 * volume, pan, 0.1);
+}
+
+// 4 つとも故障してしゃがみ込んだ: 歯車が止まっていき、動力が落ちる低い音と、膝を着く重い「ドズン」
+export function playBossPowerDown(volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('gear', { gain: 0.3 * volume, rate: 0.45, lp: 1500, pan, cut: 0.5 });
+  sample('gear', { gain: 0.22 * volume, rate: 0.35, lp: 1200, pan, cut: 0.5, delay: 0.18 });
+  noise('lowpass', 500, 80, 0.2 * volume, 1.0, { attack: 0.02, out: panOut(pan) });
+  sample('thud_heavy', { gain: 0.8 * volume, rate: 0.45, hp: BOSS_SUB_HP, lp: 500, pan, delay: 0.35 });
+  sample('thud_heavy', { gain: 0.5 * volume, rate: 0.7, lp: 2000, pan, delay: 0.35, cut: 0.4, hall: 0.4 });
+  sample('plate', { gain: 0.25 * volume, rate: 0.4, lp: 1500, pan, delay: 0.37, cut: 0.5, hall: 0.3 });
+  playBossHiss(1.4, volume, pan, 0.45);
+}
+
+// 部位を直して起き上がる: 歯車が回り始め、動力が高まって、立ちきったときの「ガシャン」
+export function playBossPowerUp(dur: number, volume = 1, pan = 0) {
+  if (!ctx) return;
+  sample('gear', { gain: 0.3 * volume, rate: 0.45, lp: 1500, pan, cut: dur });
+  sample('gear', { gain: 0.22 * volume, rate: 0.6, lp: 1800, pan, cut: dur * 0.5, delay: dur * 0.5 });
+  noise('lowpass', 120, 700, 0.15 * volume, dur, { attack: dur * 0.8, out: panOut(pan) });
+  sample('gun_latch', { gain: 0.55 * volume, rate: 0.55, lp: 2000, pan, delay: dur });
+  sample('thud_heavy', { gain: 0.5 * volume, rate: 0.6, lp: 2000, pan, delay: dur, cut: 0.4 });
+  sample('plate', { gain: 0.2 * volume, rate: 0.5, lp: 1800, pan, delay: dur + 0.01, cut: 0.3 });
+}
+
+// 必殺技の溜め: 震えながら高まっていく動力の轟き（dur 秒で頂点）。音程のある唸りではなく、
+// 低い所だけを通したノイズを、震わせながら少しずつ明るくする。歯車の音もだんだん詰まっていく
+export function playBossUltCharge(dur: number, volume = 1, pan = 0) {
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const out = panOut(pan);
+  const trem = ctx.createGain();
+  trem.gain.value = 0.7;
+  const lfo = ctx.createOscillator();
+  lfo.frequency.setValueAtTime(8, t0);
+  lfo.frequency.exponentialRampToValueAtTime(30, t0 + dur);
+  const depth = ctx.createGain();
+  depth.gain.value = 0.3;
+  lfo.connect(depth).connect(trem.gain);
+  trem.connect(out);
+  lfo.start(t0);
+  lfo.stop(t0 + dur + 0.05);
+  noise('lowpass', 90, 1200, 0.4 * volume, dur, { attack: dur * 0.95, out: trem });
+  noise('lowpass', 60, 300, 0.25 * volume, dur, { attack: dur * 0.9, out: trem });
+  for (let at = 0, gap = 0.3; at < dur; at += gap, gap = Math.max(0.06, gap * 0.8)) {
+    sample('gear', { gain: (0.12 + 0.2 * (at / dur)) * volume, rate: 0.5 + 0.3 * (at / dur), lp: 2000, pan, cut: 0.2, delay: at });
+  }
+}
+
+// 止まった: 砕ける一打（playFinale）が明けてから、機体が崩れ落ちる。世界の音が消えている間も聞こえるよう parryBus へ出す
+export function playBossCollapse(delay: number, volume = 1, pan = 0) {
+  if (!ctx) return;
+  const out = panOut(pan, parryBus);
+  const dry = { out: parryBus, pan, jitter: 0.03 };
+  sample('gear', { ...dry, gain: 0.25 * volume, rate: 0.4, lp: 1200, cut: 0.6, delay });
+  noise('lowpass', 400, 60, 0.2 * volume, 1.4, { attack: 0.02, delay, out });
+  sample('thud_heavy', { ...dry, gain: 0.75 * volume, rate: 0.42, hp: BOSS_SUB_HP, lp: 450, delay: delay + 0.3 });
+  sample('thud_heavy', { ...dry, gain: 0.5 * volume, rate: 0.65, lp: 2000, cut: 0.4, delay: delay + 0.3 });
+  sample('plate', { ...dry, gain: 0.25 * volume, rate: 0.38, lp: 1500, delay: delay + 0.32, cut: 0.5 });
+  sample('thud_heavy', { ...dry, gain: 0.45 * volume, rate: 0.55, lp: 1200, cut: 0.4, delay: delay + 0.62 });
+}
+// 止まった後、爆発するまでの小さな破裂: 装甲の中で弾ける短い「ボッ」と、こもった「ドッ」。尾は残さない。
+// 世界の音が戻る前から鳴るので parryBus へ出す
+export function playBossPop(volume = 1, pan = 0) {
+  if (!ctx) return;
+  const dry = { out: parryBus, pan, jitter: 0.05 };
+  sample('explosion', { ...dry, gain: 0.3 * volume, rate: rand(1.0, 1.2), lp: 3000, cut: 0.25 });
+  sample('thud_heavy', { ...dry, gain: 0.45 * volume, rate: rand(0.62, 0.75), lp: 650, cut: 0.16 });
+  sample('plate', { ...dry, gain: 0.1 * volume, rate: rand(0.5, 0.6), lp: 1400, cut: 0.08 });
+}
+// 爆発: 壁を突き破ったときと同じ作りの、重く大きな一撃。爆発の素材を低く落として重ね、一拍遅れて二段目を落とし、
+// 広い所に響かせる。世界の音が戻る前でも聞こえるよう、全体のコンプレッサーを通さない出口（boomBus）へ出す
+export function playBossExplode(volume = 1, pan = 0) {
+  if (!ctx) return;
+  const v = volume * 1.5;
+  const dry = { out: boomBus, pan, jitter: 0.02 };
+  // 重さの層
+  sample('thud_heavy', { ...dry, gain: 0.9 * v, rate: 0.35, hp: BOSS_SUB_HP, lp: 900, cut: 0.9 });
+  sample('gun_sub', { ...dry, gain: 0.7 * v, rate: 0.45, hp: BOSS_SUB_HP, cut: 0.8 });
+  // 大きさの層: 爆発と打撃
+  sample('explosion', { ...dry, gain: 0.9 * v, rate: 0.65, lp: 4000, cut: 1.2, hall: 0.9 });
+  sample('explosion', { ...dry, gain: 0.6 * v, rate: 0.45, lp: 2200, cut: 1.3, delay: 0.02, hall: 0.6 });
+  sample('punch_heavy', { ...dry, gain: 0.8 * v, rate: 0.6, lp: 4000, cut: 0.35, hall: 0.5 });
+  sample('plate', { ...dry, gain: 0.45 * v, rate: 0.42, lp: 2000, cut: 1.0, hall: 0.8 });
+  // 二段目: 一拍遅れて、さらに低く沈む
+  sample('thud_heavy', { ...dry, gain: 0.6 * v, rate: 0.45, lp: 1800, cut: 0.8, delay: 0.12, hall: 0.6 });
+  sample('thud_heavy', { ...dry, gain: 0.6 * v, rate: 0.3, hp: BOSS_SUB_HP, lp: 500, cut: 0.9, delay: 0.12 });
+  noise('lowpass', 450, 60, 0.35 * v, 1.4, { attack: 0.01, out: boomBus });
+}
+
 // ---- ハンドガンの装填 ----
 export function playCraneOpen() {
   sample('gun_latch', { gain: 0.5, rate: 1.05 });
@@ -1218,6 +1559,96 @@ export function playStageSettle() {
   tone(70, 30, 0.3, 0.5);
 }
 
+// ---- ボスの登場 ----
+// ビルの中から近づく低い地鳴り（dur 秒で頂点になり、突き破る瞬間にぷつりと切れる）。
+// 噴射の唸りは音程のある音やざらついたノイズにすると軽く聞こえるので付けない（jet は呼ぶ側との互換のために残す）
+export function playBossApproach(dur: number, _jet: number) {
+  if (!ctx) return;
+  noise('lowpass', 60, 160, 0.3, dur, { attack: dur - 0.05 });
+}
+// 外壁を突き破る: ビルの壁が丸ごと抜ける「バコォン」。
+// 音の大きさは耳がよく聞く 150Hz〜5kHz で決まるので、層を 2 つに分ける:
+// 重さの層 = 素材をごく低く落とした重低音（お腹に来る重さ。耳には大きく聞こえない）。40Hz より下はほぼ聞こえず、割れない上限だけを先に食うので削る。
+// 大きさの層 = 速度をあまり落とさずに鳴らす打撃と爆発と鉄板。「バ」の張りと「コォン」の鳴りを、聞こえる高さに置く。
+// 一拍遅れて建物ごと沈むような二段目を落とし、広場を囲むビルに響かせて長く残す（広い所の響き。跳ね返りも返ってくる）。
+// 最後に崩れた塊が床に落ちる鈍い音を続ける。高い音域のノイズは砂嵐に聞こえるので使わない
+const BURST_LOUD = 1.8; // ほかの音より大きく鳴らす倍率（全体のコンプレッサーを通さず、割れない上限だけ掛かる）
+const BURST_SUB_HP = 40; // 重さの層から削る、聞こえない低さ (Hz)
+export function playBossBurst() {
+  if (!ctx) return;
+  const L = BURST_LOUD;
+  const out = boomBus;
+  const hp = BURST_SUB_HP;
+  // 重さの層
+  sample('thud_heavy', { gain: 0.9 * L, rate: 0.32, hp, lp: 800, cut: 0.9, hall: 0.5, out });
+  sample('gun_sub', { gain: 0.7 * L, rate: 0.45, hp, cut: 0.8, out });
+  // 大きさの層 —「バ」: 張りのある打撃の頭と、割れる音
+  sample('punch_heavy', { gain: 0.9 * L, rate: 0.75, lp: 6000, cut: 0.25, hall: 0.5, out });
+  sample('punch_heavy', { gain: 0.8 * L, rate: 0.55, lp: 4000, cut: 0.4, hall: 0.6, out });
+  sample('thud_heavy', { gain: 0.8 * L, rate: 0.6, lp: 3500, cut: 0.45, hall: 0.6, out });
+  sample('wood', { gain: 0.6 * L, rate: 0.42, lp: 3000, cut: 0.35, out });
+  sample('plank', { gain: 0.4 * L, rate: 0.48, lp: 2500, cut: 0.3, delay: 0.015, out });
+  // 大きさの層 — 爆発: 低い音から中ほどまで詰まった爆発の録音で、壁が抜ける瞬間の大きさを埋める。
+  // 少し低く落として大きく聞かせ、高い所は削ってざらつかせない
+  sample('explosion', { gain: 0.9 * L, rate: 0.7, lp: 4000, cut: 1.0, hall: 0.8, out });
+  sample('explosion', { gain: 0.6 * L, rate: 0.5, lp: 2200, cut: 1.2, delay: 0.02, hall: 0.6, out });
+  // 大きさの層 —「コォン」: 厚い鉄の鳴りを、響きの中で長く残す
+  sample('plate', { gain: 0.6 * L, rate: 0.45, lp: 2200, cut: 1.2, hall: 1.0, out });
+  sample('plate', { gain: 0.4 * L, rate: 0.3, lp: 1200, cut: 1.0, hall: 0.8, out });
+  // 二段目: 一拍遅れて、建物ごと沈む
+  sample('thud_heavy', { gain: 0.7 * L, rate: 0.45, lp: 1800, cut: 0.8, delay: 0.14, hall: 0.7, out });
+  sample('thud_heavy', { gain: 0.7 * L, rate: 0.27, hp, lp: 500, cut: 1.0, delay: 0.14, out });
+  // まわりのビルから返ってくる響き: 遅れるほど小さく、こもらせる
+  sample('thud_heavy', { gain: 0.4 * L, rate: 0.5, lp: 1300, cut: 0.6, delay: 0.38, hall: 0.5, out });
+  sample('thud_heavy', { gain: 0.22 * L, rate: 0.48, lp: 900, cut: 0.6, delay: 0.82, hall: 0.5, out });
+  // 尾: 低い轟き
+  noise('lowpass', 450, 60, 0.45 * L, 1.6, { attack: 0.01, out });
+  // 崩れた塊が床に落ちる: 間を空けて、だんだん小さく
+  for (let k = 0; k < 5; k++) {
+    const d = 0.45 + k * rand(0.15, 0.22);
+    sample('thud', { gain: 0.4 * L * (1 - k * 0.15), rate: rand(0.6, 0.7), lp: 1500, cut: 0.25, delay: d, out });
+    if (k % 2 === 1) sample('step_hard', { gain: 0.25 * L * (1 - k * 0.15), rate: rand(0.5, 0.6), lp: 2500, cut: 0.15, delay: d + 0.01, out });
+  }
+}
+// 着地: 壁を突き破ったときに次ぐ大きな一撃。爆発の素材を低く落として床ごと割れる「ドゴォン」にし、
+// まわりのビルに跳ね返ってくる響きと、崩れた破片を続ける。全体のコンプレッサーで潰さずに出す
+export function playBossLanding() {
+  if (!ctx) return;
+  const v = 1.4;
+  const o = { out: boomBus };
+  // 重さの層
+  sample('thud_heavy', { ...o, gain: 1.0 * v, rate: 0.4, hp: BOSS_SUB_HP, lp: 1000, cut: 1.0 });
+  sample('gun_sub', { ...o, gain: 0.6 * v, rate: 0.5, hp: BOSS_SUB_HP, cut: 0.8 });
+  // 大きさの層
+  sample('explosion', { ...o, gain: 0.8 * v, rate: 0.55, lp: 3000, cut: 1.1, hall: 0.8 });
+  sample('punch_heavy', { ...o, gain: 0.8 * v, rate: 0.5, lp: 3000, cut: 0.4, hall: 0.5 });
+  sample('thud_heavy', { ...o, gain: 0.6 * v, rate: 0.65, lp: 2500, cut: 0.5, hall: 0.5 });
+  sample('plate', { ...o, gain: 0.35 * v, rate: 0.35, lp: 1500, cut: 0.8, hall: 0.6 });
+  noise('lowpass', 450, 60, 0.35 * v, 1.4, { attack: 0.005, out: boomBus });
+  // 跳ね返り: 遅れるほど小さく、こもらせる
+  sample('thud_heavy', { ...o, gain: 0.35 * v, rate: 0.5, lp: 1200, cut: 0.6, delay: 0.32, hall: 0.4 });
+  sample('thud_heavy', { ...o, gain: 0.18 * v, rate: 0.48, lp: 800, cut: 0.6, delay: 0.75, hall: 0.4 });
+  // 崩れた破片が降ってくる
+  sample('plate', { gain: 0.12, rate: 0.7, lp: 2500, cut: 0.3, delay: 0.5, jitter: 0.05 });
+  sample('plate', { gain: 0.08, rate: 0.8, lp: 2500, cut: 0.3, delay: 0.9, jitter: 0.05 });
+}
+// 着地の衝撃波にのまれる: 床ごと突き上げられる、低く詰まった「ズンッ」。頭に床のマスがぶつかる短い輪郭を付け、尾は切る
+export function playBossWaveHit() {
+  sample('step_hard', { gain: 0.45, rate: 0.55, lp: 2500, cut: 0.1 });
+  sample('punch_heavy', { gain: 0.6, rate: 0.6, lp: 2500, cut: 0.3 });
+  sample('thud_heavy', { gain: 0.8, rate: 0.42, hp: BOSS_SUB_HP, lp: 700, cut: 0.5 });
+  sample('thud_heavy', { gain: 0.45, rate: 0.7, lp: 2200, cut: 0.35 });
+  sample('gun_sub', { gain: 0.45, rate: 0.55, hp: BOSS_SUB_HP, cut: 0.4 });
+  noise('lowpass', 700, 100, 0.3, 0.25, { attack: 0.002 });
+}
+// 立ち上がって砲を向ける: 唸り声ではなく、全身の歯車が噛み合う「ガシャン」と、低く押し出す動力の轟き
+export function playBossRoar() {
+  sample('gun_latch', { gain: 0.6, rate: 0.45, lp: 2500 });
+  sample('gear', { gain: 0.4, rate: 0.4, lp: 1500, cut: 0.8 });
+  sample('thud_heavy', { gain: 0.5, rate: 0.6, lp: 2000, cut: 0.4, hall: 0.4 });
+  sample('plate', { gain: 0.25, rate: 0.45, lp: 1800, cut: 0.6, hall: 0.4 });
+  noise('lowpass', 500, 80, 0.3, 1.3, { attack: 0.05 });
+}
 // タイトルを叩きつける直前の「スゥッ」: 吸い込むように高まり、叩きつける瞬間にぷつりと切れる（dur 秒で頂点）
 export const TITLE_RISER_TIME = 0.32;
 export function playTitleRiser() {
@@ -1260,6 +1691,7 @@ export function playWallJump() {
 // 素材は使わず、短い合成音だけで小さく乾いた音にする
 let ui: AudioContext | null = null;
 let uiBus: GainNode;
+let uiMaster: GainNode | null = null;
 let uiNoiseBuf: AudioBuffer;
 let lastHover = 0;
 
@@ -1279,7 +1711,9 @@ export function ensureUiAudio() {
     comp.release.value = 0.08;
     uiBus = ui.createGain();
     uiBus.gain.value = 7;
-    uiBus.connect(comp).connect(ui.destination);
+    uiMaster = ui.createGain();
+    uiMaster.gain.value = masterVolume * masterVolume;
+    uiBus.connect(comp).connect(uiMaster).connect(ui.destination);
     loadUiBank(ui);
   }
   if (ui.state === 'suspended') ui.resume();
@@ -1312,7 +1746,7 @@ function uiTone(f0: number, f1: number, peak: number, dur: number, o: { type?: O
 const uiBank: Record<string, AudioBuffer[]> = {};
 async function loadUiBank(c: AudioContext) {
   try {
-    const manifest: Record<string, string[]> = await (await fetch('./sfx/manifest.json')).json();
+    const manifest: Record<string, string[]> = await (await fetch('./sfx/manifest.json', { cache: 'no-cache' })).json(); // 素材を足したとき古い一覧が残らないように
     for (const group of ['key_down', 'key_up']) {
       uiBank[group] = await Promise.all(manifest[group].map(async (file) => c.decodeAudioData(await (await fetch(`./sfx/${file}`)).arrayBuffer())));
     }
@@ -1470,20 +1904,25 @@ export function playResultScore() {
   uiTone(120, 42, 0.7, 0.55);
 }
 
-// ランクを落とす「ズドン」。上のランクほど低く長く沈め、S 以上は遠い鐘のような細い余韻を足し、SS はさらに高い鐘を重ねる
+// ランクを落とす「ズドン」。上のランクほど低く長く沈め、S 以上は遠い鐘のような細い余韻を足し、SS 以上はさらに高い鐘を重ねる。
+// SSS は鐘をもう一段、間を空けて鳴らし、長く残す
 export function playResultRank(rank: string) {
-  const k = ({ SS: 1.25, S: 1, A: 0.7, B: 0.4 } as Record<string, number>)[rank] ?? 0.2;
+  const k = ({ SSS: 1.5, SS: 1.25, S: 1, A: 0.7, B: 0.4 } as Record<string, number>)[rank] ?? 0.2;
   uiClick('bandpass', 4600, 700, 0.18, 0.07);
   uiClick('lowpass', 2400, 70, 0.4 + 0.2 * k, 0.6 + 0.6 * k);
   uiTone(76 - 14 * k, 26, 0.95, 0.9 + 0.8 * k);
   uiClick('lowpass', 260, 35, 0.2 + 0.1 * k, 1.4 + 1.2 * k, 0.05);
-  if (rank === 'S' || rank === 'SS') {
+  if (rank === 'S' || rank === 'SS' || rank === 'SSS') {
     uiTone(1320, 1316, 0.02, 2.4, { delay: 0.08 });
     uiTone(1986, 1980, 0.008, 1.8, { delay: 0.08 });
   }
-  if (rank === 'SS') {
+  if (rank === 'SS' || rank === 'SSS') {
     uiTone(2640, 2634, 0.007, 2.8, { delay: 0.22 });
     uiTone(3960, 3952, 0.003, 2.0, { delay: 0.22 });
+  }
+  if (rank === 'SSS') {
+    uiTone(660, 657, 0.012, 4.2, { delay: 0.5 });
+    uiTone(5280, 5270, 0.004, 3.4, { delay: 0.5 });
   }
 }
 

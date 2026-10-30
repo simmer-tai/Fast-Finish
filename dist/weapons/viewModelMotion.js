@@ -6,22 +6,25 @@ import { SICKLE_VIEW_MODEL_POS } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './battleAxe.js';
 import { BOW_AIM_POS, BOW_AIM_UNCANT, BOW_SLIDE_TURN, BOW_VIEW_MODEL_POS } from './bow.js';
 import { BAT_VIEW_MODEL_POS } from './bat.js';
+import { SPEAR_VIEW_MODEL_POS } from './spear.js';
 import { batEquipOff, batState, startBatEquip } from './batCombat.js';
+import { spearInHand, spearState, spearThrow } from './spearCombat.js';
 import { BOW_EQUIP_SNAP, BOW_EQUIP_SPIN, BOW_EQUIP_TURN, bowState, startBowEquip } from './bowCombat.js';
 import { SWORD_RUN_QUAT, SWORD_SLIDE_QUAT, SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS } from './sword.js';
-import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, batViewModel, bowViewModel, gunViewModel, leftViewModel, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
+import { AXE_SWAY_DAMP, AXE_SWAY_GAIN, AXE_SWAY_STIFF, GUN_VIEW_MODEL_POS, LEFT_VIEW_MODEL_POS, VIEW_MODEL_POS, axeViewModel, batViewModel, bowViewModel, spearViewModel, gunViewModel, leftSickle, leftViewModel, rightSickle, sickleViewModel, swordRestQuat, swordViewModel, viewModel, } from './viewModels.js';
 import { axeState, startAxeAttack } from './axeCombat.js';
 import { AXE_DRAW } from './axeAttacks.js';
 import { startSwordAttack, swordState } from './swordCombat.js';
 import { SWORD_DRAW } from './swordAttacks.js';
 import { gunState, reloadPosOff, reloadRotOff, startGunDraw } from './handgunCombat.js';
-import { sickleBodyPos, sickleBodyRot, sickleState, startSickleDraw } from './sickleCombat.js';
+import { SICKLE_DRAW_TIME, sickleBodyPos, sickleBodyRot, sickleState, startSickleDraw } from './sickleCombat.js';
 import { DRAW_SPIN_END, KUNAI_DRAW_TIME, kunaiState, pendingThrows, startKunaiDraw } from './kunaiCombat.js';
 import { cameraFx, landShakeAmount } from '../fx/camera.js';
 import { player, velocity } from '../player/state.js';
 import { SPRINT_SPEED, WALK_SPEED } from '../player/config.js';
 import { isDown } from '../player/down.js';
 import { game } from '../game/state.js';
+import { skinOf } from './skins.js';
 // ---- 手元の武器の動き ----
 // 武器の持ち替え・歩きや視点移動につれた揺れ・構えの切り替え
 // 本体からも読み書きする値
@@ -29,6 +32,7 @@ export const viewState = {
     // 視点を動かしたときにクナイを遅れてついてこさせるための量（マウスとパッドの入力で足す）
     lookSwayX: 0,
     lookSwayY: 0,
+    inspectPressed: false, // T を押した（武器を眺める）
 };
 // ---- ビューモデル（クナイ）の動き ----
 // 持ち替えは「今の武器を下げる → 入れ替える → 新しい武器を上げる」
@@ -55,7 +59,8 @@ export function updateWeaponSwitch(dt) {
     const swordBusy = (swordState.swordAttack !== null && swordState.swordAttack !== SWORD_DRAW) || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
     const busy = (game.shownWeapon === 'kunai' && kunaiBusy) || (game.shownWeapon === 'sword' && swordBusy) || sickleState.grapple !== null
         || sickleState.sickleMelee !== null || (game.shownWeapon === 'axe' && axeState.axeAttack !== null && axeState.axeAttack !== AXE_DRAW)
-        || (game.shownWeapon === 'bat' && (batState.attack !== null || batState.hold >= 0));
+        || (game.shownWeapon === 'bat' && (batState.attack !== null || batState.hold >= 0))
+        || (game.shownWeapon === 'spear' && (spearState.attack !== null || spearState.hold >= 0 || spearThrow.phase === 'windup'));
     if (isDown()) {
         game.holster = Math.min(1, game.holster + game.realDt / (HOLSTER_TIME * 2)); // 倒れたら武器を画面の下へ落とす
     }
@@ -112,6 +117,7 @@ export function updateWeaponSwitch(dt) {
     axeViewModel.visible = game.shownWeapon === 'axe';
     bowViewModel.visible = game.shownWeapon === 'bow';
     batViewModel.visible = game.shownWeapon === 'bat';
+    spearViewModel.visible = game.shownWeapon === 'spear' && spearInHand(); // 投げている間は手に無い
 }
 export const handJoltPos = new THREE.Vector3();
 const bowBase = new THREE.Vector3();
@@ -212,6 +218,10 @@ export function updateViewModel(dt) {
     batViewModel.position.set(BAT_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - viewState.lookSwayX * 0.5 + slidePose * 0.03, BAT_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
         + viewState.lookSwayY * 0.5 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, BAT_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack).add(batEquipOff); // 取り出しの手の動き（向きは batCombat.ts で batRest に入れる）
     batViewModel.rotation.set(-dashPull * 0.35 + viewState.lookSwayY * 2 - mantlePose * 0.5, -viewState.lookSwayX * 2, slidePose * 0.35 + cameraFx.roll);
+    // 槍もバットと同じ揺れ方。長くて重いので、視点の振りに遅れて付いてくる分を少し小さくする
+    spearViewModel.position.set(SPEAR_VIEW_MODEL_POS.x + Math.sin(bobPhase) * 0.012 * bobAmount - viewState.lookSwayX * 0.4 + slidePose * 0.03, SPEAR_VIEW_MODEL_POS.y + Math.abs(Math.cos(bobPhase)) * 0.012 * bobAmount - Math.min(velocity.y, 0) * 0.002
+        + viewState.lookSwayY * 0.4 + cameraFx.landDip * 0.3 - dashPull * 0.04 - slidePose * 0.03 - mantlePose * 0.12, SPEAR_VIEW_MODEL_POS.z + dashPull * 0.1 + speedBack);
+    spearViewModel.rotation.set(-dashPull * 0.25 + viewState.lookSwayY * 1.5 - mantlePose * 0.5, -viewState.lookSwayX * 1.5, slidePose * 0.35 + cameraFx.roll);
     // 高いところからの着地で、手元も画面と一緒に強く揺らす
     const ls = landShakeAmount();
     if (ls > 0) {
@@ -225,6 +235,7 @@ export function updateViewModel(dt) {
             vm.rotation.z += rz;
         }
     }
+    applyInspect(dt);
     // 撃った反動で手前へ跳ね上げる。装填中と取り出し中はその動き（キーフレーム）を足す
     gunViewModel.position.z += gunState.gunRecoil * 0.1;
     gunViewModel.position.y += gunState.gunRecoil * 0.02;
@@ -276,4 +287,212 @@ export function updateViewModel(dt) {
         bowViewModel.rotation.x += r * 0.5 + snap * 0.12;
         bowViewModel.rotation.z += spin * BOW_EQUIP_TURN - snap * 0.25;
     }
+}
+const inspectKey = (t, [x, y, z], [pitch, spin, roll], yaw, [camX, camY, camZ], zoom) => ({
+    t, pos: new THREE.Vector3(x, y, z), rot: new THREE.Vector3(pitch, spin, roll),
+    cam: new THREE.Vector3(camX, camY, camZ), extra: new THREE.Vector3(yaw, zoom, 0),
+});
+const INSPECT_PATTERNS = [
+    // 横に寝かせて眺める: 刃の軸まわりに回しながら持ち上げ、奥へ離して横に寝かせて刃の面に光を流す。
+    // 切っ先をこちらへ向けて刃の筋を見通し、手首を返して裏を見せ、画面の中で大きく 1 回転させて納める
+    {
+        keys: [
+            inspectKey(0, [0, 0, 0], [0, 0, 0], 0, [0, 0, 0], 0),
+            inspectKey(0.4, [-0.02, 0.08, -0.06], [14, -190, 34], 0, [2, -2, 3], 1),
+            inspectKey(0.85, [0.18, 0.1, -0.2], [6, -330, 78], 0, [-1, 2, -5], 2),
+            inspectKey(1.7, [0.22, 0.11, -0.26], [4, -382, 82], 0, [-1.5, 3, -6], 3),
+            inspectKey(2.2, [0.2, 0.12, -0.22], [2, -392, 80], 25, [-1, 4, -4], 4),
+            inspectKey(2.5, [0.2, 0.11, -0.22], [2, -548, 80], 12, [1, 1, 5], 3),
+            inspectKey(3.0, [0.21, 0.11, -0.24], [4, -566, 78], 0, [0, 0, 4], 3),
+            inspectKey(3.3, [0.04, 0.02, -0.04], [-6, -720, 40], 0, [2, -1, -2], 1),
+            inspectKey(3.8, [0, 0, 0], [0, -720, -360], 0, [0, 0, 0], 0),
+        ],
+        sounds: [[0, 'swish'], [2.3, 'swish'], [3.3, 'swish'], [3.75, 'grip']],
+    },
+    // 画面の中で回して逆へ寝かせる: 手を左へ寄せながら刀を画面の中で回し、切っ先を右へ向けて寝かせる。
+    // 刃の軸まわりにゆっくり回して光を流し、切っ先を手前へ向けてから、回し上げて納める
+    {
+        keys: [
+            inspectKey(0, [0, 0, 0], [0, 0, 0], 0, [0, 0, 0], 0),
+            inspectKey(0.45, [-0.15, 0.08, -0.1], [8, -30, 150], 0, [1, -2, 4], 1),
+            inspectKey(0.9, [-0.38, 0.1, -0.3], [4, -90, 266], 0, [-1, -3, -4], 2),
+            inspectKey(1.9, [-0.4, 0.11, -0.33], [3, -160, 272], 0, [-1.5, -4, -5], 3),
+            inspectKey(2.4, [-0.38, 0.13, -0.3], [8, -185, 272], -25, [-1, -3, -3], 3),
+            inspectKey(2.9, [-0.2, 0.06, -0.15], [0, -280, 325], 0, [1, 1, 3], 1),
+            inspectKey(3.3, [0, 0, 0], [0, -360, 360], 0, [0, 0, 0], 0),
+        ],
+        sounds: [[0, 'swish'], [0.4, 'swish'], [2.6, 'swish'], [3.25, 'grip']],
+    },
+    // 目の前に立てて見上げる: 刀を奥へ倒し気味に立てて正面へ置き（切っ先まで画面に収める）、刃の軸まわりにゆっくり回して面と刃先を見せる。
+    // 切っ先をさらに奥へ倒して見上げ、手首を鋭く返して構えへ戻す
+    {
+        keys: [
+            inspectKey(0, [0, 0, 0], [0, 0, 0], 0, [0, 0, 0], 0),
+            inspectKey(0.5, [-0.2, 0.03, -0.2], [-20, -90, 2], 0, [1, 0, 1], 2),
+            inspectKey(1.4, [-0.21, 0.0, -0.24], [-25, -200, -6], 0, [2, 1, -2], 3),
+            inspectKey(2.0, [-0.2, -0.05, -0.28], [-38, -250, -4], 0, [5, 0, 0], 4),
+            inspectKey(2.35, [-0.16, 0.03, -0.1], [6, -385, -10], 0, [-1, 0, 2], 2),
+            inspectKey(2.8, [0, 0, 0], [0, -360, 0], 0, [0, 0, 0], 0),
+        ],
+        sounds: [[0, 'swish'], [2.05, 'swish'], [2.75, 'grip']],
+    },
+];
+let inspecting = INSPECT_PATTERNS[0];
+const INSPECT_FADE = 0.12; // 途中でやめたときに構えへ戻す時間
+let inspectT = -1; // 眺め始めてからの時間。負なら眺めていない
+let inspectWeight = 0; // やめたときはこれを 0 へ下げて構えへ戻す
+const inspectPos = new THREE.Vector3();
+const inspectRot = new THREE.Vector3();
+const inspectCam = new THREE.Vector3();
+const inspectExtra = new THREE.Vector3();
+const inspectQuat = new THREE.Quaternion();
+const inspectAxisQuat = new THREE.Quaternion();
+const NO_TURN = new THREE.Quaternion();
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+// キー i を通るときの速さ（前後のキーの差を時刻の差で割る。最初と最後は 0）
+const slopeA = new THREE.Vector3();
+const slopeB = new THREE.Vector3();
+function slope(keys, i, ch, out) {
+    if (i === 0 || i === keys.length - 1)
+        return out.set(0, 0, 0);
+    return out.subVectors(keys[i + 1][ch], keys[i - 1][ch]).divideScalar(keys[i + 1].t - keys[i - 1].t);
+}
+// キー i と i + 1 の間（u: 0〜1）を 3 次のエルミート曲線でつなぐ
+function hermite(keys, i, u, ch, out) {
+    const h = keys[i + 1].t - keys[i].t;
+    slope(keys, i, ch, slopeA);
+    slope(keys, i + 1, ch, slopeB);
+    const u2 = u * u;
+    const u3 = u2 * u;
+    return out
+        .copy(keys[i][ch]).multiplyScalar(2 * u3 - 3 * u2 + 1)
+        .addScaledVector(slopeA, (u3 - 2 * u2 + u) * h)
+        .addScaledVector(keys[i + 1][ch], 3 * u2 - 2 * u3)
+        .addScaledVector(slopeB, (u3 - u2) * h);
+}
+// 今の武器が振り・溜め・取り出し・装填などの途中か（その間は眺めない）
+function weaponBusy() {
+    switch (game.shownWeapon) {
+        case 'kunai': return kunaiState.attack !== null || kunaiState.charging || pendingThrows.length > 0 || kunaiState.drawTime < KUNAI_DRAW_TIME;
+        case 'sword': return swordState.swordAttack !== null || swordState.focusing || swordState.rushTime >= 0 || swordState.swordHold >= 0 || swordState.chargeDashTime > 0;
+        case 'handgun': return gunState.gunReloading || gunState.drawT >= 0;
+        case 'sickle': return sickleState.grapple !== null || sickleState.sickleMelee !== null || sickleState.drawT < SICKLE_DRAW_TIME;
+        case 'axe': return axeState.axeAttack !== null;
+        case 'bow': return bowState.aimPose > 0.02 || bowState.equipT !== Infinity;
+        case 'bat': return batState.attack !== null || batState.hold >= 0 || batState.equipT !== Infinity;
+        case 'spear': return spearState.attack !== null || spearState.hold >= 0 || spearState.guard > 0 || spearThrow.phase !== 'none';
+    }
+    return false;
+}
+const inspectRoot = () => {
+    switch (game.shownWeapon) {
+        case 'kunai': return viewModel;
+        case 'handgun': return gunViewModel;
+        case 'sword': return swordViewModel;
+        case 'sickle': return sickleViewModel;
+        case 'axe': return axeViewModel;
+        case 'bow': return bowViewModel;
+        case 'bat': return batViewModel;
+        case 'spear': return spearViewModel;
+    }
+};
+// 振りの風切り音は武器ごと（スキンが音を持てばその音）
+const inspectSwish = () => {
+    switch (game.shownWeapon) {
+        case 'handgun': return skinOf('handgun').swish ?? 'gun';
+        case 'bow': return 'kunai';
+        case 'spear': return skinOf('spear').swish ?? 'sword';
+        default: return skinOf(game.shownWeapon).swish ?? game.shownWeapon;
+    }
+};
+// 立てた刃の軸まわりに回してから（spin）、画面の奥の軸で寝かせ（roll）、横軸で起こし（pitch）、縦軸で切っ先を手前へ向ける（yaw）。
+// やめるときは構えの向きへ回し戻す
+function inspectTurn(side, w, out) {
+    out.setFromAxisAngle(AXIS_Y, inspectExtra.x * side * DEG);
+    out.multiply(inspectAxisQuat.setFromAxisAngle(AXIS_X, inspectRot.x * DEG));
+    out.multiply(inspectAxisQuat.setFromAxisAngle(AXIS_Z, inspectRot.z * side * DEG));
+    out.multiply(inspectAxisQuat.setFromAxisAngle(AXIS_Y, inspectRot.y * side * DEG));
+    if (w < 1)
+        out.slerpQuaternions(NO_TURN, out, w);
+    return out;
+}
+function applyInspect(dt) {
+    cameraFx.inspect.set(0, 0, 0);
+    cameraFx.inspectZoom = 0;
+    // 鎖鎌は右手の 1 本だけを回す（下）。眺めていないときは向きを戻しておく
+    rightSickle.quaternion.identity();
+    leftSickle.quaternion.identity();
+    sickleState.inspectLower = 0;
+    // 走る・スライディング・ダッシュの間は構えが変わるのでやめる
+    const moving = Math.hypot(velocity.x, velocity.z) > WALK_SPEED + 1 || player.sliding || player.dashTime > 0;
+    const blocked = weaponBusy() || moving || game.holster > 0 || game.wantWeapon !== game.shownWeapon || isDown();
+    if (viewState.inspectPressed) {
+        viewState.inspectPressed = false;
+        if (!blocked && inspectT < 0) {
+            // 前と違う動きを選ぶ
+            const others = INSPECT_PATTERNS.filter((pt) => pt !== inspecting);
+            inspecting = others[Math.floor(Math.random() * others.length)];
+            inspectT = 0;
+            inspectWeight = 1;
+            sfx.playGrip();
+        }
+    }
+    if (inspectT < 0)
+        return;
+    if (blocked)
+        inspectWeight = Math.max(0, inspectWeight - dt / INSPECT_FADE);
+    const prev = inspectT;
+    inspectT += dt;
+    if (!blocked) {
+        for (const [at, kind] of inspecting.sounds) {
+            if (!(prev < at && inspectT >= at) && !(at === 0 && prev === 0))
+                continue;
+            if (kind === 'grip')
+                sfx.playGrip();
+            else
+                sfx.playSwish({ at: 0, dur: 0.22, f0: 400, f1: 1600, gain: 0.18 }, inspectSwish());
+        }
+    }
+    const keys = inspecting.keys;
+    if (inspectT >= keys[keys.length - 1].t || inspectWeight <= 0) {
+        inspectT = -1;
+        return;
+    }
+    // キーの間を、キーの時刻に合わせた速さでつなぐ（つなぎ目で速さが跳ねない）。最初と最後は止まった所から動き出し、止まって終わる
+    let i = 0;
+    while (i < keys.length - 2 && inspectT >= keys[i + 1].t)
+        i++;
+    const u = (inspectT - keys[i].t) / (keys[i + 1].t - keys[i].t);
+    hermite(keys, i, u, 'pos', inspectPos);
+    hermite(keys, i, u, 'rot', inspectRot);
+    hermite(keys, i, u, 'cam', inspectCam);
+    hermite(keys, i, u, 'extra', inspectExtra);
+    const vm = inspectRoot();
+    if (!vm)
+        return;
+    const w = inspectWeight * inspectWeight * (3 - 2 * inspectWeight);
+    // 画面の左寄りに構える武器（弓と斧）は反転する。手元の揺れで位置の符号が入れ替わらないよう、構えの位置ではなく武器で決める
+    const side = game.shownWeapon === 'bow' || game.shownWeapon === 'axe' ? -1 : 1;
+    vm.position.x += inspectPos.x * side * w;
+    vm.position.y += inspectPos.y * w;
+    vm.position.z += inspectPos.z * w;
+    if (game.shownWeapon === 'sickle') {
+        // 鎖鎌は左右の 2 本を両手の間を原点に持っているので、まとめて回すと 2 本が大きく振り回される。
+        // 右手の 1 本だけを握った手を軸に回し、左手は下げて少し寝かせてよける（手の位置は鎖鎌の処理が毎フレーム決め直すが、向きは触らない）
+        inspectTurn(1, w, rightSickle.quaternion);
+        leftSickle.quaternion.setFromAxisAngle(AXIS_X, -0.5 * w);
+        sickleState.inspectLower = w;
+    }
+    else {
+        vm.quaternion.premultiply(inspectTurn(side, w, inspectQuat));
+    }
+    // クナイは右手で眺めるので、左手は下げてよける
+    if (game.shownWeapon === 'kunai') {
+        leftViewModel.position.y -= 0.12 * w;
+        leftViewModel.rotation.x -= 0.4 * w;
+    }
+    cameraFx.inspect.set(inspectCam.x * DEG * w, inspectCam.y * side * DEG * w, inspectCam.z * side * DEG * w);
+    cameraFx.inspectZoom = inspectExtra.y * w;
 }

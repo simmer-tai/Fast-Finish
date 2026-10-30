@@ -251,5 +251,11 @@
   "bow_nock_3.ogg",
   "bow_nock_4.ogg",
   "bow_nock_5.ogg"
+ ],
+ "explosion": [
+  "explosion_0.ogg",
+  "explosion_1.ogg",
+  "explosion_2.ogg",
+  "explosion_3.ogg"
  ]
 }

@@ -9,7 +9,7 @@ import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttack
 import { axeState, startAxeAttack } from '../weapons/axeCombat.js';
 import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js';
 import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js';
-import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, tossOnDash, twirlSickles, } from '../weapons/sickleCombat.js';
+import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js';
 import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js';
 import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js';
 import { handCam } from './handCam.js';
@@ -18,6 +18,7 @@ import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLI
 import { moveToward } from '../player/movement.js';
 import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js';
 import { game, kick, kickVel } from '../game/state.js';
+import { rumble } from '../player/rumble.js';
 // ---- カメラ演出 ----
 // 本体からも読み書きする値
 export const cameraFx = {
@@ -25,6 +26,8 @@ export const cameraFx = {
     shakeTime: 0,
     landDip: 0, // 着地で視点が沈む量（負の値）
     roll: 0,
+    inspect: new THREE.Vector3(), // 武器を眺めている間の視線のずれ (rad): x = 縦, y = 横, z = 傾き（weapons/viewModelMotion.ts）
+    inspectZoom: 0, // 武器を眺めている間に視野を狭める量（度）
 };
 // 高いところからの着地の揺れ。trauma より短く強く、画面と手元をまとめて揺らす
 export const LAND_SHAKE_TIME = 0.16; // 揺れが収まるまでの時間 (秒)
@@ -34,6 +37,7 @@ export function addTrauma(amount) {
     cameraFx.trauma = Math.min(1, cameraFx.trauma + amount);
 }
 export function onDash() {
+    rumble('dash');
     addTrauma(0.2);
     sfx.playDash();
     game.fovKick = 8;
@@ -51,9 +55,7 @@ export function onDash() {
     // 剣は、握った手を軸に縦にくるくると 2 回転させる
     if (swordReady() && !swordState.swordAttack && swordState.swordHold < 0)
         startSwordTwirl();
-    // 鎖鎌は、確率で鎌を宙へ投げ回し、そうでなければ両手の鎌を前回りにくるりと回す
-    if (!tossOnDash())
-        twirlSickles();
+    twirlSickles();
     // 斧は、柄を軸にくるりと一回転させる
     if (game.shownWeapon === 'axe' && game.wantWeapon === 'axe' && game.holster === 0 && !axeState.axeAttack) {
         axeState.axeSpinTime = 0;
@@ -154,7 +156,8 @@ export function updateCamera(dt) {
     const speedT = THREE.MathUtils.clamp((hSpeed - WALK_SPEED) / (FOV_SPEED_MAX - WALK_SPEED), 0, 1);
     // 居合の構えの間と、弓を引いている間はズームする（スロー中でも実時間の速さで寄せる）
     const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + game.fovKick - swordState.focusZoom * FOCUS_ZOOM - swordState.swordChargeBlend * CHARGE_ZOOM
-        - gunState.deadEyeBlend * DEADEYE_ZOOM - bowState.draw * BOW_ZOOM * (1 - 0.6 * bowState.sidePose); // 3 本射ちはあまり寄せない
+        - gunState.deadEyeBlend * DEADEYE_ZOOM - bowState.draw * BOW_ZOOM * (1 - 0.6 * bowState.sidePose) // 3 本射ちはあまり寄せない
+        - cameraFx.inspectZoom;
     camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
     camera.updateProjectionMatrix();
     // 着地の沈み込み（ばねで戻す）
@@ -186,9 +189,9 @@ export function applyCameraOffset() {
     const t = cameraFx.shakeTime;
     const ls = landShakeAmount();
     shakeEuler.set(s * 0.04 * Math.sin(t * 47.3 + 1.3) + kick.x - ls * 0.09 * Math.abs(Math.sin(t * 97.1 + 0.4)), s * 0.04 * Math.sin(t * 53.1 + 4.1) + kick.y + ls * 0.05 * Math.sin(t * 89.3 + 2.2), cameraFx.roll + s * 0.05 * Math.sin(t * 41.7 + 2.7) + kick.z + ls * 0.07 * Math.sin(t * 103.7 + 5.1) + handCam.z);
-    shakeEuler.x += handCam.x + DOWN_PITCH * downFall();
-    shakeEuler.y += handCam.y;
-    shakeEuler.z += DOWN_ROLL * downFall();
+    shakeEuler.x += handCam.x + DOWN_PITCH * downFall() + cameraFx.inspect.x;
+    shakeEuler.y += handCam.y + cameraFx.inspect.y;
+    shakeEuler.z += DOWN_ROLL * downFall() + cameraFx.inspect.z;
     camera.quaternion.multiply(shakeQuat.setFromEuler(shakeEuler));
 }
 // applyCameraOffset で足した揺れと傾きを戻す

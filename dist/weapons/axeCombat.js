@@ -9,14 +9,18 @@ import { AXE_REST_QUAT } from './battleAxe.js';
 import { AXE_AIR, AXE_BITE_SLOW, AXE_BITE_TIME, AXE_BUFFER, AXE_CHANNELS, AXE_COMBO, AXE_COMBO_RESET, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_HIT_ANGLE, AXE_JOLT_DAMP, AXE_JOLT_KICK, AXE_JOLT_STIFF, AXE_KABUTO, AXE_LAUNCH, AXE_REACH, AXE_RUSH, AXE_RUSH_EXIT, AXE_RUSH_REACH, AXE_RUSH_SPEED, AXE_RUSH_TIME, AXE_SWEEP, AXE_WHEEL_CUT, AXE_WHEEL_END, AXE_WHEEL_HIT, AXE_WHEEL_LIFT, AXE_WHEEL_START, AXE_WHEEL_SWISH, } from './axeAttacks.js';
 import { axeRest, heldAxeModel } from './viewModels.js';
 import { HIT_TINT, addBeam, fireBurst, flares, spawnShards, spawnSparks } from '../fx/hitFx.js';
-import { AXE_RIBBON, AXE_SLAM_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
-import { DEFAULT_KNOCK, RESPAWN_RISE_TIME, en, enemies, hitDir, hitLook, hitPoint, setEn, } from '../enemy/state.js';
+import { AXE_RIBBON, AXE_SLAM_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js';
+import { hitWithArcs } from '../fx/arcs.js';
+import { onSkinChange, skinFx, skinOf } from './skins.js';
+import { DUMMY_RADIUS } from '../enemy/body.js';
+import { DEFAULT_KNOCK, en, enemies, hitDir, hitLook, hitPoint, setEn, } from '../enemy/state.js';
 import { knockEnemy, launchEnemy, spikeEnemy } from '../enemy/motion.js';
 import { ARENA_GRID_MAJOR, ARENA_GRID_MINOR } from '../world/blocks.js';
 import { player, position, velocity } from '../player/state.js';
 import { WALK_SPEED } from '../player/config.js';
 import { DASH_ATTACK_WINDOW, DEFAULT_HIT_STOP, SWING_SAMPLE, game, kickVel } from '../game/state.js';
+import { tryWallHit } from './wallHit.js';
+import { pullTowardTarget } from './meleePull.js';
 import { hooks } from '../game/hooks.js';
 // ---- 斧の攻撃 ----
 // 振り・突進・打ち上げ・叩きつけの衝撃波・吸い寄せ。技の定義は axeAttacks.ts
@@ -54,6 +58,8 @@ let axeFiredLunge = false;
 let axeFiredGround = false;
 let axeHitLanded = false;
 let axeBite = 0;
+// 振り音はスキンが替えることがある（爪は低く暗い唸りを足す）
+const axeSwish = () => skinOf('axe').swish ?? 'axe';
 // ---- 斧の勢い: 速く動いているほど、高くから落ちるほど一撃が重くなる ----
 // 振り始めと刃が当たる瞬間の水平の速さのうち大きい方で、威力・吹き飛ばし・振りの速さを決める。
 // 止まって振ると威力が下がり、ただ重くて遅い武器になる
@@ -81,11 +87,15 @@ let axeSmashFromY = NaN; // 空中の叩きつけで落ち始めた高さ（足�
 // 空中の叩きつけで着地したあと、斧を床に打ち込んだ重さで少しだけ動けなくなる（歩く・跳ぶ・ダッシュ・次の攻撃）
 export const AXE_SLAM_RECOVER = 0.3;
 export const axeHits = new Set(); // 今の攻撃で当てた敵（同じ敵に二度当てない）
+let axeBossHit = false; // 今の攻撃でボスに当てたか
 export const axeSpeedPower = () => THREE.MathUtils.clamp((Math.hypot(velocity.x, velocity.z) - AXE_POWER_MIN_SPEED) / (AXE_POWER_FULL_SPEED - AXE_POWER_MIN_SPEED), 0, 1);
 export const axeFallPower = (fall) => THREE.MathUtils.clamp((fall - AXE_POWER_FALL_MIN) / (AXE_POWER_FALL_FULL - AXE_POWER_FALL_MIN), 0, 1);
 // 勢いを乗せた当たり（使い回す）
 export const axePoweredHit = { kick: [0, 0, 0] };
+export const axeHitSource = { def: null, power: 0 };
 export function poweredAxeHit(def, power) {
+    axeHitSource.def = def;
+    axeHitSource.power = power;
     const m = AXE_POWER_LOW + (AXE_POWER_HIGH - AXE_POWER_LOW) * power;
     axePoweredHit.kick = def.kick;
     axePoweredHit.slash = def.slash;
@@ -526,6 +536,7 @@ export function startAxeAttack(def) {
     axeBite = 0;
     axePower = axeSpeedPower();
     axeHits.clear();
+    axeBossHit = false;
     axeStance = false;
     axeLastTrail = -Infinity;
     axeRibbon.cut();
@@ -552,51 +563,7 @@ export function chooseAxeAttack() {
     axeState.axeComboStep = (axeState.axeComboStep + 1) % AXE_COMBO.length;
     return def;
 }
-// ---- 吸い寄せ: 踏み込むとき、前にいる敵の方へ少しだけ引き寄せる ----
-// 照準の近くにいる一番近い敵へ向けて、届く距離まで寄るぶんの速さを足す（足す速さには上限がある）。
-// 敵の方へまっすぐ寄るので、少し外れた向きで振っても当たりやすい
-export const AXE_PULL_RANGE = 3.5; // 届く距離（AXE_REACH）より、さらにこれだけ先の敵まで引き寄せる (m)
-export const AXE_PULL_ANGLE = 35 * DEG; // 照準からこの角度の内側にいる敵だけ
-export const AXE_PULL_STOP = 0.6; // 届く距離のこの割合まで寄ったら、それ以上は引き寄せない
-export const AXE_PULL_GAIN = 2; // 残りの距離 1m あたりに足す速さ (m/s)
-export const AXE_PULL_MAX = 5; // 足す速さの上限 (m/s)
-export const axePullLook = new THREE.Vector3();
-export const axePullDir = new THREE.Vector3();
-export function pullTowardAxeTarget() {
-    camera.getWorldDirection(axePullLook);
-    axePullLook.y = 0;
-    if (axePullLook.lengthSq() < 1e-6)
-        return;
-    axePullLook.normalize();
-    let best = null;
-    let bestDist = AXE_REACH + AXE_PULL_RANGE + DUMMY_RADIUS;
-    for (const e of enemies) {
-        if (!e.alive || e.riseTime < RESPAWN_RISE_TIME)
-            continue;
-        if (Math.abs(e.root.position.y - position.y) > DUMMY_HEIGHT + 0.5)
-            continue;
-        axePullDir.set(e.root.position.x - position.x, 0, e.root.position.z - position.z);
-        const d = axePullDir.length();
-        if (d >= bestDist || d < 1e-4)
-            continue;
-        if (axePullDir.divideScalar(d).angleTo(axePullLook) > AXE_PULL_ANGLE)
-            continue;
-        best = e;
-        bestDist = d;
-    }
-    if (!best)
-        return;
-    const gap = bestDist - DUMMY_RADIUS - AXE_REACH * AXE_PULL_STOP;
-    if (gap <= 0)
-        return;
-    axePullDir.set(best.root.position.x - position.x, 0, best.root.position.z - position.z).normalize();
-    // 今その向きへ出ている速さを差し引いて、足りないぶんだけ足す（ダッシュ中などに速くなりすぎないように）
-    const want = Math.min(AXE_PULL_MAX, gap * AXE_PULL_GAIN);
-    const along = velocity.x * axePullDir.x + velocity.z * axePullDir.z;
-    const add = Math.max(0, want - Math.max(0, along) * 0.5);
-    velocity.x += axePullDir.x * add;
-    velocity.z += axePullDir.z * add;
-}
+export const AXE_PULL_MAX = 5; // 踏み込みで敵へ吸い寄せる速さの上限 (m/s)（meleePull.ts）
 // 敵を dir（水平）へ大きく吹き飛ばす（壁に当たれば叩きつけ）。速さは勢いに応じて増やす
 export function flingEnemy(dir, speed, lift, power) {
     if (hooks.enemyHeld())
@@ -638,7 +605,8 @@ export function tryAxeWheelHit() {
         axeWheelHits.add(e);
         hooks.hitPointFromTip(axeHitTip, hitPoint);
         const hit = poweredAxeHit(AXE_WHEEL_HIT, axePower);
-        hooks.applyHit(hit, hitPoint, 'axe', axeSwing);
+        hitWithArcs(skinOf('axe'), hit.fx ?? 1, axeSwing, () => hooks.applyHit(hit, hitPoint, 'axe', axeSwing));
+        skinFx.flare = 1;
         if (!e.alive)
             continue;
         if (e.airY > 0.3) {
@@ -647,6 +615,20 @@ export function tryAxeWheelHit() {
         }
         else
             knockEnemy(hitDir, hit.knock ?? DEFAULT_KNOCK);
+    }
+    // ボスの機体（1 周ごとに 1 回）
+    if (hooks.bossInReach(AXE_REACH, AXE_HIT_ANGLE)) {
+        if (!any) {
+            camera.updateMatrixWorld();
+            axeEdgeAt(AXE_RUSH, Math.max(0, axeState.axeTime - SWING_SAMPLE), axeSwing);
+            axeSwing.subVectors(axeEdgeAt(AXE_RUSH, axeState.axeTime + SWING_SAMPLE, axeHitTip), axeSwing);
+            axeEdgeAt(AXE_RUSH, axeState.axeTime, axeHitTip);
+        }
+        any = true;
+        hooks.hitPointFromTip(axeHitTip, hitPoint);
+        const hit = poweredAxeHit(AXE_WHEEL_HIT, axePower);
+        hitWithArcs(skinOf('axe'), hit.fx ?? 1, axeSwing, () => hooks.applyHit(hit, hitPoint, 'axe', axeSwing));
+        skinFx.flare = 1;
     }
     if (any) {
         axeBite = AXE_BITE_TIME * 0.5;
@@ -679,7 +661,9 @@ export function tryAxeHit(def) {
             power = Math.max(power, axeFallPower(axeSmashFromY - e.root.position.y));
         hooks.hitPointFromTip(axeHitTip, hitPoint);
         const hit = poweredAxeHit(def, power);
-        hooks.applyHit(hit, hitPoint, 'axe', axeSwing);
+        // 稲妻を出すスキンは、当たりの斬撃の線と光線も稲妻と同じ色にする
+        hitWithArcs(skinOf('axe'), hit.fx ?? 1, axeSwing, () => hooks.applyHit(hit, hitPoint, 'axe', axeSwing));
+        skinFx.flare = 1; // スキンの飾りを光らせる
         if (!e.alive)
             continue;
         // 打ち上げは真上へ飛ばし、振り下ろし（空中の叩きつけ・兜割り）は浮いている敵を床へ叩き落とすので、横へは吹き飛ばさない
@@ -698,6 +682,21 @@ export function tryAxeHit(def) {
             knockEnemy(hitDir, hit.knock ?? DEFAULT_KNOCK);
         if (def === AXE_LAUNCH)
             launchEnemy();
+    }
+    // ボスの機体（1 回の攻撃で 1 回）。飛ばしたり打ち上げたりはしない
+    if (!axeBossHit && hooks.bossInReach(def.reach ?? AXE_REACH, AXE_HIT_ANGLE)) {
+        if (!any) {
+            camera.updateMatrixWorld();
+            axeEdgeAt(def, Math.max(0, axeState.axeTime - SWING_SAMPLE), axeSwing);
+            axeSwing.subVectors(axeEdgeAt(def, axeState.axeTime + SWING_SAMPLE, axeHitTip), axeSwing);
+            axeEdgeAt(def, axeState.axeTime, axeHitTip);
+        }
+        any = true;
+        axeBossHit = true;
+        hooks.hitPointFromTip(axeHitTip, hitPoint);
+        const hit = poweredAxeHit(def, def === AXE_RUSH ? axePower : Math.max(axePower, speedPower));
+        hitWithArcs(skinOf('axe'), hit.fx ?? 1, axeSwing, () => hooks.applyHit(hit, hitPoint, 'axe', axeSwing));
+        skinFx.flare = 1;
     }
     if (!any)
         return false;
@@ -765,7 +764,7 @@ export function updateAxeRush(dt, before) {
         const period = AXE_WHEEL_END - AXE_WHEEL_START;
         axeState.axeTime -= period;
         axeLastTrail -= period; // 軌跡を途切れさせずに続ける
-        playSwish(AXE_WHEEL_SWISH, 'axe');
+        playSwish(AXE_WHEEL_SWISH, axeSwish());
     }
 }
 export function startAxeLaunch() {
@@ -845,7 +844,7 @@ export function updateAxeAttack(dt) {
         if (def === AXE_RUSH)
             updateAxeRush(dt, axeTimeBefore);
         while (axeFiredSwishes < def.swishes.length && axeState.axeTime >= def.swishes[axeFiredSwishes].at) {
-            playSwish(def.swishes[axeFiredSwishes++], 'axe');
+            playSwish(def.swishes[axeFiredSwishes++], axeSwish());
         }
         const grips = def.grips ?? [];
         while (axeFiredGrips < grips.length && axeState.axeTime >= grips[axeFiredGrips]) {
@@ -863,7 +862,7 @@ export function updateAxeAttack(dt) {
             axeFiredLunge = true;
             hooks.applyLunge(def.lunge);
             if (def !== AXE_AIR && def !== AXE_RUSH)
-                pullTowardAxeTarget();
+                pullTowardTarget(AXE_REACH, AXE_PULL_MAX);
             if (def.drop && !player.onGround) {
                 velocity.y = Math.min(velocity.y, -def.drop);
                 axeSmashFromY = position.y; // 着地したらここからの高さで衝撃波を出す
@@ -878,6 +877,14 @@ export function updateAxeAttack(dt) {
             game.fovKick += def.fovPunch ?? 0;
             game.landDipVel -= def.dip ?? 0;
             axeHitLanded = tryAxeHit(def);
+            // 空振り: 壁や床に届いていれば弾かれる（地面を叩いた重さは代わりに出さない）。空中の叩きつけは着地の衝撃波が返す
+            if (!axeHitLanded && !def.drop) {
+                camera.updateMatrixWorld();
+                axeEdgeAt(def, Math.max(0, axeState.axeTime - SWING_SAMPLE), axeSwing);
+                axeSwing.subVectors(axeEdgeAt(def, axeState.axeTime + SWING_SAMPLE, axeHitTip), axeSwing);
+                if (tryWallHit('axe', def.reach ?? AXE_REACH, 'heavy', axeSwing, def.fx ?? 1))
+                    axeFiredGround = true;
+            }
         }
         else if (axeState.axeFiredImpact && def.hitUntil !== undefined && axeState.axeTime <= def.hitUntil) {
             // 落ちている途中で届いた敵にも、1 体ずつ当てていく
@@ -998,6 +1005,13 @@ export const AXE_SLAM_TRAIL_LIFE = 0.2;
 export const AXE_SLAM_TRAIL_HOLD = 0.45; // 落ちている間に軌跡を止めておく最長の時間（着地しないまま残り続けないように）
 export const axeSlamRibbon = new Ribbon(200, AXE_SLAM_TRAIL_LIFE, makeRibbonMaterial(AXE_SLAM_RIBBON));
 camera.add(axeSlamRibbon.mesh);
+// スキンが軌跡の色を持つときは、振りと叩きつけの軌跡をその色にする
+const tintAxeRibbons = () => {
+    tintRibbon(axeRibbon, skinOf('axe').trail);
+    tintRibbon(axeSlamRibbon, skinOf('axe').trail);
+};
+tintAxeRibbons();
+onSkinChange((id) => id === 'axe' && tintAxeRibbons());
 let axeSlamClock = 0; // 叩きつけの軌跡の時計（落ちている間は止める）
 let axeSlamHold = 0; // 今の叩きつけで時計を止めていた時間
 let axeLastTrail = -Infinity;

@@ -3,6 +3,7 @@ import type { WeaponMats } from './materials.js';
 
 // ---- 武器: クナイ ----
 // +Y 方向が切っ先になるよう組み立てる（原点は刃の付け根）
+// 部品に名前を付ける（形を作り直すスキンが隠せるように。skins.ts の dressModel）
 export function createKunai(mats: WeaponMats): THREE.Group {
   const kunai = new THREE.Group();
 
@@ -15,22 +16,27 @@ export function createKunai(mats: WeaponMats): THREE.Group {
   ];
   const bladeGeo = new THREE.LatheGeometry(bladeProfile, 4);
   bladeGeo.scale(1, 1, 0.45);
-  kunai.add(new THREE.Mesh(bladeGeo, mats.kunai));
+  const blade = new THREE.Mesh(bladeGeo, mats.kunai);
+  blade.name = 'blade';
+  kunai.add(blade);
 
   // 首: 刃と柄のつなぎ目
   const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0095, 0.008, 8), mats.kunai);
   collar.position.y = -0.004;
+  collar.name = 'collar';
   kunai.add(collar);
 
   // 柄: 輪に向かって細くなる八角柱
   const HANDLE_LEN = 0.075;
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.006, HANDLE_LEN, 8), mats.kunai);
   handle.position.y = -0.008 - HANDLE_LEN / 2;
+  handle.name = 'handle';
   kunai.add(handle);
 
   // 柄と輪をつなぐ細い首
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.006, 8), mats.kunai);
   neck.position.y = -0.008 - HANDLE_LEN - 0.003;
+  neck.name = 'neck';
   kunai.add(neck);
 
   // 輪: 太めで角の立った輪
@@ -38,6 +44,7 @@ export function createKunai(mats: WeaponMats): THREE.Group {
   const RING_TUBE = 0.0042;
   const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_R, RING_TUBE, 6, 24), mats.kunai);
   ring.position.y = neck.position.y - 0.003 - RING_R - RING_TUBE * 0.6;
+  ring.name = 'ring';
   kunai.add(ring);
   kunai.userData.ringY = ring.position.y;
 

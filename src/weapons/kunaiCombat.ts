@@ -9,16 +9,20 @@ import {
   COMBO_RESET, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLIDE_UP, THROW_SWISH, type AttackDef, type HitDef, type Pose,
 } from './kunaiAttacks.js';
 import {
-  LEFT_FAN_ANGLES, attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, weaponMats,
+  LEFT_FAN_ANGLES, attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, kunaiWeaponMats, skinMats,
 } from './viewModels.js';
+import { dressModel, onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { axeState } from './axeCombat.js';
 import { swordState } from './swordCombat.js';
 import { batState } from './batCombat.js';
+import { spearState } from './spearCombat.js';
 import { SLIDE_SPIN_SWISH, TAU, gunState } from './handgunCombat.js';
 import { sickleState } from './sickleCombat.js';
 import {
-  KUNAI_RIBBON, Ribbon, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase,
+  KUNAI_RIBBON, Ribbon, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase, tintRibbon,
 } from '../fx/ribbons.js';
+import { addGlow } from '../fx/glow.js';
+import { hitWithArcs } from '../fx/arcs.js';
 import { en, enemies, hitDir, hitPoint, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow, castWorld } from '../world/raycast.js';
 import { player, position, velocity } from '../player/state.js';
@@ -26,6 +30,7 @@ import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.j
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { keys } from '../input.js';
 import { hooks } from '../game/hooks.js';
+import { tryWallHit } from './wallHit.js';
 
 // ---- クナイ ----
 // 右手の近接攻撃と斬撃の軌跡・左手の投擲・スライディング中の回し
@@ -88,6 +93,8 @@ export const FLIGHT_TRAIL_LIFE = 0.15;
 export const FLIGHT_TRAIL_WIDTH = 0.02; // 飛んでいるクナイの軌跡の半分の幅
 
 // （軌跡の帯は fx/ribbons.ts）
+// 振り音はスキン（爪など）が替えていればそちら
+const kunaiSwish = () => skinOf('kunai').swish ?? 'kunai';
 let throwClock = 0;
 let chargeTime = 0;
 let chargeStage = 0;
@@ -182,7 +189,7 @@ export function updateKunaiSlideSpin(dt: number) {
   kunaiSlideSpin += kunaiSlideSpinVel * dt;
   // 半周ごとに小さな風切り音
   if (spinning && Math.floor(kunaiSlideSpin / Math.PI) > Math.floor(kunaiSlideSpinPrev / Math.PI)) {
-    playSwish(SLIDE_SPIN_SWISH);
+    playSwish(SLIDE_SPIN_SWISH, kunaiSwish());
   }
 }
 
@@ -235,7 +242,7 @@ export function startKunaiDraw() {
   drawSpinPrev = 0;
   drawSpinning = true;
   drawFiredFan = false;
-  playSwish(SLIDE_SPIN_SWISH);
+  playSwish(SLIDE_SPIN_SWISH, kunaiSwish());
 }
 
 // 扇の開き具合: 0 = 閉じて重ねている, 1 = 構え
@@ -264,7 +271,7 @@ export function updateKunaiDraw(dt: number) {
   if (!drawFiredFan && t >= DRAW_FAN_AT) {
     drawFiredFan = true;
     playRing(1.6, 0.35, 0.1);
-    playSwish(SLIDE_SPIN_SWISH);
+    playSwish(SLIDE_SPIN_SWISH, kunaiSwish());
   }
 }
 
@@ -288,7 +295,40 @@ export interface Thrown {
   target: Enemy | null; // ホーミングで追う敵
 }
 export const thrown: Thrown[] = [];
-export const thrownTemplate = createKunai(weaponMats);
+// 投げるクナイは作っておいて使い回す。スキンの飾り（爪など）を着せたままにする
+// （clone では飾りの光が写らず、userData の飾りまで JSON で写してしまうので、写さずに 1 本ずつ組む）
+const thrownMeshes: THREE.Group[] = [];
+const thrownSpare: THREE.Group[] = [];
+function takeThrownMesh() {
+  let mesh = thrownSpare.pop();
+  if (!mesh) {
+    mesh = createKunai(kunaiWeaponMats);
+    dressModel(mesh, skinOf('kunai'), skinMats.kunai);
+    thrownMeshes.push(mesh);
+  }
+  return mesh;
+}
+onSkinChange((id) => id === 'kunai' && thrownMeshes.forEach((mesh) => dressModel(mesh, skinOf('kunai'), skinMats.kunai)));
+// スキンが軌跡の色を持つときは、飛ぶクナイの筋をその色にする（色ごとに 1 つ作って使い回す）
+const skinFlightRibbonMats = new Map<number, THREE.ShaderMaterial>();
+function flightTrailMat(trail: SkinTrail | undefined) {
+  if (!trail) return flightRibbonMat;
+  let mat = skinFlightRibbonMats.get(trail.body);
+  if (!mat) {
+    mat = flightRibbonMat.clone();
+    mat.uniforms.uEdgeColor.value = new THREE.Color(trail.core);
+    mat.uniforms.uFlight.value.copy(flightRibbonMat.uniforms.uFlight.value);
+    skinFlightRibbonMats.set(trail.body, mat);
+  }
+  return mat;
+}
+function newFlightTrail() {
+  const skinTrail = skinOf('kunai').trail;
+  const trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightTrailMat(skinTrail));
+  scene.add(trail.mesh);
+  if (skinTrail?.glow) addGlow(trail.mesh, 0, true); // 筋が捨てられてシーンから外れたら、にじみの登録も外れる
+  return trail;
+}
 export const throwDir = new THREE.Vector3();
 export const throwFrom = new THREE.Vector3();
 export const KUNAI_AXIS = new THREE.Vector3(0, 1, 0);
@@ -381,11 +421,10 @@ export function launchKunai(index: number) {
   findThrowAim(throwAim);
   throwDir.subVectors(throwAim, throwFrom).normalize();
 
-  const mesh = thrownTemplate.clone();
+  const mesh = takeThrownMesh();
   mesh.position.copy(throwFrom);
   scene.add(mesh);
-  const trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightRibbonMat);
-  scene.add(trail.mesh);
+  const trail = newFlightTrail();
   const vel = throwDir.clone().multiplyScalar(THROW_SPEED);
   const target = findHomingTarget();
   let reach = throwFrom.distanceTo(throwAim);
@@ -399,7 +438,7 @@ export function launchKunai(index: number) {
   kunaiState.throwPunch = 1;
   kickVel.x += 1.2 * DEG * 22;
   kickVel.y += -0.6 * DEG * 22;
-  sfx.playThrow(THROW_SWISH);
+  sfx.playThrow(THROW_SWISH, kunaiSwish());
 }
 
 export function orientThrown(t: Thrown, dir: THREE.Vector3) {
@@ -409,6 +448,7 @@ export function orientThrown(t: Thrown, dir: THREE.Vector3) {
 
 export function removeThrown(i: number) {
   thrown[i].mesh.removeFromParent();
+  thrownSpare.push(thrown[i].mesh);
   thrown[i].trail?.dispose();
   thrown.splice(i, 1);
 }
@@ -426,7 +466,8 @@ export function stickThrown(t: Thrown, at: THREE.Vector3, onDummy: Enemy | null,
     hitDir.set(dir.x, 0, dir.z);
     if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
     hitDir.normalize();
-    hooks.applyHit(THROW_HIT, at, 'throw');
+    hitWithArcs(skinOf('kunai'), THROW_HIT.fx ?? 1, dir, () => hooks.applyHit(THROW_HIT, at, 'throw'), at);
+    skinFx.flare = 1; // スキンの飾りを光らせる
     startWorldSlow();
   } else {
     sfx.playStick(); // 壁や地面に刺さった「カッ」
@@ -464,12 +505,11 @@ export function startReturn(t: Thrown) {
   t.phase = 'back';
   t.age = 0;
   if (!t.trail) {
-    t.trail = new Ribbon(64, FLIGHT_TRAIL_LIFE, flightRibbonMat);
-    scene.add(t.trail.mesh);
+    t.trail = newFlightTrail();
   } else {
     t.trail.cut();
   }
-  playSwish(RETURN_SWISH);
+  playSwish(RETURN_SWISH, kunaiSwish());
 }
 
 export const catchPoint = new THREE.Vector3();
@@ -525,6 +565,14 @@ export function updateThrown(dt: number) {
     // 切っ先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
     throwFrom.copy(t.mesh.position).addScaledVector(throwDir, BLADE_TIP);
     if (castThrow(throwFrom, throwDir, step)) {
+      // ボスの機体には刺さらず、当てて手元へ戻す
+      if (castHit.boss) {
+        const boss = castHit.boss;
+        hitWithArcs(skinOf('kunai'), THROW_HIT.fx ?? 1, throwDir, () => hooks.hitBoss(THROW_HIT, castHit.point, 'throw', boss, throwDir), castHit.point);
+        skinFx.flare = 1;
+        startReturn(t);
+        continue;
+      }
       stickPoint.copy(castHit.point);
       stickThrown(t, stickPoint, castHit.enemy, throwDir);
       continue;
@@ -732,6 +780,7 @@ export function updateAttack(dt: number) {
       else if (game.shownWeapon === 'sickle') sickleState.sicklePressed = true;
       else if (game.shownWeapon === 'axe') axeState.axePressed = true;
       else if (game.shownWeapon === 'bat') batState.pressed = true;
+      else if (game.shownWeapon === 'spear') spearState.pressed = true;
     } else if (!kunaiState.attack) startAttack(chooseAttack());
     else if (kunaiState.attackTime >= kunaiState.attack.cancel - ATTACK_BUFFER) attackQueued = true;
   }
@@ -741,7 +790,7 @@ export function updateAttack(dt: number) {
     const def = kunaiState.attack;
 
     while (firedSwishes < def.swishes.length && kunaiState.attackTime >= def.swishes[firedSwishes].at) {
-      playSwish(def.swishes[firedSwishes++]);
+      playSwish(def.swishes[firedSwishes++], kunaiSwish());
     }
     if (def.ring !== undefined && !firedRing && kunaiState.attackTime >= def.ring) {
       firedRing = true;
@@ -834,6 +883,12 @@ export const trailMesh = new THREE.Mesh(trailGeo, makeRibbonMaterial(KUNAI_RIBBO
 trailMesh.frustumCulled = false;
 trailMesh.renderOrder = 10;
 camera.add(trailMesh);
+// スキンが軌跡の色を持つときは、斬撃と回しの軌跡をその色にする
+const tintKunaiRibbons = () => {
+  for (const r of [{ mesh: trailMesh }, ...spinRibbons, slideSpinRibbon]) tintRibbon(r, skinOf('kunai').trail);
+};
+tintKunaiRibbons();
+onSkinChange((id) => id === 'kunai' && tintKunaiRibbons());
 
 export function kunaiPointsInCamera(tip: THREE.Vector3, base: THREE.Vector3, thin: boolean) {
   kunai.updateWorldMatrix(true, false);
@@ -895,9 +950,11 @@ export const HIT_REACH = 2.2; // 敵の中心までこの距離なら当たる
 export const HIT_ANGLE = 60 * DEG; // 視線からこの角度以内なら当たる
 
 export function tryHitDummy(def: AttackDef) {
-  if (!hooks.dummyInReach(HIT_REACH, HIT_ANGLE)) return;
+  if (!hooks.dummyInReach(HIT_REACH, HIT_ANGLE)) return void tryWallHit('kunai', HIT_REACH, 'blade', undefined, def.fx ?? 1); // 空振り: 壁や床に届いていれば弾かれる
   findHitPoint(def, hitPoint);
-  hooks.applyHit(def, hitPoint, 'kunai');
+  // 稲妻を出すスキンは、当たりの斬撃の線と光線も稲妻と同じ色にする
+  hitWithArcs(skinOf('kunai'), def.fx ?? 1, undefined, () => hooks.applyHit(def, hitPoint, 'kunai'));
+  skinFx.flare = 1; // スキンの飾りを光らせる
 }
 
 // クナイは手元にあって敵まで届かないので、視点から切っ先を通る線が敵に当たる所を「当たった場所」にする。

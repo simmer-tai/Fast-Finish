@@ -12,7 +12,8 @@ export interface AxeMats {
   grip: THREE.Material; // 柄
 }
 
-type P = [number, number];
+export type AxePoint = [number, number];
+type P = AxePoint;
 
 // シルエット案 B4（頭）と H5（柄）を、T6 の大きさにする
 const HEAD_B4: P[] = [[150, 330], [192, 470], [262, 487], [262, 538], [208, 546], [214, 620], [276, 702], [250, 718], [140, 714], [55, 682], [96, 546], [118, 470]];
@@ -28,6 +29,8 @@ const JOINT = [2, 3]; // 頭が柄とつながる所の凹み（HEAD の番号�
 const HOLD_X = 1080; // 握る位置（指を守る爪のすぐ後ろ）
 const toV2 = ([x, y]: P) => new THREE.Vector2((y - 512) / 1000, (HOLD_X - x) / 1000);
 const toV3 = (p: P, z: number) => { const v = toV2(p); return new THREE.Vector3(v.x, v.y, z); };
+// モデルの座標（mm。x は刃先の側が +、y は頭の側が +）をシルエット案の座標に直す（スキンが形を書くとき）
+export const axePointFromMm = ([x, y]: P): P => [HOLD_X - y, x + 512];
 
 // 厚さ (m)
 const HEAD_T = 0.03; // 頭
@@ -96,41 +99,53 @@ function solid(tris: Tri[], mat: THREE.Material): THREE.Mesh {
 const quad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, ref: THREE.Vector3): Tri[] =>
   [[a, b, c, ref], [a, c, d, ref]];
 
-// +Y 方向が頭、+X 方向が刃先になるよう組み立てる（原点は握る位置）
-export function createBattleAxe(mats: AxeMats): THREE.Group {
-  const axe = new THREE.Group();
+// 刃の面取りの境目: 刃先の各点を、頭の中心へ向けて BEVEL_K だけ寄せた線
+const CX = HEAD.reduce((s, p) => s + p[0], 0) / HEAD.length;
+const CY = HEAD.reduce((s, p) => s + p[1], 0) / HEAD.length;
+export const AXE_EDGE: P[] = EDGE.map((i) => HEAD[i]);
+export const AXE_BEVEL: P[] = AXE_EDGE.map(([x, y]): P => [x + (CX - x) * BEVEL_K, y + (CY - y) * BEVEL_K]);
+export const AXE_HEAD_T = HEAD_T;
+export const AXE_EDGE_T = EDGE_T;
 
-  // 刃の面取りの境目: 刃先の各点を、頭の中心へ向けて BEVEL_K だけ寄せた線
-  const cx = HEAD.reduce((s, p) => s + p[0], 0) / HEAD.length;
-  const cy = HEAD.reduce((s, p) => s + p[1], 0) / HEAD.length;
-  const edge = EDGE.map((i) => HEAD[i]);
-  const inner = edge.map(([x, y]): P => [x + (cx - x) * BEVEL_K, y + (cy - y) * BEVEL_K]);
-
-  // 頭の胴: 刃先の点を境目の線に置き換えた輪郭の板。中は輪郭から RIM だけ内側でくり抜いて枠にする。
-  // 穴の形は柄の付け根の凹みを飛ばした輪郭から作り、柄の側の内縁をなだらかな直線にする
-  const body = [...HEAD.slice(0, EDGE[0]), ...inner, ...HEAD.slice(EDGE[EDGE.length - 1] + 1)];
-  const holeSrc = body.filter((_, i) => !JOINT.includes(i));
-  axe.add(extrude(body, HEAD_T - 0.004, 0.002, mats.metal, [inset(holeSrc, RIM)]));
-
-  // 刃: 境目の線（頭の厚さ）から刃先（薄い）へすぼまる面取り
-  const ref = toV3([(cx + edge[1][0]) / 2, (cy + edge[1][1]) / 2], 0);
-  const iF = inner.map((p) => toV3(p, HEAD_T / 2));
-  const iB = inner.map((p) => toV3(p, -HEAD_T / 2));
-  const eF = edge.map((p) => toV3(p, EDGE_T / 2));
-  const eB = edge.map((p) => toV3(p, -EDGE_T / 2));
+// 刃の面取りの帯: 線 a（厚さ ta）から線 b（厚さ tb）へすぼまる。a と b は刃先に沿って同じ数の点
+export function axeBevel(a: P[], ta: number, b: P[], tb: number, mat: THREE.Material): THREE.Mesh {
+  const ref = toV3([(CX + AXE_EDGE[1][0]) / 2, (CY + AXE_EDGE[1][1]) / 2], 0);
+  const iF = a.map((p) => toV3(p, ta / 2));
+  const iB = a.map((p) => toV3(p, -ta / 2));
+  const eF = b.map((p) => toV3(p, tb / 2));
+  const eB = b.map((p) => toV3(p, -tb / 2));
   const tris: Tri[] = [];
-  for (let i = 0; i < edge.length - 1; i++) {
+  for (let i = 0; i < a.length - 1; i++) {
     tris.push(...quad(iF[i], iF[i + 1], eF[i + 1], eF[i], ref));
     tris.push(...quad(iB[i], iB[i + 1], eB[i + 1], eB[i], ref));
     tris.push(...quad(eF[i], eF[i + 1], eB[i + 1], eB[i], ref));
     tris.push(...quad(iF[i], iF[i + 1], iB[i + 1], iB[i], ref));
   }
-  const n = edge.length - 1;
+  const n = a.length - 1;
   tris.push(...quad(iF[0], eF[0], eB[0], iB[0], ref), ...quad(iF[n], eF[n], eB[n], iB[n], ref));
-  axe.add(solid(tris, mats.metal));
+  return solid(tris, mat);
+}
+
+// +Y 方向が頭、+X 方向が刃先になるよう組み立てる（原点は握る位置）
+export function createBattleAxe(mats: AxeMats): THREE.Group {
+  const axe = new THREE.Group();
+  // 部位には名前を付けておく（スキンの飾りが隠したり差し替えたりする）
+  const part = (name: string, m: THREE.Mesh) => {
+    m.name = name;
+    axe.add(m);
+  };
+
+  // 頭の胴: 刃先の点を境目の線に置き換えた輪郭の板。中は輪郭から RIM だけ内側でくり抜いて枠にする。
+  // 穴の形は柄の付け根の凹みを飛ばした輪郭から作り、柄の側の内縁をなだらかな直線にする
+  const body = [...HEAD.slice(0, EDGE[0]), ...AXE_BEVEL, ...HEAD.slice(EDGE[EDGE.length - 1] + 1)];
+  const holeSrc = body.filter((_, i) => !JOINT.includes(i));
+  part('head', extrude(body, HEAD_T - 0.004, 0.002, mats.metal, [inset(holeSrc, RIM)]));
+
+  // 刃: 境目の線（頭の厚さ）から刃先（薄い）へすぼまる面取り
+  part('bevel', axeBevel(AXE_BEVEL, HEAD_T, AXE_EDGE, EDGE_T, mats.metal));
 
   // 柄: 輪郭を押し出し、角を大きく面取りして握れる太さにする
-  axe.add(extrude(HANDLE, HANDLE_T, 0.005, mats.grip));
+  part('handle', extrude(HANDLE, HANDLE_T, 0.005, mats.grip));
 
   axe.userData.tipY = (HOLD_X - Math.min(...HEAD.map((p) => p[0]))) / 1000;
   return axe;

@@ -8,8 +8,8 @@ import { loftRings } from '../geometry.js';
 
 export const SICKLE_SHAFT_LEN = 0.4;
 const GRIP_FROM_BUTT = 0.1; // 握る位置（= 原点）は柄尻からこれだけ上
-const SHAFT_TOP = SICKLE_SHAFT_LEN - GRIP_FROM_BUTT;
-const SHAFT_BUTT = -GRIP_FROM_BUTT;
+export const SHAFT_TOP = SICKLE_SHAFT_LEN - GRIP_FROM_BUTT;
+export const SHAFT_BUTT = -GRIP_FROM_BUTT;
 const LINK_SIZE = 1.6; // 鎖の輪の大きさ（元の寸法に対する倍率）
 const LINK_RADIUS = 0.008 * LINK_SIZE;
 const LINK_TUBE = 0.0024 * LINK_SIZE;
@@ -36,6 +36,41 @@ export interface SickleMats {
   wrap: THREE.Material; // 握りの巻き
 }
 
+// 刃の形: 根元は真横へ出て、先へ行くほど柄の方へ強く曲がる。断面は剣と同じく棟が平らで刃先が薄い。
+// 刃に沿って並べた断面の位置 p・刃先の向き n（曲がりの内側）・幅 w・厚さ t と、切っ先 tip を返す（スキンが刃を作り直すときにも使う）
+const BLADE_LEN = 0.2;
+const BEND = 1.2; // 先端での曲がり込み (rad)
+const BLADE_W = 0.044;
+const BLADE_T = 0.008;
+const BLADE_N = 12;
+export interface SickleBladeFrame {
+  p: THREE.Vector3;
+  n: THREE.Vector3;
+  w: number;
+  t: number;
+}
+export function sickleBladeFrames() {
+  const frames: SickleBladeFrame[] = [];
+  const p = new THREE.Vector3(0.006, SHAFT_TOP - 0.012, 0);
+  const angle = (s: number) => -BEND * s * s;
+  for (let i = 0; i <= BLADE_N; i++) {
+    const s = i / BLADE_N;
+    if (i > 0) {
+      const mid = angle(s - 0.5 / BLADE_N);
+      p.x += Math.cos(mid) * BLADE_LEN / BLADE_N;
+      p.y += Math.sin(mid) * BLADE_LEN / BLADE_N;
+    }
+    const th = angle(s);
+    const n = new THREE.Vector3(Math.sin(th), -Math.cos(th), 0); // 曲がりの内側 = 刃先の向き
+    if (i === BLADE_N) {
+      // 切っ先: 棟寄りに尖らせる
+      return { frames, end: p.clone(), tip: p.clone().addScaledVector(n, -BLADE_W * 0.15) };
+    }
+    frames.push({ p: p.clone(), n, w: BLADE_W * (1 - 0.5 * s), t: BLADE_T * (1 - 0.3 * s) });
+  }
+  throw new Error('unreachable');
+}
+
 // +Y 方向が刃の側になるよう組み立てる（原点は手で握る位置）。
 // 刃は +X へ張り出して柄の方へ曲がり込み、刃先（切る側）は内側 = 柄の方を向く。
 // headOnly なら外れて飛ぶ頭だけを作る（原点は同じく、組んでいれば手で握る位置）
@@ -43,6 +78,12 @@ export function createChainSickle(mats: SickleMats, headOnly = false): THREE.Gro
   const g = new THREE.Group();
   const head = new THREE.Group();
   g.add(head);
+  // 部位には名前を付けておく（スキンの飾りが隠したり差し替えたりする）
+  const part = (to: THREE.Group, name: string, m: THREE.Mesh) => {
+    m.name = name;
+    to.add(m);
+    return m;
+  };
   // 柄: わずかに柄尻へ太くなる八角柱を、継ぎ目で上下に分ける
   const shaftPiece = (y0: number, y1: number) => {
     const r = (y: number) => 0.012 + 0.001 * (SHAFT_TOP - y) / SICKLE_SHAFT_LEN;
@@ -51,51 +92,22 @@ export function createChainSickle(mats: SickleMats, headOnly = false): THREE.Gro
     m.position.y = (y0 + y1) / 2;
     return m;
   };
-  head.add(shaftPiece(JOINT_Y + FERRULE_LEN, SHAFT_TOP));
+  part(head, 'headShaft', shaftPiece(JOINT_Y + FERRULE_LEN, SHAFT_TOP));
   // 継ぎ目の金具: 頭の側を一回り太くして、外れる所だと分かるようにする
-  const headFerrule = new THREE.Mesh(new THREE.CylinderGeometry(0.0148, 0.0148, FERRULE_LEN, 8), mats.metal);
+  const headFerrule = part(head, 'headFerrule', new THREE.Mesh(new THREE.CylinderGeometry(0.0148, 0.0148, FERRULE_LEN, 8), mats.metal));
   headFerrule.position.y = JOINT_Y + FERRULE_LEN / 2;
-  head.add(headFerrule);
 
   // 口金: 柄の先で刃の根元をくわえる六角の金具と、その上の小さな尖り
-  const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.0175, 0.06, 6), mats.metal);
+  const socket = part(head, 'socket', new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.0175, 0.06, 6), mats.metal));
   socket.position.y = SHAFT_TOP - 0.015;
-  head.add(socket);
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.03, 6), mats.metal);
+  const cap = part(head, 'cap', new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.03, 6), mats.metal));
   cap.position.y = SHAFT_TOP + 0.015 + 0.015;
-  head.add(cap);
 
-  // 刃: 根元は真横へ出て、先へ行くほど柄の方へ強く曲がる。断面は剣と同じく棟が平らで刃先が薄い
-  const BLADE_LEN = 0.2;
-  const BEND = 1.2; // 先端での曲がり込み (rad)
-  const W = 0.044;
-  const T = 0.008;
-  const N = 12;
+  // 刃
+  const blade = sickleBladeFrames();
   const rings: THREE.Vector3[][] = [];
-  const p = new THREE.Vector3(0.006, SHAFT_TOP - 0.012, 0);
-  const d = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const angle = (s: number) => -BEND * s * s;
-  const bladeMid = new THREE.Vector3(); // 刃の中ほど（軌跡の根元側に使う）
   let spineR = 0; // 握りから棟までのいちばん遠い距離
-  for (let i = 0; i <= N; i++) {
-    const s = i / N;
-    if (i > 0) {
-      const mid = angle(s - 0.5 / N);
-      p.x += Math.cos(mid) * BLADE_LEN / N;
-      p.y += Math.sin(mid) * BLADE_LEN / N;
-    }
-    if (i === N / 2) bladeMid.copy(p);
-    const th = angle(s);
-    d.set(Math.cos(th), Math.sin(th), 0);
-    n.set(d.y, -d.x, 0); // 曲がりの内側 = 刃先の向き
-    if (i === N) {
-      // 切っ先: 棟寄りに尖らせる
-      rings.push([p.clone().addScaledVector(n, -W * 0.15)]);
-      break;
-    }
-    const w = W * (1 - 0.5 * s);
-    const t = T * (1 - 0.3 * s);
+  for (const { p, n, w, t } of blade.frames) {
     const at = (a: number, z: number) => p.clone().addScaledVector(n, a).setZ(z);
     spineR = Math.max(spineR, Math.hypot(p.x - n.x * w / 2, p.y - n.y * w / 2));
     rings.push([
@@ -106,22 +118,22 @@ export function createChainSickle(mats: SickleMats, headOnly = false): THREE.Gro
       at(-w / 2, -t * 0.35),
     ]);
   }
-  head.add(new THREE.Mesh(loftRings(rings), mats.metal));
+  rings.push([blade.tip]);
+  part(head, 'blade', new THREE.Mesh(loftRings(rings), mats.metal));
+  const p = blade.end;
+  const bladeMid = blade.frames[BLADE_N / 2].p.clone(); // 刃の中ほど（軌跡の根元側に使う）
 
   // 握り: 柄の下半分と巻き、継ぎ目の金具（鎖の出口）、六角の石突き
   const grip = new THREE.Group();
   if (!headOnly) {
     g.add(grip);
-    grip.add(shaftPiece(SHAFT_BUTT, JOINT_Y - FERRULE_LEN));
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.12, 8), mats.wrap);
+    part(grip, 'gripShaft', shaftPiece(SHAFT_BUTT, JOINT_Y - FERRULE_LEN));
+    const wrap = part(grip, 'wrap', new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.12, 8), mats.wrap));
     wrap.scale.set(1, 1, 0.85);
-    grip.add(wrap);
-    const gripFerrule = new THREE.Mesh(new THREE.CylinderGeometry(0.0138, 0.0138, FERRULE_LEN, 8), mats.metal);
+    const gripFerrule = part(grip, 'gripFerrule', new THREE.Mesh(new THREE.CylinderGeometry(0.0138, 0.0138, FERRULE_LEN, 8), mats.metal));
     gripFerrule.position.y = JOINT_Y - FERRULE_LEN / 2;
-    grip.add(gripFerrule);
-    const butt = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.014, 0.02, 6), mats.metal);
+    const butt = part(grip, 'butt', new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.014, 0.02, 6), mats.metal));
     butt.position.y = SHAFT_BUTT - 0.008;
-    grip.add(butt);
   }
 
   g.userData.bladeTip = p.clone();

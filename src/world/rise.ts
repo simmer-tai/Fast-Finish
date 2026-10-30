@@ -33,11 +33,15 @@ export function addRiser(mesh: THREE.InstancedMesh, index: number, b: Block, inA
   // 箱ごとの「面が埋まった高さ」(m, ワールド)。最初は埋まりきった状態にしておく（確認用の起動ではせり上げない）
   if (!mesh.geometry.getAttribute('aFill')) {
     mesh.geometry.setAttribute('aFill', new THREE.InstancedBufferAttribute(new Float32Array(mesh.count).fill(RISE_FILL_DONE), 1));
+    mesh.geometry.setAttribute('aPulse', new THREE.InstancedBufferAttribute(new Float32Array(mesh.count), 1));
   }
   if (inArena) arenaRiseEnd = Math.max(arenaRiseEnd, delay + RISE_BASE_TIME + dur * RISE_FILL_START + fillDur);
 }
+export const RISE_PULSE_TIME = 0.35; // 埋めきった箱の縁を太く濃くしてから、元の細さへ戻すまで
+export const RISE_INK_DEPTH = 0.7; // 埋まる境目の下に、墨がにじむように薄く残す濃さの深さ (m)
 // 箱のマテリアルに、組み上がりの途中の見た目を足す。埋まった高さ（aFill）より上は、
-// 1m のグリッドと箱の縁の線だけを濃く残して、ほかは描かない。埋まる境目には濃い帯を引く。
+// 1m のグリッドと箱の縁の線だけを濃く残して、ほかは描かない。埋まる境目には濃い帯を引き、その下へ薄くにじませる。
+// 埋めきった直後は aPulse (1→0) の間だけ縁の線を太く濃く引く。
 // 霧の手前で色を混ぜるので、遠くの骨組みは霧に溶ける
 export let riseBuildId = 0;
 // 置いた箱の面の向き（ワールド）。箱ごとに軸の伸び方が違っても（坂の斜面のように）向きがずれないよう、
@@ -57,33 +61,42 @@ export function withRiseBuild<T extends THREE.Material>(mat: T): T {
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
-        '#include <common>\nattribute float aFill;\nvarying float vFill;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;',
+        '#include <common>\nattribute float aFill;\nattribute float aPulse;\nvarying float vFill;\nvarying float vPulse;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;',
       )
       .replace(
         '#include <project_vertex>',
         `#include <project_vertex>
         vFill = aFill;
+        vPulse = aPulse;
         vBuildPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
         vBuildNormal = ${INSTANCE_NORMAL};
         vBuildUv = uv;`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vFill;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;')
+      .replace('#include <common>', '#include <common>\nvarying float vFill;\nvarying float vPulse;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;')
       .replace(
         '#include <clipping_planes_fragment>',
         `#include <clipping_planes_fragment>
         float buildMark = 0.0;
+        vec2 ed = min(vBuildUv, 1.0 - vBuildUv) / fwidth(vBuildUv);
         if (vBuildPos.y > vFill) {
           vec3 an = abs(vBuildNormal);
           vec2 g = an.y > max(an.x, an.z) ? vBuildPos.xz : an.x > an.z ? vBuildPos.zy : vBuildPos.xy;
           vec2 gd = abs(fract(g - 0.5) - 0.5) / fwidth(g);
-          vec2 ed = min(vBuildUv, 1.0 - vBuildUv) / fwidth(vBuildUv);
           // 縁の線は太めに、面のグリッドは 1 ピクセルで
           float line = 1.0 - min(min(min(gd.x, gd.y), min(ed.x, ed.y) * 0.4), 1.0);
           if (line < 0.5) discard;
           buildMark = 1.0;
         } else if (vBuildPos.y > vFill - 0.08) {
           buildMark = 1.0;
+        } else {
+          float ink = 1.0 - clamp((vFill - 0.08 - vBuildPos.y) / ${RISE_INK_DEPTH.toFixed(2)}, 0.0, 1.0);
+          buildMark = 0.35 * ink * ink;
+        }
+        if (vPulse > 0.0) {
+          // 縁の太さは 1 + 5 * 濃さ ピクセル
+          float rim = 1.0 - clamp(min(ed.x, ed.y) / (1.0 + 5.0 * vPulse), 0.0, 1.0);
+          buildMark = max(buildMark, rim * vPulse);
         }`,
       )
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.03), buildMark);\n#include <fog_fragment>');

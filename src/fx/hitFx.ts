@@ -28,6 +28,13 @@ const DEG = Math.PI / 180;
 
 export const HIT_TINT = new THREE.Color(0xffffff); // 光の色（ゲームの配色に合わせて白一色）
 export const HIT_CORE = new THREE.Color(0xffffff); // 中心の色
+// 当たりの光線・斬撃の線・光の筋の色と、斬撃の線の太さの倍率を差し替える（スキンに合わせるとき）。当てる直前に入れ、終わったら戻す
+export const hitFxTint = { color: null as THREE.Color | null, slashWidth: 1, sparks: null as HitSparks | null };
+// スキンで強めた当たりの火花。count / life / size は元の火花の数・長さ・大きさ（飛ぶ速さも）の倍率。
+// embers: 元の火花の数に対する、ゆっくり飛んで長く残り、落ちていく火の粉の割合。tint: 白から変わっていく色
+export interface HitSparks { count: number; life: number; size: number; embers: number; tint: number }
+export interface HologramLook { color: number; core: number; count: number; size: number; life: number }
+const hitSparkTint = new THREE.Color();
 const HIT_RAYS = 9; // fx = 1 のときの放射状の光線の数
 export const HEAVY_FX = 1.5; // fx がこれ以上の攻撃（締めの技）は長く・整った形で見せる
 const QUICK_LIFE = 0.6; // それ以外の攻撃の光の長さの倍率
@@ -271,12 +278,12 @@ function updateBursts(dt: number) {
 }
 
 // -- 光の粒（火花） --
-const SPARK_MAX = 128;
+const SPARK_MAX = 256;
 const SPARK_GRAVITY = 14;
 const SPARK_DRAG = 5; // 空気抵抗。速く飛び出してすぐ失速させる
 const SPARK_STRETCH = 0.04; // 速さ 1 m/s あたりの尾の長さ
 
-interface Spark { pos: THREE.Vector3; vel: THREE.Vector3; age: number; life: number; width: number }
+interface Spark { pos: THREE.Vector3; vel: THREE.Vector3; age: number; life: number; width: number; tint: THREE.Color | null }
 const sparks: Spark[] = [];
 const sparkPool: Spark[] = [];
 
@@ -291,11 +298,11 @@ sparkMesh.count = 0;
 sparkMesh.frustumCulled = false;
 fxScene.add(sparkMesh);
 
-// swing（単位ベクトル）を渡すと、その向きへ寄せて飛ばす
-export function spawnSparks(at: THREE.Vector3, hitDir: THREE.Vector3, count: number, lifeScale = 1, size = 1, swing?: THREE.Vector3) {
+// swing（単位ベクトル）を渡すと、その向きへ寄せて飛ばす。tint を渡すと、白からその色へ変わって消える（スキンの色など）
+export function spawnSparks(at: THREE.Vector3, hitDir: THREE.Vector3, count: number, lifeScale = 1, size = 1, swing?: THREE.Vector3, tint: THREE.Color | null = null) {
   for (let i = 0; i < count; i++) {
     if (sparks.length >= SPARK_MAX) sparkPool.push(sparks.shift()!);
-    const s = sparkPool.pop() ?? { pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0, life: 0, width: 0 };
+    const s = sparkPool.pop() ?? { pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0, life: 0, width: 0, tint: null };
     s.pos.copy(at);
     // 攻撃した側へ跳ね返りつつ、横と上へ大きく散らす
     s.vel.randomDirection().addScaledVector(hitDir, -0.35);
@@ -305,6 +312,7 @@ export function spawnSparks(at: THREE.Vector3, hitDir: THREE.Vector3, count: num
     s.age = 0;
     s.life = (0.15 + Math.random() * 0.3) * lifeScale;
     s.width = (0.012 + Math.random() * 0.018) * size;
+    s.tint = tint;
     sparks.push(s);
   }
 }
@@ -336,7 +344,7 @@ function updateSparks(dt: number) {
     sparkFrom.copy(s.pos).addScaledVector(sparkDir, -len);
     sparkMesh.setMatrixAt(n, setStrip(sparkFrom, sparkDir, len, s.width * (0.4 + 0.6 * k)));
     const near = THREE.MathUtils.smoothstep(s.pos.distanceTo(env.camera.position), 0.5, 1.0); // 目の前に来た粒は大きく映りすぎるので消す
-    sparkColor.lerpColors(HIT_CORE, HIT_TINT, Math.min(1, t * 2)).multiplyScalar(1.6 * k * near);
+    sparkColor.lerpColors(HIT_CORE, s.tint ?? HIT_TINT, Math.min(1, t * 2)).multiplyScalar(1.6 * k * near);
     sparkMesh.setColorAt(n, sparkColor);
     n++;
   }
@@ -444,6 +452,122 @@ function updateShards(dt: number) {
 const toShardCam = new THREE.Vector3();
 const shardNormal = new THREE.Vector3();
 
+// -- Holographic polygon chains (skin hit effect) --
+// A short zig-zag strip makes four connected triangles. The translucent face and
+// bright wireframe share the same instances so they read as a projected mesh.
+interface HoloChain {
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  quat: THREE.Quaternion;
+  axis: THREE.Vector3;
+  spin: number;
+  scale: THREE.Vector3;
+  age: number;
+  life: number;
+  variant: number;
+  color: THREE.Color;
+  core: THREE.Color;
+}
+const HOLO_MAX = 96;
+const holoChains: HoloChain[] = [];
+const holoPool: HoloChain[] = [];
+const HOLO_POINTS = [
+  [-1, 0, -.55, .55, -.15, -.38, .22, .48, .58, -.44, 1, .12],
+  [-1, -.18, -.7, .38, -.22, -.58, .08, .2, .67, -.2, 1, .42],
+  [-1, .28, -.62, -.42, -.05, .54, .35, -.22, .72, .38, 1, -.12],
+] as const;
+const holoGeos = HOLO_POINTS.map((points) => {
+  const geo = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  for (let i = 0; i < points.length; i += 2) positions.push(points[i], points[i + 1], 0);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]);
+  return geo;
+});
+const holoFillMat = new THREE.MeshBasicMaterial({
+  transparent: true, opacity: 0.16, blending: THREE.NormalBlending,
+  depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+});
+const holoWireMat = new THREE.MeshBasicMaterial({
+  transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending,
+  depthTest: false, depthWrite: false, side: THREE.DoubleSide, wireframe: true,
+});
+const holoFills = holoGeos.map((geo) => new THREE.InstancedMesh(geo, holoFillMat, HOLO_MAX));
+const holoWires = holoGeos.map((geo) => new THREE.InstancedMesh(geo, holoWireMat, HOLO_MAX));
+for (const mesh of [...holoFills, ...holoWires]) {
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.count = 0;
+  mesh.frustumCulled = false;
+  fxScene.add(mesh);
+}
+
+export function spawnHologramChains(at: THREE.Vector3, hitDir: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: HologramLook) {
+  const count = Math.max(1, Math.round(look.count * Math.sqrt(fx)));
+  for (let i = 0; i < count; i++) {
+    if (holoChains.length >= HOLO_MAX) holoPool.push(holoChains.shift()!);
+    const h = holoPool.pop() ?? {
+      pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
+      spin: 0, scale: new THREE.Vector3(), age: 0, life: 0, variant: 0, color: new THREE.Color(), core: new THREE.Color(),
+    };
+    h.pos.copy(at).addScaledVector(hitDir, rand(-0.03, 0.04));
+    h.vel.randomDirection().addScaledVector(hitDir, -0.35);
+    if (swing) h.vel.addScaledVector(swing, 1.15);
+    h.vel.y += rand(0.05, 0.35);
+    h.vel.normalize().multiplyScalar(rand(1.8, 4.2) * Math.sqrt(fx));
+    h.axis.randomDirection();
+    h.quat.setFromAxisAngle(h.axis, Math.random() * Math.PI * 2);
+    h.spin = rand(5, 11) * (Math.random() < 0.5 ? -1 : 1);
+    const size = rand(0.55, 1.35) * look.size * Math.sqrt(fx);
+    h.scale.set(size * rand(0.7, 1.65), size * rand(0.55, 1.25), size);
+    h.age = -rand(0, 0.045);
+    h.life = rand(0.55, 1) * look.life;
+    h.variant = Math.floor(Math.random() * holoGeos.length);
+    h.color.setHex(look.color);
+    h.core.setHex(look.core);
+    holoChains.push(h);
+  }
+}
+
+const holoMatrix = new THREE.Matrix4();
+const holoRot = new THREE.Quaternion();
+const holoScale = new THREE.Vector3();
+const holoColor = new THREE.Color();
+function updateHologramChains(dt: number) {
+  let alive = 0;
+  const drawn = holoGeos.map(() => 0);
+  for (const h of holoChains) {
+    h.age += dt;
+    if (h.age >= h.life) {
+      holoPool.push(h);
+      continue;
+    }
+    holoChains[alive++] = h;
+    if (h.age < 0) continue;
+    const t = h.age / h.life;
+    h.vel.multiplyScalar(Math.max(0, 1 - 5 * dt));
+    h.vel.y -= 1.5 * dt; // ordinary hit debris pulls the hologram back into the game's physical feel
+    h.pos.addScaledVector(h.vel, dt);
+    h.quat.premultiply(holoRot.setFromAxisAngle(h.axis, h.spin * dt));
+    const appear = Math.min(1, h.age / 0.045);
+    const fade = (1 - t) ** 1.35;
+    const index = drawn[h.variant]++;
+    const scan = 0.88 + 0.12 * Math.sin(h.age * 85 + index * 2.1 + h.variant);
+    holoMatrix.compose(h.pos, h.quat, holoScale.copy(h.scale).multiplyScalar(appear * fade));
+    holoFills[h.variant].setMatrixAt(index, holoMatrix);
+    holoWires[h.variant].setMatrixAt(index, holoMatrix);
+    holoFills[h.variant].setColorAt(index, holoColor.copy(h.color).multiplyScalar(fade * scan));
+    holoWires[h.variant].setColorAt(index, holoColor.copy(h.core).multiplyScalar(fade * (0.8 + 0.2 * scan)));
+  }
+  holoChains.length = alive;
+  for (let variant = 0; variant < holoGeos.length; variant++) {
+    for (const mesh of [holoFills[variant], holoWires[variant]]) {
+      mesh.count = drawn[variant];
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }
+}
+
 // -- 画面全体の暗転の時間変化 --
 // age: 当たってからの時間、hold: ヒットストップの長さ（この間は暗転を保つ）、power: 暗転の強さ
 export const impact = { age: Infinity, hold: 0, power: 0 };
@@ -466,6 +590,7 @@ const rayDir = new THREE.Vector3();
 const toCamera = new THREE.Vector3();
 export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxDef, swing?: THREE.Vector3) {
   const fx = def.fx ?? 1;
+  const tint = hitFxTint.color ?? HIT_TINT;
   env.camera.updateMatrixWorld();
   camRight.setFromMatrixColumn(env.camera.matrixWorld, 0);
   camUp.setFromMatrixColumn(env.camera.matrixWorld, 1);
@@ -503,7 +628,7 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
       ? (Math.random() < 0.3 ? 1.8 : 0.7 + Math.random() * 0.7) * fx
       : (0.25 + Math.random() ** 2 * 1.4) * fx; // 短いものが多く、ときどき長いもの
     addBeam(at, rayDir, {
-      color: HIT_TINT,
+      color: tint,
       len: len * size,
       width: rand(0.03, 0.08) * Math.sqrt(fx) * size,
       offset: rand(0.06, 0.16) * size,
@@ -525,14 +650,14 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
     // 線の中心を少しずらして、左右の長さも変える
     const shift = l > 0 ? rand(-0.08, 0.08) * size : 0;
     lineOrigin.copy(at).addScaledVector(camRight, -Math.sin(a) * shift).addScaledVector(camUp, Math.cos(a) * shift);
-    const thin = (l > 0 ? 0.5 : 1) * size;
+    const thin = (l > 0 ? 0.5 : 1) * size * hitFxTint.slashWidth;
     const baseLen = (def.slash === undefined ? 3.2 : 2.6) * fx * thin;
     for (const sign of [1, -1]) {
       lineDir.copy(rayDir).multiplyScalar(sign);
       const ahead = flow ? (sign > 0 ? SWING_AHEAD : SWING_BEHIND) : 1;
       const len = baseLen * ahead * (heavy ? 1 : rand(0.45, 1.1));
       const life = (def.slash === undefined ? 0.24 : 0.2) * lifeK * rand(0.8, 1.1);
-      addBeam(lineOrigin, lineDir, { color: HIT_TINT, len, width: rand(0.07, 0.12) * thin, tail: 0.5, reach: 3, life });
+      addBeam(lineOrigin, lineDir, { color: tint, len, width: rand(0.07, 0.12) * thin, tail: 0.5, reach: 3, life });
       addBeam(lineOrigin, lineDir, { color: HIT_CORE, len: len * 0.85, width: 0.035 * thin, tail: 0.5, reach: 3, life: life * 0.8 });
     }
   }
@@ -546,7 +671,7 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
         if (rayDir.dot(toCamera) < 0.5) break;
       }
       addBeam(at, rayDir, {
-        color: HIT_TINT,
+        color: tint,
         len: rand(0.5, 1.5) * fx * size,
         width: rand(0.02, 0.05) * Math.sqrt(fx) * size,
         offset: rand(0.1, 0.3) * size,
@@ -558,7 +683,13 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
     }
   }
 
-  spawnSparks(at, hitDir, Math.round(16 * fx * (heavy ? 1 : rand(0.5, 1.1))), lifeK, size, flow);
+  const sk = hitFxTint.sparks;
+  const sparkCount = 16 * fx * (heavy ? 1 : rand(0.5, 1.1));
+  if (sk) {
+    hitSparkTint.setHex(sk.tint);
+    spawnSparks(at, hitDir, Math.round(sparkCount * sk.count), lifeK * sk.life, size * sk.size, flow, hitSparkTint);
+    spawnSparks(at, hitDir, Math.round(sparkCount * sk.embers), lifeK * sk.life * 2.5, size * 0.4, flow, hitSparkTint);
+  } else spawnSparks(at, hitDir, Math.round(sparkCount), lifeK, size, flow);
   spawnShards(at, hitDir, Math.round(8 * fx * (heavy ? 1.3 : rand(0.6, 1.1))), heavy ? 1.3 : 1, size, flow);
 
   impact.age = 0;
@@ -688,6 +819,7 @@ export function updateHitParticles(dt: number) {
   updateBursts(dt);
   updateSparks(dt);
   updateShards(dt);
+  updateHologramChains(dt);
 }
 // 光が 1 つでも出ているか。出ていなければ、光を重ねる描画ごと飛ばせる
 export const hitFxVisible = () => fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));

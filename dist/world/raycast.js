@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { enemies } from '../enemy/state.js';
+import { raycastBoss } from '../enemy/boss.js';
 import { blocks, rampUpDir, ramps } from './blocks.js';
 // ---- 光線の当たり判定 ----
 // 投げた武器や照準の先が、壁・床・敵のどこに当たるか
 export const throwRaycaster = new THREE.Raycaster();
 // 当たり判定: 地面と柱は計算で直接求め（柱 1000 本をメッシュの交差判定に回すと重い）、敵だけメッシュで調べる
-// normal は壁・床に当たったときの面の外向き（敵に当たったときは使わない）
-export const castHit = { point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), enemy: null, part: null };
+// normal は壁・床に当たったときの面の外向き（敵に当たったときは使わない）。boss はボスの機体に当たったときの部位
+export const castHit = { point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), enemy: null, part: null, boss: null };
 let rayExit = 0; // rayBox で、光線が箱から出る距離
 export function rayBox(o, d, b, far) {
     let tmin = 0;
@@ -56,6 +57,8 @@ export function rayRamp(o, d, r, far) {
 // 地面と柱だけを調べ、最初に当たるまでの距離を返す（なければ far のまま）
 let hitBlock = null; // castWorld で最後に当たった箱（地面なら null）
 let hitRamp = null;
+// castWorld で最後に当たった箱（地面や坂なら null）
+export const lastHitBlock = () => hitBlock;
 export function castWorld(origin, dir, far) {
     let best = far;
     hitBlock = null;
@@ -66,6 +69,8 @@ export function castWorld(origin, dir, far) {
             best = t;
     }
     for (const b of blocks) {
+        if (b.noRay)
+            continue;
         const t = rayBox(origin, dir, b, best);
         if (t >= 0) {
             best = t;
@@ -124,6 +129,15 @@ export function castThrow(origin, dir, far) {
         found = true;
         castHit.enemy = e;
         castHit.part = hit.object;
+    }
+    castHit.boss = null;
+    const onBoss = raycastBoss(origin, dir, best);
+    if (onBoss) {
+        best = onBoss.dist;
+        found = true;
+        castHit.enemy = null;
+        castHit.boss = onBoss.part;
+        castHit.part = onBoss.object;
     }
     if (found)
         castHit.point.copy(origin).addScaledVector(dir, best);

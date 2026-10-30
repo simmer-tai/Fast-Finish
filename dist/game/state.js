@@ -6,6 +6,7 @@ import { PLAYER_MAX_HP } from '../player/config.js';
 export const game = {
     wantWeapon: 'kunai', // 数字キーで選んだ武器
     shownWeapon: 'kunai', // 今手に持っている武器
+    weaponLocked: false, // ステージでは選んだ武器のまま戦う（持ち替えられるのは訓練場だけ）
     holster: 0, // 0 = 構えている, 1 = 画面の下へ下げきった
     throwHeld: false, // 右クリックを押し続けているか
     fovKick: 0,
@@ -17,6 +18,7 @@ export const game = {
     timeScale: 1, // ゲーム全体の時間の速さ（ループで dt に掛ける）
     deadEye: 'off',
     deadEyeT: 0, // 今の段に入ってからの時間（実時間）
+    deadEyeKills: 0, // 今のデッドアイで倒した数（スコアの DEAD EYE の加点に使う）
     attackHeld: false, // 左クリックを押し続けているか
     usingPad: false, // 最後に触ったのがパッドか（マウスを触ったら外れる）
     playerHp: PLAYER_MAX_HP,

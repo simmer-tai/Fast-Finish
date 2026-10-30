@@ -11,9 +11,11 @@ import { ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en } from './state.js';
 import { castWorld } from '../world/raycast.js';
 import { player, position } from '../player/state.js';
 import { PLAYER_RADIUS } from '../player/config.js';
+import { broadcastBossParry, broadcastBossShot, remotePlayers, sendRemotePlayerShot } from '../multiplayer/connectionTest.js';
 import { game, kickVel } from '../game/state.js';
+import { env } from './env.js';
 import { hooks } from '../game/hooks.js';
-import { closestSegmentPoints, tryParry } from '../combat/parry.js';
+import { PARRY_ANGLE, PARRY_RANGE, PARRY_THREAT, closestSegmentPoints, reflectRemoteBossBullet, remoteParryEffect, tryParry } from '../combat/parry.js';
 // ---- 敵の銃 ----
 // 自動拳銃の持たせ方と、敵の射撃
 // ---- 敵の射撃 ----
@@ -23,11 +25,12 @@ import { closestSegmentPoints, tryParry } from '../combat/parry.js';
 export const ENEMY_TURN_RATE = 3; // 体が向き直る速さ（残りの角度に掛ける割合 /s）
 export const ENEMY_TURN_MAX = 2.5; // 体が向き直る最高の角速度 (rad/s)
 // 難易度ごとの狙いの精度。aimRate は銃が狙いへ追いつく速さ（大きいほど遅れが小さく、動いていても当たりやすい）、
-// spread は弾の散らばり。狙撃手も aimRate で照準線を追う（ロック後の弾は散らさない）
+// spread は弾の散らばり、wobble は狙いが上下左右へゆっくり揺れる幅（ENEMY_FIRE_CONE より小さくする。超えると撃てない間が長くなる）。
+// 狙撃手も aimRate で照準線を追う（ロック後の弾は散らさない）
 export const ENEMY_ACCURACY = {
-    easy: { aimRate: 3.5, spread: 2.2 * DEG },
-    normal: { aimRate: 6, spread: 0.8 * DEG },
-    hard: { aimRate: 9, spread: 0.3 * DEG },
+    easy: { aimRate: 3.5, spread: 2.2 * DEG, wobble: 3.5 * DEG },
+    normal: { aimRate: 6, spread: 0.8 * DEG, wobble: 2.2 * DEG },
+    hard: { aimRate: 9, spread: 0.3 * DEG, wobble: 1 * DEG },
 };
 export const ENEMY_AIM_YAW_MAX = 40 * DEG;
 export const ENEMY_AIM_PITCH_MAX = 40 * DEG;
@@ -66,13 +69,21 @@ export const enemyOnPath = new THREE.Vector3();
 export const enemyOnBody = new THREE.Vector3();
 export const enemyPath = new THREE.Line3();
 export const enemyBody = new THREE.Line3();
+const remoteBody = new THREE.Line3();
+const remoteOnPath = new THREE.Vector3();
+const remoteOnBody = new THREE.Vector3();
+const remoteNearest = new THREE.Vector3();
+const remoteChest = new THREE.Vector3();
+const remoteLook = new THREE.Vector3();
+const remoteParryRay = new THREE.Line3();
 export const enemyPan = new THREE.Vector3();
 // 狙う所: プレイヤーの胸
 export function aimTarget(out) {
     return out.set(position.x, position.y + player.eyeHeight - 0.35, position.z);
 }
 export function updateDummyAim(dt) {
-    aimTarget(enemyTarget);
+    if (!env.targetPlayer(enemyTarget))
+        aimTarget(enemyTarget);
     const dx = enemyTarget.x - en.root.position.x;
     const dz = enemyTarget.z - en.root.position.z;
     const want = Math.atan2(dx, dz);
@@ -81,17 +92,24 @@ export function updateDummyAim(dt) {
     en.root.quaternion.setFromAxisAngle(UP, en.yaw);
     const yaw = THREE.MathUtils.clamp(wrapAngle(want - en.yaw), -ENEMY_AIM_YAW_MAX, ENEMY_AIM_YAW_MAX);
     const pitch = THREE.MathUtils.clamp(Math.atan2(enemyTarget.y - (en.root.position.y + ENEMY_GUN_Y), Math.hypot(dx, dz)), -ENEMY_AIM_PITCH_MAX, ENEMY_AIM_PITCH_MAX);
-    const k = 1 - Math.exp(-ENEMY_ACCURACY[game.difficulty].aimRate * dt);
-    en.aimYaw += (yaw - en.aimYaw) * k;
-    en.aimPitch += (pitch - en.aimPitch) * k;
+    // 狙いの揺れ: 速さの違う 2 つの波を重ね、上下と左右で別の速さにして、どの向きへも同じように外れるようにする。
+    // idleT は敵ごとにずらしてあるので、揃って同じ向きへは揺れない
+    const acc = ENEMY_ACCURACY[game.difficulty];
+    const t = en.idleT;
+    const wobbleYaw = (Math.sin(t * 1.3) + Math.sin(t * 2.3 + 1.7)) * 0.5 * acc.wobble;
+    const wobblePitch = (Math.sin(t * 1.7 + 0.6) + Math.sin(t * 2.9 + 2.4)) * 0.5 * acc.wobble;
+    const k = 1 - Math.exp(-acc.aimRate * dt);
+    en.aimYaw += (yaw + wobbleYaw - en.aimYaw) * k;
+    en.aimPitch += (pitch + wobblePitch - en.aimPitch) * k;
 }
+let nextGunnerShotId = 1_000_000_000;
 export function updateEnemyFire(dt) {
     en.flashAge += dt;
     en.muzzleFx.visible = en.flashAge < MUZZLE_FLASH_LIFE;
     en.cooldown -= dt;
     // 撃つ少し前から腰を落として構える。構えきるまでは撃たない（見てからかわせる合図）
-    const canAim = en.alive && game.playerHp > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
-        && en.dodgeT <= 0;
+    const canAim = en.alive && env.playerHp() > 0 && en.riseTime >= RESPAWN_RISE_TIME && en.flashT >= ENEMY_HIT_RECOVER && en.airY <= 0
+        && en.dodgeT <= 0 && en.ride !== 'leap';
     const braceWant = canAim && en.cooldown < ENEMY_BRACE_TIME ? 1 : 0;
     en.brace += (braceWant - en.brace) * Math.min(1, dt * (braceWant > en.brace ? ENEMY_BRACE_RATE : ENEMY_BRACE_RATE * 0.5));
     if (!canAim || en.cooldown > 0 || en.brace < ENEMY_BRACE_READY)
@@ -104,7 +122,9 @@ export function updateEnemyFire(dt) {
     en.muzzle.updateWorldMatrix(true, false);
     enemyFrom.setFromMatrixPosition(en.muzzle.matrixWorld);
     enemyFwd.set(0, 0, -1).transformDirection(en.muzzle.matrixWorld); // 銃口は -Z
-    enemyTo.subVectors(aimTarget(enemyTarget), enemyFrom);
+    if (!env.targetPlayer(enemyTarget))
+        return;
+    enemyTo.subVectors(enemyTarget, enemyFrom);
     const dist = enemyTo.length();
     enemyTo.divideScalar(dist);
     if (enemyFwd.angleTo(enemyTo) > ENEMY_FIRE_CONE)
@@ -122,7 +142,10 @@ export function updateEnemyFire(dt) {
     mesh.frustumCulled = false;
     mesh.visible = false; // 尾が伸びるまで出さない
     scene.add(mesh);
-    enemyBullets.push({ pos: enemyFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, from: en });
+    const networkId = nextGunnerShotId++;
+    enemyBullets.push({ pos: enemyFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, from: en, networkId });
+    broadcastBossShot({ id: networkId, from: [enemyFrom.x, enemyFrom.y, enemyFrom.z], dir: [dir.x, dir.y, dir.z],
+        speed: ENEMY_BULLET_SPEED, damage: ENEMY_BULLET_DAMAGE, length: ENEMY_TRACER_LEN, width: ENEMY_TRACER_WIDTH, part: 'gunner', sound: true });
     en.cooldown = THREE.MathUtils.lerp(ENEMY_FIRE_MIN, ENEMY_FIRE_MAX, Math.random());
     en.flashAge = 0;
     en.muzzleFx.rotation.z = Math.random() * Math.PI;
@@ -133,6 +156,31 @@ export function updateEnemyFire(dt) {
     enemyPan.copy(en.root.position).applyMatrix4(camera.matrixWorldInverse);
     const pan = THREE.MathUtils.clamp(enemyPan.x / Math.max(Math.hypot(enemyPan.x, enemyPan.z), 1e-3), -1, 1) * 0.8;
     sfx.playGunshot(THREE.MathUtils.clamp(4 / Math.max(dist, 1), 0.25, 0.8), pan);
+}
+export function spawnRemoteBossShot(shot) {
+    const mesh = new THREE.Mesh(tracerGeo, enemyTracerMat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    scene.add(mesh);
+    enemyBullets.push({ pos: new THREE.Vector3(...shot.from), dir: new THREE.Vector3(...shot.dir).normalize(), traveled: 0, tail: 0, hit: false, mesh,
+        speed: shot.speed, damage: shot.damage, tracerLen: shot.length, tracerWidth: shot.width,
+        bossPart: shot.part === 'gunner' ? undefined : shot.part, remoteVisual: true, networkId: shot.id });
+    if (shot.sound) {
+        const at = new THREE.Vector3(...shot.from);
+        const distance = at.distanceTo(camera.position);
+        camera.updateMatrixWorld();
+        const local = at.applyMatrix4(camera.matrixWorldInverse);
+        const pan = THREE.MathUtils.clamp(local.x / Math.max(Math.hypot(local.x, local.z), 1e-3), -1, 1) * 0.8;
+        sfx.playGunshot(THREE.MathUtils.clamp((shot.part === 'gunner' ? 4 : 8) / Math.max(distance, 1), shot.part === 'gunner' ? 0.25 : 0.35, shot.part === 'gunner' ? 0.8 : 0.9), pan);
+    }
+}
+export function showRemoteBossParry(id, at, mine) {
+    const index = enemyBullets.findIndex((b) => b.remoteVisual && b.networkId === id);
+    if (index >= 0) {
+        enemyBullets[index].mesh.removeFromParent();
+        enemyBullets.splice(index, 1);
+    }
+    remoteParryEffect(new THREE.Vector3(...at), mine);
 }
 export function updateEnemyBullets(dt) {
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
@@ -150,13 +198,64 @@ export function updateEnemyBullets(dt) {
             enemyPath.set(b.pos, enemyNext);
             enemyBody.start.set(position.x, position.y + 0.15, position.z);
             enemyBody.end.set(position.x, position.y + player.eyeHeight + 0.05, position.z);
-            if (game.playerHp > 0 && tryParry(b)) {
+            if (!b.remoteVisual && game.playerHp > 0 && tryParry(b)) {
                 b.mesh.removeFromParent();
                 enemyBullets.splice(i, 1);
                 continue;
             }
+            let reflected = false;
+            if (b.networkId && !b.remoteVisual)
+                for (const remote of remotePlayers()) {
+                    if (!remote.parry)
+                        continue;
+                    remoteChest.set(remote.x, remote.y + remote.eyeHeight - 0.35, remote.z);
+                    enemyPath.closestPointToPoint(remoteChest, true, remoteNearest);
+                    if (remoteNearest.distanceTo(remoteChest) > PARRY_RANGE)
+                        continue;
+                    remoteLook.set(remote.lookX, remote.lookY, remote.lookZ);
+                    if (remoteLook.lengthSq() < 1e-6 || remoteLook.normalize().angleTo(b.dir) < Math.PI - PARRY_ANGLE)
+                        continue;
+                    remoteBody.start.set(remote.x, remote.y + 0.15, remote.z);
+                    remoteBody.end.set(remote.x, remote.y + remote.eyeHeight + 0.05, remote.z);
+                    remoteParryRay.start.copy(b.pos);
+                    remoteParryRay.end.copy(b.pos).addScaledVector(b.dir, ENEMY_BULLET_RANGE);
+                    closestSegmentPoints(remoteParryRay, remoteBody, remoteOnPath, remoteOnBody);
+                    if (remoteOnPath.distanceTo(remoteOnBody) > PARRY_THREAT)
+                        continue;
+                    if (b.pos.distanceTo(remoteChest) <= PARRY_RANGE)
+                        remoteNearest.copy(b.pos);
+                    reflectRemoteBossBullet(b, remoteNearest, remote.bat);
+                    broadcastBossParry(b.networkId, remote.id, [remoteNearest.x, remoteNearest.y, remoteNearest.z]);
+                    b.mesh.removeFromParent();
+                    enemyBullets.splice(i, 1);
+                    reflected = true;
+                    break;
+                }
+            if (reflected)
+                continue;
             closestSegmentPoints(enemyPath, enemyBody, enemyOnPath, enemyOnBody);
-            if (game.playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS) {
+            const localDistance = !b.remoteVisual && game.playerHp > 0 && enemyOnPath.distanceTo(enemyOnBody) < ENEMY_HIT_RADIUS ? b.pos.distanceTo(enemyOnPath) : Infinity;
+            let remoteId = '';
+            let remoteDistance = Infinity;
+            if (b.networkId && !b.remoteVisual)
+                for (const remote of remotePlayers()) {
+                    remoteBody.start.set(remote.x, remote.y + 0.15, remote.z);
+                    remoteBody.end.set(remote.x, remote.y + remote.eyeHeight + 0.05, remote.z);
+                    closestSegmentPoints(enemyPath, remoteBody, remoteOnPath, remoteOnBody);
+                    const d = b.pos.distanceTo(remoteOnPath);
+                    if (remoteOnPath.distanceTo(remoteOnBody) < ENEMY_HIT_RADIUS && d < remoteDistance) {
+                        remoteId = remote.id;
+                        remoteDistance = d;
+                        remoteNearest.copy(remoteOnPath);
+                    }
+                }
+            if (remoteId && remoteDistance < localDistance) {
+                b.hit = true;
+                b.tail = Math.min(b.tracerLen ?? ENEMY_TRACER_LEN, b.tail + remoteDistance);
+                b.pos.copy(remoteNearest);
+                sendRemotePlayerShot(remoteId, [b.dir.x, b.dir.y, b.dir.z], b.damage ?? ENEMY_BULLET_DAMAGE);
+            }
+            else if (localDistance < Infinity) {
                 b.hit = true;
                 b.tail = Math.min(b.tracerLen ?? ENEMY_TRACER_LEN, b.tail + b.pos.distanceTo(enemyOnPath));
                 b.pos.copy(enemyOnPath);

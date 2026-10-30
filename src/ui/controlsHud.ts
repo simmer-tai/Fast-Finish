@@ -24,7 +24,6 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
   sickle: [
     { label: '攻撃', keys: [{ input: 'attack' }] },
     { label: '鎖を投げる', keys: [{ input: 'aim' }, { input: 'attack' }] },
-    { label: '持ち替え', keys: [{ input: 'reload' }] },
   ],
   axe: [
     { label: '攻撃', keys: [{ input: 'attack' }] },
@@ -39,6 +38,13 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
   bat: [
     { label: '攻撃', keys: [{ input: 'attack' }] },
     { label: 'チャージ攻撃', keys: [{ input: 'attack', hold: true }] },
+  ],
+  spear: [
+    { label: '攻撃', keys: [{ input: 'attack' }] },
+    { label: '回転薙ぎ', keys: [{ input: 'attack', hold: true }] },
+    { label: '風車受け', keys: [{ input: 'aim', hold: true }] },
+    { label: '突進突き', keys: [{ input: 'aim', hold: true }, { input: 'attack' }] },
+    { label: '投げる / 呼び戻す', keys: [{ input: 'wheel' }], padKeys: [{ input: 'dash' }, { input: 'aim' }] },
   ],
 };
 // マウス: 押すボタンの側を塗る

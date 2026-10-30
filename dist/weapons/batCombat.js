@@ -11,6 +11,7 @@ import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js';
 import { knockEnemy } from '../enemy/motion.js';
 import { SWING_SAMPLE, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
+import { tryWallHit } from './wallHit.js';
 function makeBatAttack(def) {
     const keys = def.keys.map((k) => ({
         t: k.t,
@@ -217,15 +218,17 @@ function batPointAt(def, t, out) {
 }
 const batTmpHit = newBatPose();
 function tryBatHit(def) {
-    if (!hooks.dummyInReach(BAT_REACH, BAT_HIT_ANGLE))
-        return;
+    const reached = hooks.dummyInReach(BAT_REACH, BAT_HIT_ANGLE);
     camera.updateMatrixWorld();
     batPointAt(def, Math.max(0, batState.time - SWING_SAMPLE), batSwing);
     batSwing.subVectors(batPointAt(def, batState.time + SWING_SAMPLE, batHitAt), batSwing);
+    if (!reached)
+        return void tryWallHit('bat', BAT_REACH, 'blunt', batSwing, def.fx ?? 1); // 空振り: 壁や床に届いていれば弾かれる
     batPointAt(def, batState.time, batHitAt);
     hooks.hitPointFromTip(batHitAt, hitPoint);
+    const onBoss = hooks.bossTargeted(); // ボスはかっ飛ばさない
     hooks.applyHit(def, hitPoint, 'bat', batSwing);
-    if (!en.alive)
+    if (onBoss || !en.alive)
         return;
     if (def.fling)
         flingBatEnemy(def.fling);
