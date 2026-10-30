@@ -28,12 +28,13 @@ marker.visible = false;
 scene.add(marker);
 let step = 0;
 let active = false;
+let weaponPractice = false;
 let lastPad = false;
 const startView = new THREE.Quaternion();
 function showStep() {
     if (step >= steps.length) {
         marker.visible = false;
-        panel.innerHTML = '<small>TUTORIAL / MOVEMENT</small><strong>キャラコン完了</strong><span>基本操作の練習はここまで。引き続き自由に動けます。</span><span>Esc / START で一時停止し、TITLE から戻れます。</span>';
+        panel.innerHTML = '<small>TUTORIAL / MOVEMENT</small><strong>キャラコン完了</strong><span>次は武器を選んで練習します。</span>';
         return;
     }
     const item = steps[step];
@@ -44,6 +45,7 @@ function showStep() {
 }
 export function startTutorial() {
     active = true;
+    weaponPractice = false;
     step = 0;
     startView.copy(camera.quaternion);
     panel.hidden = false;
@@ -55,7 +57,7 @@ export function updateTutorial() {
         return;
     // 下の床に落ちたら、今の課題の手前から何度でもやり直せる。
     if (position.y < 1) {
-        const checkpoint = checkpoints[Math.min(step, checkpoints.length - 1)];
+        const checkpoint = weaponPractice ? { x: 0, y: 13.4, z: -125 } : checkpoints[Math.min(step, checkpoints.length - 1)];
         position.set(checkpoint.x, checkpoint.y, checkpoint.z);
         velocity.set(0, 0, 0);
         player.onGround = true;
@@ -76,5 +78,12 @@ export function updateTutorial() {
     if (done) {
         step++;
         showStep();
+        return step === steps.length;
     }
+}
+export function startWeaponTutorial(id) {
+    weaponPractice = true;
+    document.body.classList.remove('in-tutorial');
+    const names = { kunai: 'クナイ', handgun: 'リボルバー', sword: '刀', sickle: '鎖鎌', axe: 'バトルアックス', bow: '弓', bat: 'バット', spear: '槍' };
+    panel.innerHTML = `<small>TUTORIAL / WEAPON</small><strong>${names[id]}の練習</strong><span>目の前の的に向かって、攻撃や右側の操作を試そう。</span>${id === 'bow' ? '<span class="tutorial-next">弓は攻撃ボタンを押し続けてから離すと射てます。</span>' : ''}`;
 }

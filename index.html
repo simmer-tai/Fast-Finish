@@ -590,7 +590,9 @@
       #overlay .frame { transition: opacity 0.15s, visibility 0s; }
       #overlay.select-stage .frame { opacity: 0; visibility: hidden; transition: opacity 0.15s, visibility 0s 0.15s; }
       #overlay .stages { display: none; position: absolute; inset: 0; cursor: default; }
-      #overlay.select-stage .stages { display: block; }
+      #overlay.select-stage .stages, #overlay.tutorial-pick .stages { display: block; }
+      #overlay.tutorial-pick .stages > :not(.sw-picker) { visibility: hidden; }
+      #overlay.tutorial-pick .frame { visibility: hidden; }
       #overlay .stages .head { position: absolute; left: calc(80 * var(--u)); top: calc(80 * var(--u)); }
       #overlay .stages h2 {
         margin: calc(16 * var(--u)) 0 0; font-weight: 600; font-size: calc(104 * var(--u)); line-height: 0.85; letter-spacing: 0.01em;

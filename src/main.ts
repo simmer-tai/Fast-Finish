@@ -12,7 +12,7 @@ import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.j
 import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
 import { buildTutorial } from './tutorialStage.js';
-import { startTutorial, updateTutorial } from './tutorial.js';
+import { startTutorial, startWeaponTutorial, updateTutorial } from './tutorial.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -528,6 +528,11 @@ function returnToLobby() {
 }
 overlay.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
+  if (overlay.classList.contains('tutorial-pick') && pickerOpen()) {
+    onPickerClick(target);
+    if (!pickerOpen()) finishTutorialPicker(!!target.closest('[data-action="weapon-decide"]'));
+    return;
+  }
   // 結果の演出の途中なら、どこを押しても最後まで飛ばす
   if (overlay.classList.contains('result') && skipResult()) return;
   if (target.closest('[data-action="multiplayer-lobby"]') && multiplayerRun) { sfx.playUiSelect(); return returnToLobby(); }
@@ -628,6 +633,11 @@ function onPadMenuKey(e: KeyboardEvent, selector: string) {
 }
 window.addEventListener('keydown', (e) => {
   if (controls.isLocked || overlay.classList.contains('hidden') || !padState.fromPad) return;
+  if (overlay.classList.contains('tutorial-pick') && pickerOpen()) {
+    onPickerKey(e);
+    if (!pickerOpen()) finishTutorialPicker(e.code === 'Enter');
+    return;
+  }
   if (overlay.classList.contains('show-options')) return onOptionsKey(e);
   if (overlay.classList.contains('select-multiplayer')) {
     if (e.code === 'Escape') return overlay.querySelector<HTMLElement>('[data-action="multiplayer-back"]')?.click();
@@ -2636,7 +2646,7 @@ function updateDummy(dt: number) {
   const fade = THREE.MathUtils.clamp((en.flashT - FLASH_HOLD) / FLASH_FADE, 0, 1);
   for (const m of en.mats) m.emissiveIntensity = (1 - fade) * (1 - fade);
 
-  if (en.kind === 'gunner') updateEnemyFire(dt);
+  if (en.kind === 'gunner' && !(pendingStage === 'tutorial' && !game.unarmed)) updateEnemyFire(dt);
   else if (en.kind === 'sniper') updateSniperFire(dt);
 }
 
@@ -3443,6 +3453,7 @@ function updateStageRise(dt: number) {
 // 1 度入ったら訓練場へ戻す処理は持たない。敵は操作を返してから出す
 type StageId = 'tutorial' | 'station' | 'warehouse' | 'parking' | 'lift' | 'mall' | 'ruins';
 const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { tutorial: buildTutorial, station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
+let tutorialPickerWaiting = false;
 let pendingStage: StageId | null = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
@@ -3805,6 +3816,28 @@ function updateStageIntro(dt: number) {
   }
 }
 
+// キャラコンの後は武器を選び、動かない的で操作を練習する。
+function openTutorialPicker() {
+  if (pickerOpen()) return;
+  pauseGame();
+  overlay.classList.add('tutorial-pick');
+  openPicker();
+}
+function finishTutorialPicker(decided: boolean) {
+  overlay.classList.remove('tutorial-pick');
+  if (!decided) return; // 一時停止から再開すると、もう一度選べる
+  tutorialPickerWaiting = false;
+  game.unarmed = false;
+  game.wantWeapon = game.shownWeapon = selectedLoadout();
+  game.holster = 1;
+  setEn(createEnemy(false));
+  en.baseY = 13.4;
+  en.root.position.set(0, 13.4, -138);
+  en.riseDelay = -1e9;
+  startWeaponTutorial(game.shownWeapon);
+  startFromOverlay();
+}
+
 // ---- ステージの始まりのタイトル ----
 const TITLE_FOV_PUNCH = 7;
 const TITLE_FOV_BACK = 0.4;
@@ -3934,6 +3967,7 @@ if (debugAttack) {
       camera.quaternion.copy(savedQuat);
       return;
     }
+    if (tutorialPickerWaiting && !pickerOpen()) { openTutorialPicker(); return; }
     updateStageRun(realFrame);
     updatePlayerDown(realFrame);
     // 倒した直後とパリィの後、倒れた後のスローは、演出も含めて全体にかける
@@ -3954,7 +3988,10 @@ if (debugAttack) {
     } else {
       game.realDt = realFrame;
       update(dt * (multiplayerRun ? 1 : game.timeScale));
-      if (pendingStage === 'tutorial') updateTutorial();
+      if (pendingStage === 'tutorial' && updateTutorial()) {
+        tutorialPickerWaiting = true;
+        openTutorialPicker();
+      }
     }
     updateDummyShake();
     updateHitFx(dt); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
