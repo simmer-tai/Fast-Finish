@@ -5,12 +5,12 @@ export function buildTutorial(): StageLayout {
   const boxes: StageBox[] = [
     { minX: -5, maxX: 5, minZ: -12, maxZ: 8, h: 5, light: 0.7, look: 'terrain' },
     { minX: -5, maxX: 5, minZ: -21, maxZ: -15, h: 8.8, light: 0.65, look: 'terrain' },
-    { minX: -5, maxX: 5, minZ: -38, maxZ: -29, h: 13.6, light: 0.65, look: 'terrain' },
-    { minX: -5, maxX: 5, minZ: -84, maxZ: -51, h: 13.6, light: 0.7, look: 'terrain' },
+    { minX: -5, maxX: 5, minZ: -38, maxZ: -24, h: 13.4, light: 0.65, look: 'terrain' },
+    { minX: -5, maxX: 5, minZ: -84, maxZ: -51, h: 13.4, light: 0.7, look: 'terrain' },
     // ダッシュの区間は上を低くし、跳んで渡る代わりに床から飛び出して渡る。
-    { minX: -5, maxX: 5, minZ: -51, maxZ: -29, y0: 15.5, h: 17, light: 0.53, look: 'struct' },
+    { minX: -5, maxX: 5, minZ: -51, maxZ: -24, y0: 15.3, h: 16.8, light: 0.53, look: 'struct' },
     // 立ったままでは通れない。上にも登れない高さにする。
-    { minX: -5, maxX: 5, minZ: -75, maxZ: -72, y0: 14.55, h: 21, light: 0.45, look: 'struct' },
+    { minX: -5, maxX: 5, minZ: -75, maxZ: -72, y0: 14.35, h: 20.8, light: 0.45, look: 'struct' },
   ];
   return {
     boxes, decor: [], colliders: [], scenery: [], lines: [],
