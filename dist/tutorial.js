@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import { camera, scene } from './core.js';
 import { game } from './game/state.js';
-import { player, position } from './player/state.js';
-import { blocks } from './world/blocks.js';
-// 各操作を実際に行ってから、次の目印へ進む。
+import { player, position, velocity } from './player/state.js';
+// 足場に着地する、通路をくぐるなど、コースを進むと次の説明に切り替える。
 const steps = [
-    { title: '視点を動かす', pc: 'マウスを動かして周りを見よう', pad: '右スティックで周りを見よう', z: 0 },
-    { title: '移動する', pc: 'W A S D で光る目印まで進もう', pad: '左スティックで光る目印まで進もう', z: -8 },
-    { title: 'ジャンプ', pc: 'スペースキーでジャンプして、台の上に乗ろう', pad: 'A ボタンでジャンプして、台の上に乗ろう', z: -15.5 },
-    { title: '二段ジャンプ', pc: '目印の近くで、空中でもう一度スペースキーを押そう', pad: '目印の近くで、空中でもう一度 A ボタンを押そう', z: -26 },
-    { title: 'ダッシュ', pc: '目印に向かって Shift でダッシュしよう', pad: '目印に向かって左スティックを押し込もう', z: -38 },
-    { title: 'スライディング', pc: 'Shift で走りながら C を押し続けて、低い壁の下をくぐろう', pad: '左スティックを深く倒して走り、B を押し続けてくぐろう', z: -52 },
+    { title: '視点を動かす', pc: 'マウスを動かして周りを見よう', pad: '右スティックで周りを見よう', z: 0, y: 5 },
+    { title: '移動する', pc: 'W A S D で光る目印まで進もう', pad: '左スティックで光る目印まで進もう', z: -8, y: 5 },
+    { title: 'ジャンプ', pc: 'スペースキーで跳び、高い足場へ登ろう', pad: 'A ボタンで跳び、高い足場へ登ろう', z: -17, y: 8.8 },
+    { title: '二段ジャンプ', pc: '助走して跳び、頂点でもう一度スペースキーを押して高い足場へ登ろう', pad: '助走して跳び、頂点でもう一度 A を押して高い足場へ登ろう', z: -32, y: 13.6 },
+    { title: 'ダッシュ', pc: '走って縁に近づき、Shift で向こうの足場までダッシュしよう', pad: '走って縁に近づき、左スティックを押し込んで向こうへ渡ろう', z: -56, y: 13.6 },
+    { title: 'スライディング', pc: 'Shift で走りながら C を押し続け、低い通路をくぐろう', pad: '左スティックを深く倒して走り、B を押し続けてくぐろう', z: -79, y: 13.6 },
+];
+const checkpoints = [
+    { z: 4, y: 5 }, { z: 4, y: 5 }, { z: -9, y: 5 },
+    { z: -19, y: 8.8 }, { z: -35, y: 13.6 }, { z: -66, y: 13.6 },
 ];
 const panel = document.createElement('div');
 panel.id = 'tutorial-guide';
@@ -23,78 +26,51 @@ marker.visible = false;
 scene.add(marker);
 let step = 0;
 let active = false;
-let didAction = false;
 let lastPad = false;
 const startView = new THREE.Quaternion();
-// 仕切りはコースの端から端まで塞ぐ。課題を終えるまでは飛び越えられない。
-const gateZ = [1, -10, -19, -30, -42, -57];
-const gates = [];
-function createGates() {
-    for (const z of gateZ) {
-        const collider = { minX: -5, maxX: 5, minZ: z - 0.2, maxZ: z + 0.2, h: 12 };
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 12, 0.4), new THREE.MeshLambertMaterial({ color: 0x303030 }));
-        mesh.position.set(0, 6, z);
-        scene.add(mesh);
-        blocks.push(collider);
-        gates.push({ mesh, collider });
-    }
-}
-function openGate(index) {
-    const gate = gates[index];
-    if (!gate)
-        return;
-    scene.remove(gate.mesh);
-    const at = blocks.indexOf(gate.collider);
-    if (at >= 0)
-        blocks.splice(at, 1);
-}
 function showStep() {
-    didAction = false;
     if (step >= steps.length) {
         marker.visible = false;
         panel.innerHTML = '<small>TUTORIAL / MOVEMENT</small><strong>キャラコン完了</strong><span>基本操作の練習はここまで。引き続き自由に動けます。</span><span>Esc / START で一時停止し、TITLE から戻れます。</span>';
         return;
     }
     const item = steps[step];
-    panel.innerHTML = `<small>TUTORIAL / ${String(step + 1).padStart(2, '0')} — ${steps.length}</small><strong>${item.title}</strong><span>${game.usingPad ? item.pad : item.pc}</span>${step >= 3 ? '<span class="tutorial-next">光る目印のところで操作しよう</span>' : ''}`;
+    panel.innerHTML = `<small>TUTORIAL / ${String(step + 1).padStart(2, '0')} — ${steps.length}</small><strong>${item.title}</strong><span>${game.usingPad ? item.pad : item.pc}</span>${step >= 2 ? '<span class="tutorial-next">落ちても手前からやり直せます</span>' : ''}`;
     lastPad = game.usingPad;
     marker.visible = step > 0;
-    marker.position.set(0, step === 2 ? 0.82 : 0.03, item.z);
-    startView.copy(camera.quaternion);
+    marker.position.set(0, item.y + 0.03, item.z);
 }
 export function startTutorial() {
     active = true;
     step = 0;
-    createGates();
+    startView.copy(camera.quaternion);
     panel.hidden = false;
     document.body.classList.add('in-tutorial');
     showStep();
 }
 export function updateTutorial() {
-    if (!active || step >= steps.length)
+    if (!active)
         return;
-    if (lastPad !== game.usingPad) {
-        const action = didAction;
-        const view = startView.clone();
-        showStep();
-        didAction = action;
-        startView.copy(view);
+    // 下の床に落ちたら、今の課題の手前から何度でもやり直せる。
+    if (position.y < 1) {
+        const checkpoint = checkpoints[Math.min(step, checkpoints.length - 1)];
+        position.set(0, checkpoint.y, checkpoint.z);
+        velocity.set(0, 0, 0);
+        player.onGround = true;
+        player.airJump = true;
+        player.dashTime = 0;
+        player.sliding = false;
+        player.mantleTime = -1;
+        player.wallRunning = false;
     }
+    if (step >= steps.length)
+        return;
+    if (lastPad !== game.usingPad)
+        showStep();
     const item = steps[step];
-    if (step === 0)
-        didAction = startView.angleTo(camera.quaternion) > 0.3;
-    if (step === 2 && !player.onGround && position.y > 0.15)
-        didAction = true;
-    if (step === 3)
-        didAction = !player.airJump && !player.onGround;
-    if (step === 4)
-        didAction = player.dashTime > 0;
-    if (step === 5)
-        didAction = position.z < -49.5 && position.z > -54 && position.y < 0.2 && player.sliding;
-    const atMarker = Math.hypot(position.x, position.z - item.z) < 2;
-    const done = step === 0 ? didAction : step === 1 ? atMarker : step === 2 ? didAction && atMarker && player.onGround && position.y > 0.7 : didAction && atMarker;
+    const atMarker = Math.hypot(position.x, position.z - item.z) < 2 && player.onGround && Math.abs(position.y - item.y) < 0.3;
+    const done = step === 0 ? startView.angleTo(camera.quaternion) > 0.3 : atMarker;
     if (done) {
-        openGate(step);
         step++;
         showStep();
     }
