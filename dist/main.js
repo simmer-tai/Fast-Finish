@@ -10,6 +10,8 @@ import { CLIP_ASPECT, noteReplayKill, playReplay, prepareReplayFrame, resetRepla
 import { finalScore, fmtTime, killPar, showResult, skipResult } from './result.js';
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import { buildStation } from './station.js';
+import { buildTutorial } from './tutorialStage.js';
+import { startTutorial, updateTutorial } from './tutorial.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -579,7 +581,16 @@ overlay.addEventListener('click', (e) => {
         // タイトルでは、項目以外をクリックしても何もしない
         if (target.closest('[aria-disabled="true"]'))
             return sfx.playUiDenied();
+        if (target.closest('[data-action="tutorial"]')) {
+            sfx.playUiSelect();
+            pendingStage = 'tutorial';
+            transitionLabel.textContent = 'TUTORIAL';
+            overlayKicker = 'FAST FINISH - TUTORIAL';
+            return startFromOverlay();
+        }
         if (target.closest('[data-action="training"]')) {
+            pendingStage = null;
+            overlayKicker = 'FAST FINISH - TRAINING';
             sfx.playUiSelect();
             return startFromOverlay();
         }
@@ -3697,7 +3708,7 @@ function updateStageRise(dt) {
         sfx.stopStageRise();
     }
 }
-const STAGE_BUILDERS = { station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
+const STAGE_BUILDERS = { tutorial: buildTutorial, station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins };
 let pendingStage = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
 // 別々のままだと、継ぎ目をまたいだときに、まだ乗っていない側の箱の側面に押し返されてつっかえる
@@ -4051,7 +4062,7 @@ function updateStageIntro(dt) {
         if (stageTitle.update(titleT))
             finishStageIntro();
     }
-    else if (pendingStage) {
+    else if (pendingStage && pendingStage !== 'tutorial') {
         // ステージでは、組み上がりきった瞬間にタイトルを叩きつけてから操作を返す。
         // 叩きつけの少し前から高まる音を鳴らし始め、鳴り終わる瞬間に叩きつける
         const untilAppear = INTRO_REVEAL_TIME + INTRO_APPEAR_TIME - introT;
@@ -4103,6 +4114,8 @@ function finishStageIntro() {
     pressed.clear();
     game.attackPressed = false;
     document.body.classList.remove('on-title');
+    if (pendingStage === 'tutorial')
+        startTutorial();
     if (stageRun)
         stageRun.running = true; // 操作を返したところから時間を測る
 }
@@ -4237,6 +4250,8 @@ else {
         else {
             game.realDt = realFrame;
             update(dt * (multiplayerRun ? 1 : game.timeScale));
+            if (pendingStage === 'tutorial')
+                updateTutorial();
         }
         updateDummyShake();
         updateHitFx(dt); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す

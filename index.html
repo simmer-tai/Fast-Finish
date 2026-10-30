@@ -1424,6 +1424,13 @@
         transform-origin: 100% 50%; transform: translateY(-50%) rotateY(calc(var(--hud-yaw) * -1));
         font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 600; color: #333;
       }
+      #tutorial-guide { position: fixed; z-index: 20; top: 8%; left: 50%; transform: translateX(-50%); width: min(520px, 88vw); box-sizing: border-box; padding: 18px 24px; color: #fff; background: rgba(20, 20, 20, .88); border-left: 4px solid #e52828; font: 500 15px/1.6 "IBM Plex Sans JP", sans-serif; pointer-events: none; }
+      #tutorial-guide[hidden], body.paused #tutorial-guide, body.on-title #tutorial-guide { display: none; }
+      #tutorial-guide small, #tutorial-guide strong, #tutorial-guide span { display: block; }
+      #tutorial-guide small { color: #ff6868; font-size: 11px; letter-spacing: .18em; }
+      #tutorial-guide strong { font-size: 23px; margin: 4px 0; }
+      #tutorial-guide .tutorial-next { color: #ccc; font-size: 13px; }
+      body.in-tutorial #controls { display: none; }
       #controls.in { animation: controls-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1); }
       @keyframes controls-in { from { opacity: 0; } to { opacity: 1; } }
       #controls .row { display: flex; align-items: flex-start; gap: 10px; }
@@ -1794,6 +1801,7 @@
         <div class="rule"></div>
         <div class="menu modes">
           <button type="button" data-action="game"><span>GAME</span><small>STAGES</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
+          <button type="button" data-action="tutorial"><span>TUTORIAL</span><small>MOVEMENT</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           <button type="button" data-action="training"><span>TRAINING</span><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           <button type="button" data-action="multiplayer"><span>MULTIPLAYER</span><small>TEST</small><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
           <button type="button" data-action="options"><span>OPTIONS</span><i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>
