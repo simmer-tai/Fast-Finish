@@ -1,5 +1,7 @@
 # fast-finish
 
+`AGENTS.md` は Codex 用で、中身はこのファイルと同じ（最後に Codex 向けの節がある）。決まりを変えたら両方に入れる。
+
 ## コードの構成
 
 three.js の一人称アクション。`src/` の TypeScript を `npm run build`（tsc）で `dist/` に書き出す。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。
