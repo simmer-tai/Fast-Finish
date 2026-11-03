@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playSwish } from '../audio.js';
@@ -1437,4 +1438,41 @@ function sampleSpearTrail(def: SpearAttackDef, time: number) {
       lastTrail = s;
     }
   }
+}
+
+
+const initial_spearState = snapshotState(spearState);
+const initial_spearThrow = snapshotState(spearThrow);
+export function resetSpearCombat() {
+  for (const ribbon of [spearRibbon, buttRibbon]) { ribbon.update(Infinity); ribbon.cut(); }
+  spearHits.clear(); rushHits.clear(); skewered.length = 0; flying.visible = false;
+  initial_spearState();
+  initial_spearThrow();
+  queued = false;
+  comboTimer = 0;
+  firedSwishes = 0;
+  firedImpact = false;
+  firedLunge = false;
+  landedAny = false;
+  triedWall = false;
+  hitWindow = -1;
+  spearBossHit = false;
+  followFresh = true;
+  guardSpent = false;
+  guardIdle = 0;
+  guardHeldPrev = false;
+  guardEmptyFlash = 0;
+  guardShownReady = true;
+  rushT = -1;
+  rushMoving = false;
+  rushBoss = false;
+  rushTrailing = false;
+  dashSpin = -1;
+  wasDashing = false;
+  dashSwishes = 0;
+  equipSwishes = 0;
+  spearExitBlend = 0;
+  throwBuffered = false;
+  guardTrailing = false;
+  lastTrail = -Infinity;
 }

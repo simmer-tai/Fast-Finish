@@ -1,26 +1,26 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { playRing, playSwish } from '../audio.js?v=d61aec99';
-import { DEG } from '../math.js?v=d61aec99';
-import { camera } from '../core.js?v=d61aec99';
-import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js?v=d61aec99';
-import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js?v=d61aec99';
-import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js?v=d61aec99';
-import { axeState, startAxeAttack } from '../weapons/axeCombat.js?v=d61aec99';
-import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js?v=d61aec99';
-import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js?v=d61aec99';
-import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js?v=d61aec99';
-import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js?v=d61aec99';
-import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js?v=d61aec99';
-import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js?v=d61aec99';
-import { handCam } from './handCam.js?v=d61aec99';
-import { player, position, right, velocity, wallNormal } from '../player/state.js?v=d61aec99';
-import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js?v=d61aec99';
-import { moveToward } from '../player/movement.js?v=d61aec99';
-import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js?v=d61aec99';
-import { game, kick, kickVel } from '../game/state.js?v=d61aec99';
-import { rumble } from '../player/rumble.js?v=d61aec99';
-import { shipSway } from '../world/sea.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { playRing, playSwish } from '../audio.js?v=2fb05089';
+import { DEG } from '../math.js?v=2fb05089';
+import { camera } from '../core.js?v=2fb05089';
+import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js?v=2fb05089';
+import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js?v=2fb05089';
+import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js?v=2fb05089';
+import { axeState, startAxeAttack } from '../weapons/axeCombat.js?v=2fb05089';
+import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js?v=2fb05089';
+import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js?v=2fb05089';
+import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js?v=2fb05089';
+import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js?v=2fb05089';
+import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js?v=2fb05089';
+import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js?v=2fb05089';
+import { handCam } from './handCam.js?v=2fb05089';
+import { player, position, right, velocity, wallNormal } from '../player/state.js?v=2fb05089';
+import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js?v=2fb05089';
+import { moveToward } from '../player/movement.js?v=2fb05089';
+import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js?v=2fb05089';
+import { game, kick, kickVel } from '../game/state.js?v=2fb05089';
+import { rumble } from '../player/rumble.js?v=2fb05089';
+import { shipSway } from '../world/sea.js?v=2fb05089';
 // ---- カメラ演出 ----
 // 本体からも読み書きする値
 export const cameraFx = {
@@ -215,4 +215,9 @@ export function updateKick(dt) {
     kickTmp.copy(kick).multiplyScalar(-220).addScaledVector(kickVel, -20);
     kickVel.addScaledVector(kickTmp, dt);
     kick.addScaledVector(kickVel, dt);
+}
+export function resetCameraEffects() {
+    landShake = 0;
+    landShakeT = 1;
+    scopeMul = 1;
 }

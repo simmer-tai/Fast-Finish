@@ -1,27 +1,28 @@
+import { snapshotState } from '../game/resetState.js?v=2fb05089';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { playAxeGrip, playSwish } from '../audio.js?v=d61aec99';
-import { rand } from '../random.js?v=d61aec99';
-import { easeInOutCubic, easeOutCubic } from '../ease.js?v=d61aec99';
-import { DEG } from '../math.js?v=d61aec99';
-import { camera, controls, scene } from '../core.js?v=d61aec99';
-import { AXE_REST_QUAT } from './battleAxe.js?v=d61aec99';
-import { AXE_AIR, AXE_BITE_SLOW, AXE_BITE_TIME, AXE_BUFFER, AXE_CHANNELS, AXE_COMBO, AXE_COMBO_RESET, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_HIT_ANGLE, AXE_JOLT_DAMP, AXE_JOLT_KICK, AXE_JOLT_STIFF, AXE_KABUTO, AXE_LAUNCH, AXE_REACH, AXE_RUSH, AXE_RUSH_EXIT, AXE_RUSH_REACH, AXE_RUSH_SPEED, AXE_RUSH_TIME, AXE_SWEEP, AXE_WHEEL_CUT, AXE_WHEEL_END, AXE_WHEEL_HIT, AXE_WHEEL_LIFT, AXE_WHEEL_START, AXE_WHEEL_SWISH, } from './axeAttacks.js?v=d61aec99';
-import { axeRest, heldAxeModel } from './viewModels.js?v=d61aec99';
-import { HIT_TINT, addBeam, fireBurst, flares, spawnShards, spawnSparks } from '../fx/hitFx.js?v=d61aec99';
-import { AXE_RIBBON, AXE_SLAM_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=d61aec99';
-import { hitWithArcs } from '../fx/arcs.js?v=d61aec99';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=d61aec99';
-import { DUMMY_RADIUS } from '../enemy/body.js?v=d61aec99';
-import { DEFAULT_KNOCK, en, enemies, hitDir, hitLook, hitPoint, setEn, } from '../enemy/state.js?v=d61aec99';
-import { knockEnemy, launchEnemy, spikeEnemy } from '../enemy/motion.js?v=d61aec99';
-import { ARENA_GRID_MAJOR, ARENA_GRID_MINOR } from '../world/blocks.js?v=d61aec99';
-import { player, position, velocity } from '../player/state.js?v=d61aec99';
-import { WALK_SPEED } from '../player/config.js?v=d61aec99';
-import { DASH_ATTACK_WINDOW, DEFAULT_HIT_STOP, SWING_SAMPLE, game, kickVel } from '../game/state.js?v=d61aec99';
-import { tryWallHit } from './wallHit.js?v=d61aec99';
-import { pullTowardTarget } from './meleePull.js?v=d61aec99';
-import { hooks } from '../game/hooks.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { playAxeGrip, playSwish } from '../audio.js?v=2fb05089';
+import { rand } from '../random.js?v=2fb05089';
+import { easeInOutCubic, easeOutCubic } from '../ease.js?v=2fb05089';
+import { DEG } from '../math.js?v=2fb05089';
+import { camera, controls, scene } from '../core.js?v=2fb05089';
+import { AXE_REST_QUAT } from './battleAxe.js?v=2fb05089';
+import { AXE_AIR, AXE_BITE_SLOW, AXE_BITE_TIME, AXE_BUFFER, AXE_CHANNELS, AXE_COMBO, AXE_COMBO_RESET, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_HIT_ANGLE, AXE_JOLT_DAMP, AXE_JOLT_KICK, AXE_JOLT_STIFF, AXE_KABUTO, AXE_LAUNCH, AXE_REACH, AXE_RUSH, AXE_RUSH_EXIT, AXE_RUSH_REACH, AXE_RUSH_SPEED, AXE_RUSH_TIME, AXE_SWEEP, AXE_WHEEL_CUT, AXE_WHEEL_END, AXE_WHEEL_HIT, AXE_WHEEL_LIFT, AXE_WHEEL_START, AXE_WHEEL_SWISH, } from './axeAttacks.js?v=2fb05089';
+import { axeRest, heldAxeModel } from './viewModels.js?v=2fb05089';
+import { HIT_TINT, addBeam, fireBurst, flares, spawnShards, spawnSparks } from '../fx/hitFx.js?v=2fb05089';
+import { AXE_RIBBON, AXE_SLAM_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=2fb05089';
+import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
+import { DUMMY_RADIUS } from '../enemy/body.js?v=2fb05089';
+import { DEFAULT_KNOCK, en, enemies, hitDir, hitLook, hitPoint, setEn, } from '../enemy/state.js?v=2fb05089';
+import { knockEnemy, launchEnemy, spikeEnemy } from '../enemy/motion.js?v=2fb05089';
+import { ARENA_GRID_MAJOR, ARENA_GRID_MINOR } from '../world/blocks.js?v=2fb05089';
+import { player, position, velocity } from '../player/state.js?v=2fb05089';
+import { WALK_SPEED } from '../player/config.js?v=2fb05089';
+import { DASH_ATTACK_WINDOW, DEFAULT_HIT_STOP, SWING_SAMPLE, game, kickVel } from '../game/state.js?v=2fb05089';
+import { tryWallHit } from './wallHit.js?v=2fb05089';
+import { pullTowardTarget } from './meleePull.js?v=2fb05089';
+import { hooks } from '../game/hooks.js?v=2fb05089';
 // ---- 斧の攻撃 ----
 // 振り・突進・打ち上げ・叩きつけの衝撃波・吸い寄せ。技の定義は axeAttacks.ts
 // 本体からも読み書きする値
@@ -1041,4 +1042,39 @@ export function sampleAxeTrail() {
             axeLastTrail = s;
         }
     }
+}
+const initial_axeState = snapshotState(axeState);
+export function resetAxeCombat() {
+    for (const ribbon of [axeRibbon, axeSlamRibbon]) {
+        ribbon.update(Infinity);
+        ribbon.cut();
+    }
+    axeHits.clear();
+    axeWheelHits.clear();
+    for (const s of axeShocks) {
+        s.age = Infinity;
+        s.disc.visible = s.wall.visible = s.cracks.visible = false;
+    }
+    initial_axeState();
+    axeLaunchQueued = false;
+    axeRushTime = -1;
+    axeQueued = false;
+    axeComboTimer = 0;
+    axeFiredSwishes = 0;
+    axeFiredGrips = 0;
+    axeFiredKicks = 0;
+    axeFiredLunge = false;
+    axeFiredGround = false;
+    axeHitLanded = false;
+    axeBite = 0;
+    axeStance = false;
+    axeCocked = false;
+    axeLaunchedAir = false;
+    axePower = 0;
+    axeSmashFromY = NaN;
+    axeBossHit = false;
+    axeCrackSegs = 0;
+    axeSlamClock = 0;
+    axeSlamHold = 0;
+    axeLastTrail = -Infinity;
 }

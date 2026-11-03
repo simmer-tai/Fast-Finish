@@ -1,22 +1,23 @@
+import { snapshotState } from '../game/resetState.js?v=2fb05089';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { playSwish } from '../audio.js?v=d61aec99';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=d61aec99';
-import { DEG, catmullRom } from '../math.js?v=d61aec99';
-import { camera, controls, scene } from '../core.js?v=d61aec99';
-import { SPEAR_BLADE_BASE_Y, SPEAR_BUTT_Y, SPEAR_REST_TIP, SPEAR_TIP_Y, createSpear } from './spear.js?v=d61aec99';
-import { skinMats, spearModel, spearRest } from './viewModels.js?v=d61aec99';
-import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=d61aec99';
-import { hitWithArcs } from '../fx/arcs.js?v=d61aec99';
-import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=d61aec99';
-import { DEFAULT_KNOCK, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=d61aec99';
-import { knockEnemy } from '../enemy/motion.js?v=d61aec99';
-import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=d61aec99';
-import { hooks } from '../game/hooks.js?v=d61aec99';
-import { tryWallHit } from './wallHit.js?v=d61aec99';
-import { castHit, castThrow } from '../world/raycast.js?v=d61aec99';
-import { player, velocity } from '../player/state.js?v=d61aec99';
-import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { playSwish } from '../audio.js?v=2fb05089';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=2fb05089';
+import { DEG, catmullRom } from '../math.js?v=2fb05089';
+import { camera, controls, scene } from '../core.js?v=2fb05089';
+import { SPEAR_BLADE_BASE_Y, SPEAR_BUTT_Y, SPEAR_REST_TIP, SPEAR_TIP_Y, createSpear } from './spear.js?v=2fb05089';
+import { skinMats, spearModel, spearRest } from './viewModels.js?v=2fb05089';
+import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=2fb05089';
+import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
+import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
+import { DEFAULT_KNOCK, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=2fb05089';
+import { knockEnemy } from '../enemy/motion.js?v=2fb05089';
+import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=2fb05089';
+import { hooks } from '../game/hooks.js?v=2fb05089';
+import { tryWallHit } from './wallHit.js?v=2fb05089';
+import { castHit, castThrow } from '../world/raycast.js?v=2fb05089';
+import { player, velocity } from '../player/state.js?v=2fb05089';
+import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=2fb05089';
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 // 刃先の向き: 左へ薙ぐなら、切っ先を上から見て左回りに回す向き（= 上 × 切っ先）
@@ -1396,4 +1397,45 @@ function sampleSpearTrail(def, time) {
             lastTrail = s;
         }
     }
+}
+const initial_spearState = snapshotState(spearState);
+const initial_spearThrow = snapshotState(spearThrow);
+export function resetSpearCombat() {
+    for (const ribbon of [spearRibbon, buttRibbon]) {
+        ribbon.update(Infinity);
+        ribbon.cut();
+    }
+    spearHits.clear();
+    rushHits.clear();
+    skewered.length = 0;
+    flying.visible = false;
+    initial_spearState();
+    initial_spearThrow();
+    queued = false;
+    comboTimer = 0;
+    firedSwishes = 0;
+    firedImpact = false;
+    firedLunge = false;
+    landedAny = false;
+    triedWall = false;
+    hitWindow = -1;
+    spearBossHit = false;
+    followFresh = true;
+    guardSpent = false;
+    guardIdle = 0;
+    guardHeldPrev = false;
+    guardEmptyFlash = 0;
+    guardShownReady = true;
+    rushT = -1;
+    rushMoving = false;
+    rushBoss = false;
+    rushTrailing = false;
+    dashSpin = -1;
+    wasDashing = false;
+    dashSwishes = 0;
+    equipSwishes = 0;
+    spearExitBlend = 0;
+    throwBuffered = false;
+    guardTrailing = false;
+    lastTrail = -Infinity;
 }

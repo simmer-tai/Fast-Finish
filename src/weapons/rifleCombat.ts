@@ -5,6 +5,8 @@ import { DEG } from '../math.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
 import { spawnSparks } from '../fx/hitFx.js';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
+import { addGlow } from '../fx/glow.js';
 import { isDown } from '../player/down.js';
 import { player, position } from '../player/state.js';
 import { castThrow, castHit } from '../world/raycast.js';
@@ -13,7 +15,7 @@ import type { BossPart } from '../enemy/boss.js';
 import type { HitDef } from './kunaiAttacks.js';
 import { makeFlashTexture } from './handgunCombat.js';
 import { createRound } from './revolver.js';
-import { skinOf } from './skins.js';
+import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { rifleModel, weaponMats } from './viewModels.js';
 
 // ---- スナイパーライフル ----
@@ -100,12 +102,32 @@ const muzzleFlash = new THREE.Group();
 muzzleFlash.visible = false;
 rifleMuzzle.add(muzzleFlash);
 let flashAge = Infinity;
+// 弾の光の尾の色を持つスキン（爪）は、マズルフラッシュもその色に寄せる
+const tintFlash = () => {
+  const trail = skinOf('rifle').trail;
+  flashMat.color.setHex(trail ? trail.core : 0xffffff);
+};
+tintFlash();
+onSkinChange((id) => id === 'rifle' && tintFlash());
 
 // 撃った弾の光の筋（銃口から当たった所まで）。太さを細らせて消す
 interface Beam { mesh: THREE.Mesh; age: number }
 const beamGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5); // 原点から +Z へ伸びる
 const beamMat = new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
 const BEAM_AXIS = new THREE.Vector3(0, 0, 1);
+// スキンの色の光の筋（ハンドガンの光の尾と同じ作り）。白い背景でも見えるよう、足さずに重ね、白に近い細い芯を通す
+const SKIN_BEAM_CORE = 0.35; // 芯の太さ（筋の太さに対する割合）
+const SKIN_BEAM_GLOW = 1.6; // にじみの濃さ
+const skinBeamMats = new Map<number, THREE.MeshBasicMaterial>();
+const skinBeamMat = (trail: SkinTrail) => {
+  let mat = skinBeamMats.get(trail.body);
+  if (!mat) {
+    const color = new THREE.Color(trail.core).offsetHSL(0, 0, 0.12);
+    skinBeamMats.set(trail.body, (mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })));
+  }
+  return mat;
+};
+const skinBeamCoreMat = new THREE.MeshBasicMaterial({ color: 0xffe2e2, transparent: true, depthWrite: false });
 const beams: Beam[] = [];
 const from = new THREE.Vector3();
 const aim = new THREE.Vector3();
@@ -116,14 +138,16 @@ const beamDir = new THREE.Vector3();
 export const RIFLE_HIT: HitDef = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1, dmg: 34 / 30 };
 function onRifleHit(at: THREE.Vector3, dir: THREE.Vector3, enemy: Enemy | null, part: THREE.Object3D | null, boss: BossPart | null) {
   void part; // 頭は共通の命中位置の高さで判定する
+  // 稲妻を出すスキン（爪）は、当てた所から体に稲妻を走らせる
+  const fx = RIFLE_HIT.fx ?? 1;
   if (!enemy && boss) {
-    hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir);
+    hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir), at);
   } else if (enemy) {
     setEn(enemy);
     hitDir.set(dir.x, 0, dir.z);
     if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
     hitDir.normalize();
-    hooks.applyHit(RIFLE_HIT, at, 'bullet');
+    hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.applyHit(RIFLE_HIT, at, 'bullet'), at);
   } else {
     spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
     sfx.playRicochet();
@@ -241,13 +265,25 @@ function fireRifle(spun = false) {
   hooks.restoreCameraOffset();
   camera.updateMatrixWorld(true);
 
-  const mesh = new THREE.Mesh(beamGeo, beamMat);
+  const trail = skinOf('rifle').trail;
+  const mesh = new THREE.Mesh(beamGeo, trail ? skinBeamMat(trail) : beamMat);
   mesh.frustumCulled = false;
   mesh.position.copy(aim);
   mesh.quaternion.setFromUnitVectors(BEAM_AXIS, beamDir.subVectors(from, aim).normalize());
   mesh.scale.set(BEAM_WIDTH, BEAM_WIDTH, from.distanceTo(aim));
   scene.add(mesh);
+  if (trail) {
+    const core = new THREE.Mesh(beamGeo, skinBeamCoreMat);
+    core.scale.set(SKIN_BEAM_CORE, SKIN_BEAM_CORE, 1);
+    core.renderOrder = 1; // 筋の後に描いて、筋の中から透けて見せる
+    mesh.add(core);
+    if (trail.glow) addGlow(mesh, trail.body).strength = SKIN_BEAM_GLOW; // 筋が消えてシーンから外れたら、にじみの登録も外れる
+  }
   beams.push({ mesh, age: 0 });
+  skinFx.flare = 1; // スキンの飾りを光らせる
+  // 稲妻を出すスキンは、マズルフラッシュに放電を交える（覗いている間は銃口が画面に無いので出さない）
+  const arc = skinOf('rifle').arc;
+  if (arc && rifleState.scope < SCOPE_VIEW_ON) spawnMuzzleArcs(rifleMuzzle, arc);
 
   for (const hit of hits) onRifleHit(hit.at, aimDir.clone(), hit.enemy, hit.part, hit.boss);
 
@@ -356,3 +392,20 @@ export function updateRifle(dt: number) {
 
 // 覗いている具合を視野と絵に使う形にする（覗ききる直前から一気に寄せる）
 export const scopeView = () => THREE.MathUtils.smoothstep(rifleState.scope, SCOPE_VIEW_ON - 0.1, 1);
+
+
+
+const initial_rifleState = snapshotRifleState(rifleState);
+export function resetRifleCombat() {
+  for (const b of beams) b.mesh.removeFromParent(); beams.length = 0; muzzleFlash.visible = false;
+  initial_rifleState();
+  flashAge = Infinity;
+  prevThrowHeld = false;
+  prevSpinHeld = false;
+}
+
+
+function snapshotRifleState<T extends object>(state: T): () => void {
+  const initial = { ...state };
+  return () => { Object.assign(state, initial); };
+}

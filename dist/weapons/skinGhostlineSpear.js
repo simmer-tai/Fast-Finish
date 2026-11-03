@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js?v=d61aec99';
-import { HOLO_GLOW, createHoloMats, holoBlade, holoMat, tickHoloGlow } from './skinGhostline.js?v=d61aec99';
-import { MM, plate } from './skinTalon.js?v=d61aec99';
+import { addGlow, removeGlow } from '../fx/glow.js?v=2fb05089';
+import { HOLO_GLOW, createHoloMats, holoBlade, holoMat, tickHoloGlow } from './skinGhostline.js?v=2fb05089';
+import { MM, plate } from './skinTalon.js?v=2fb05089';
 // ---- 槍のスキン: ホロライン ----
 // 剣のホロラインの刀身を穂先にした槍。長さと握る位置は元の槍のまま（振りの支点・切っ先と石突きの当たりが変わらないように）。
 //   穂先: 剣の刀身（くり抜いた黒い骨格・光る帯の刃先・光だけの切っ先・窓のホログラム）を穂先の長さに縮める。

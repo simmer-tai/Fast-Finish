@@ -1,28 +1,29 @@
+import { snapshotState } from '../game/resetState.js?v=2fb05089';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { playGrip, playRing, playSwish } from '../audio.js?v=d61aec99';
-import { pressed } from '../input.js?v=d61aec99';
-import { DEG, UP } from '../math.js?v=d61aec99';
-import { easeOutBack } from '../ease.js?v=d61aec99';
-import { camera, controls, scene } from '../core.js?v=d61aec99';
-import { createChainSickle, createLongChain, layChain, layLongChain } from './chainSickle.js?v=d61aec99';
-import { RETURN_SWISH, THROW_SWISH } from './kunaiAttacks.js?v=d61aec99';
-import { leftSickle, rightSickle, sickleMats, skinMats } from './viewModels.js?v=d61aec99';
-import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=d61aec99';
-import { hitWithArcs } from '../fx/arcs.js?v=d61aec99';
-import { swordState } from './swordCombat.js?v=d61aec99';
-import { spawnSparks } from '../fx/hitFx.js?v=d61aec99';
-import { Ribbon, SICKLE_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=d61aec99';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=d61aec99';
-import { en, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=d61aec99';
-import { blocks, ramps } from '../world/blocks.js?v=d61aec99';
-import { rayBox, rayRamp } from '../world/raycast.js?v=d61aec99';
-import { player, position, velocity } from '../player/state.js?v=d61aec99';
-import { PLAYER_GRAVITY, JUMP_SPEED } from '../player/config.js?v=d61aec99';
-import { endWallRun, hasHeadroom } from '../player/movement.js?v=d61aec99';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=d61aec99';
-import { hooks } from '../game/hooks.js?v=d61aec99';
-import { tryWallHit } from './wallHit.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { playGrip, playRing, playSwish } from '../audio.js?v=2fb05089';
+import { pressed } from '../input.js?v=2fb05089';
+import { DEG, UP } from '../math.js?v=2fb05089';
+import { easeOutBack } from '../ease.js?v=2fb05089';
+import { camera, controls, scene } from '../core.js?v=2fb05089';
+import { createChainSickle, createLongChain, layChain, layLongChain } from './chainSickle.js?v=2fb05089';
+import { RETURN_SWISH, THROW_SWISH } from './kunaiAttacks.js?v=2fb05089';
+import { leftSickle, rightSickle, sickleMats, skinMats } from './viewModels.js?v=2fb05089';
+import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
+import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
+import { swordState } from './swordCombat.js?v=2fb05089';
+import { spawnSparks } from '../fx/hitFx.js?v=2fb05089';
+import { Ribbon, SICKLE_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=2fb05089';
+import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=2fb05089';
+import { en, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=2fb05089';
+import { blocks, ramps } from '../world/blocks.js?v=2fb05089';
+import { rayBox, rayRamp } from '../world/raycast.js?v=2fb05089';
+import { player, position, velocity } from '../player/state.js?v=2fb05089';
+import { PLAYER_GRAVITY, JUMP_SPEED } from '../player/config.js?v=2fb05089';
+import { endWallRun, hasHeadroom } from '../player/movement.js?v=2fb05089';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2fb05089';
+import { hooks } from '../game/hooks.js?v=2fb05089';
+import { tryWallHit } from './wallHit.js?v=2fb05089';
 // ---- 鎖鎌 ----
 // 右クリックで投げて引き寄せる・左クリックの近接・R キーの投げ回し
 // 引き寄せの回数: 建物か敵に掛かるたびに 1 消費（外れたら消費しない）。時間で 1 本ずつ戻り、倒すと 1 本戻る。
@@ -1607,3 +1608,29 @@ export function applyDrawHandPose(h, handPos) {
     applyHandRotation(h, drawTmpPose);
 }
 export const SICKLE_DAMAGE_SCALE = 0.85; // 鎖鎌の近接は刀と同じ 'sword' の量に、これを掛けて少し抑える
+const initial_sickleState = snapshotState(sickleState);
+export function resetSickleCombat() {
+    for (const ribbon of sickleTrails) {
+        ribbon.update(Infinity);
+        ribbon.cut();
+    }
+    for (const h of grappleHooks) {
+        h.launchIn = h.windT = h.catchT = h.stuckTime = -1;
+        h.thrown = h.back = false;
+        h.aim = h.slide = h.punch = h.yank = h.twang = 0;
+        h.sickle.visible = h.chain.visible = false;
+        h.head.visible = true;
+        h.head.position.set(0, 0, 0);
+        h.head.quaternion.identity();
+    }
+    initial_sickleState();
+    grappleClock = 0;
+    hitBlock = null;
+    castEnemy = null;
+    sickleQueued = false;
+    sickleComboTimer = 0;
+    sickleBodyHand = 0;
+    slideFwd = 1;
+    slideRight = 0;
+    slideDirFresh = true;
+}

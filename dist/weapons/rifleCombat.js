@@ -1,18 +1,20 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { camera, scene } from '../core.js?v=d61aec99';
-import { DEG } from '../math.js?v=d61aec99';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=d61aec99';
-import { hooks } from '../game/hooks.js?v=d61aec99';
-import { spawnSparks } from '../fx/hitFx.js?v=d61aec99';
-import { isDown } from '../player/down.js?v=d61aec99';
-import { player, position } from '../player/state.js?v=d61aec99';
-import { castThrow, castHit } from '../world/raycast.js?v=d61aec99';
-import { en, hitDir, setEn } from '../enemy/state.js?v=d61aec99';
-import { makeFlashTexture } from './handgunCombat.js?v=d61aec99';
-import { createRound } from './revolver.js?v=d61aec99';
-import { skinOf } from './skins.js?v=d61aec99';
-import { rifleModel, weaponMats } from './viewModels.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { camera, scene } from '../core.js?v=2fb05089';
+import { DEG } from '../math.js?v=2fb05089';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2fb05089';
+import { hooks } from '../game/hooks.js?v=2fb05089';
+import { spawnSparks } from '../fx/hitFx.js?v=2fb05089';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=2fb05089';
+import { addGlow } from '../fx/glow.js?v=2fb05089';
+import { isDown } from '../player/down.js?v=2fb05089';
+import { player, position } from '../player/state.js?v=2fb05089';
+import { castThrow, castHit } from '../world/raycast.js?v=2fb05089';
+import { en, hitDir, setEn } from '../enemy/state.js?v=2fb05089';
+import { makeFlashTexture } from './handgunCombat.js?v=2fb05089';
+import { createRound } from './revolver.js?v=2fb05089';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
+import { rifleModel, weaponMats } from './viewModels.js?v=2fb05089';
 // ---- スナイパーライフル ----
 // 右クリック（パッドは LT）を押している間、スコープを目の前へ持ち上げて覗く。覗ききったらスコープの絵（ui/scopeOverlay.ts）に切り替え、
 // 視野を SCOPE_ZOOM 倍に絞る（fx/camera.ts）。視点の速さは視野に合わせて落ちる（player/look.ts）
@@ -93,9 +95,29 @@ const muzzleFlash = new THREE.Group();
 muzzleFlash.visible = false;
 rifleMuzzle.add(muzzleFlash);
 let flashAge = Infinity;
+// 弾の光の尾の色を持つスキン（爪）は、マズルフラッシュもその色に寄せる
+const tintFlash = () => {
+    const trail = skinOf('rifle').trail;
+    flashMat.color.setHex(trail ? trail.core : 0xffffff);
+};
+tintFlash();
+onSkinChange((id) => id === 'rifle' && tintFlash());
 const beamGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5); // 原点から +Z へ伸びる
 const beamMat = new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
 const BEAM_AXIS = new THREE.Vector3(0, 0, 1);
+// スキンの色の光の筋（ハンドガンの光の尾と同じ作り）。白い背景でも見えるよう、足さずに重ね、白に近い細い芯を通す
+const SKIN_BEAM_CORE = 0.35; // 芯の太さ（筋の太さに対する割合）
+const SKIN_BEAM_GLOW = 1.6; // にじみの濃さ
+const skinBeamMats = new Map();
+const skinBeamMat = (trail) => {
+    let mat = skinBeamMats.get(trail.body);
+    if (!mat) {
+        const color = new THREE.Color(trail.core).offsetHSL(0, 0, 0.12);
+        skinBeamMats.set(trail.body, (mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })));
+    }
+    return mat;
+};
+const skinBeamCoreMat = new THREE.MeshBasicMaterial({ color: 0xffe2e2, transparent: true, depthWrite: false });
 const beams = [];
 const from = new THREE.Vector3();
 const aim = new THREE.Vector3();
@@ -105,8 +127,10 @@ const beamDir = new THREE.Vector3();
 export const RIFLE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1, dmg: 34 / 30 };
 function onRifleHit(at, dir, enemy, part, boss) {
     void part; // 頭は共通の命中位置の高さで判定する
+    // 稲妻を出すスキン（爪）は、当てた所から体に稲妻を走らせる
+    const fx = RIFLE_HIT.fx ?? 1;
     if (!enemy && boss) {
-        hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir);
+        hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir), at);
     }
     else if (enemy) {
         setEn(enemy);
@@ -114,7 +138,7 @@ function onRifleHit(at, dir, enemy, part, boss) {
         if (hitDir.lengthSq() < 1e-6)
             hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
         hitDir.normalize();
-        hooks.applyHit(RIFLE_HIT, at, 'bullet');
+        hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.applyHit(RIFLE_HIT, at, 'bullet'), at);
     }
     else {
         spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
@@ -237,13 +261,27 @@ function fireRifle(spun = false) {
         from.set(0, -0.06, -0.3).applyMatrix4(camera.matrixWorld);
     hooks.restoreCameraOffset();
     camera.updateMatrixWorld(true);
-    const mesh = new THREE.Mesh(beamGeo, beamMat);
+    const trail = skinOf('rifle').trail;
+    const mesh = new THREE.Mesh(beamGeo, trail ? skinBeamMat(trail) : beamMat);
     mesh.frustumCulled = false;
     mesh.position.copy(aim);
     mesh.quaternion.setFromUnitVectors(BEAM_AXIS, beamDir.subVectors(from, aim).normalize());
     mesh.scale.set(BEAM_WIDTH, BEAM_WIDTH, from.distanceTo(aim));
     scene.add(mesh);
+    if (trail) {
+        const core = new THREE.Mesh(beamGeo, skinBeamCoreMat);
+        core.scale.set(SKIN_BEAM_CORE, SKIN_BEAM_CORE, 1);
+        core.renderOrder = 1; // 筋の後に描いて、筋の中から透けて見せる
+        mesh.add(core);
+        if (trail.glow)
+            addGlow(mesh, trail.body).strength = SKIN_BEAM_GLOW; // 筋が消えてシーンから外れたら、にじみの登録も外れる
+    }
     beams.push({ mesh, age: 0 });
+    skinFx.flare = 1; // スキンの飾りを光らせる
+    // 稲妻を出すスキンは、マズルフラッシュに放電を交える（覗いている間は銃口が画面に無いので出さない）
+    const arc = skinOf('rifle').arc;
+    if (arc && rifleState.scope < SCOPE_VIEW_ON)
+        spawnMuzzleArcs(rifleMuzzle, arc);
     for (const hit of hits)
         onRifleHit(hit.at, aimDir.clone(), hit.enemy, hit.part, hit.boss);
     // 反動: 拳銃より大きく視点を蹴り上げる。覗いているときはさらに強く跳ねて見える（視野が狭いので）
@@ -364,3 +402,18 @@ export function updateRifle(dt) {
 }
 // 覗いている具合を視野と絵に使う形にする（覗ききる直前から一気に寄せる）
 export const scopeView = () => THREE.MathUtils.smoothstep(rifleState.scope, SCOPE_VIEW_ON - 0.1, 1);
+const initial_rifleState = snapshotRifleState(rifleState);
+export function resetRifleCombat() {
+    for (const b of beams)
+        b.mesh.removeFromParent();
+    beams.length = 0;
+    muzzleFlash.visible = false;
+    initial_rifleState();
+    flashAge = Infinity;
+    prevThrowHeld = false;
+    prevSpinHeld = false;
+}
+function snapshotRifleState(state) {
+    const initial = { ...state };
+    return () => { Object.assign(state, initial); };
+}

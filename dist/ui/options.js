@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
 // 音量は 0〜1 で、音の出口に掛ける（audio.ts の setMasterVolume）。

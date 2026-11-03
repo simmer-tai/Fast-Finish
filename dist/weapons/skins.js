@@ -1,32 +1,33 @@
 import * as THREE from 'three';
-import { WEAPON_IDS } from './ids.js?v=d61aec99';
-import { loadXp, masteryOf } from '../mastery.js?v=d61aec99';
-import { MISSIONS, loadMission } from '../challenges.js?v=d61aec99';
-import { kintsugiSword } from './skinKintsugi.js?v=d61aec99';
-import { protoRevolver } from './skinProto.js?v=d61aec99';
-import { dressFiligreeRound, filigreeRevolver } from './skinFiligree.js?v=d61aec99';
-import { redlineSword } from './skinRedline.js?v=d61aec99';
-import { relicSword } from './skinRelic.js?v=d61aec99';
-import { willowKunai } from './skinWillowKunai.js?v=d61aec99';
-import { octagonRevolver } from './skinOctagonRevolver.js?v=d61aec99';
-import { harvestSickle } from './skinHarvestSickle.js?v=d61aec99';
-import { beardedAxe } from './skinBeardedAxe.js?v=d61aec99';
-import { longbow } from './skinLongbow.js?v=d61aec99';
-import { hexBat } from './skinHexBat.js?v=d61aec99';
-import { jumonjiSpear } from './skinJumonjiSpear.js?v=d61aec99';
-import { HOLO_FOCUS, ghostlineSword } from './skinGhostline.js?v=d61aec99';
-import { ghostlineSickle } from './skinGhostlineSickle.js?v=d61aec99';
-import { ghostlineAxe } from './skinGhostlineAxe.js?v=d61aec99';
-import { ghostlineSpear } from './skinGhostlineSpear.js?v=d61aec99';
-import { TALON_FOCUS, talonSword } from './skinTalon.js?v=d61aec99';
-import { talonAxe } from './skinTalonAxe.js?v=d61aec99';
-import { talonKunai } from './skinTalonKunai.js?v=d61aec99';
-import { talonSickle } from './skinTalonSickle.js?v=d61aec99';
-import { talonSpear } from './skinTalonSpear.js?v=d61aec99';
-import { eclipseSpear } from './skinEclipseSpear.js?v=d61aec99';
-import { dressTalonRound, talonRevolver } from './skinTalonGun.js?v=d61aec99';
-import { dressTalonArrow, talonBow } from './skinTalonBow.js?v=d61aec99';
-import { falconRifle } from './skinFalconRifle.js?v=d61aec99';
+import { WEAPON_IDS } from './ids.js?v=2fb05089';
+import { loadXp, masteryOf } from '../mastery.js?v=2fb05089';
+import { MISSIONS, loadMission } from '../challenges.js?v=2fb05089';
+import { kintsugiSword } from './skinKintsugi.js?v=2fb05089';
+import { protoRevolver } from './skinProto.js?v=2fb05089';
+import { dressFiligreeRound, filigreeRevolver } from './skinFiligree.js?v=2fb05089';
+import { redlineSword } from './skinRedline.js?v=2fb05089';
+import { relicSword } from './skinRelic.js?v=2fb05089';
+import { willowKunai } from './skinWillowKunai.js?v=2fb05089';
+import { octagonRevolver } from './skinOctagonRevolver.js?v=2fb05089';
+import { harvestSickle } from './skinHarvestSickle.js?v=2fb05089';
+import { beardedAxe } from './skinBeardedAxe.js?v=2fb05089';
+import { longbow } from './skinLongbow.js?v=2fb05089';
+import { hexBat } from './skinHexBat.js?v=2fb05089';
+import { jumonjiSpear } from './skinJumonjiSpear.js?v=2fb05089';
+import { HOLO_FOCUS, ghostlineSword } from './skinGhostline.js?v=2fb05089';
+import { ghostlineSickle } from './skinGhostlineSickle.js?v=2fb05089';
+import { ghostlineAxe } from './skinGhostlineAxe.js?v=2fb05089';
+import { ghostlineSpear } from './skinGhostlineSpear.js?v=2fb05089';
+import { TALON_FOCUS, talonSword } from './skinTalon.js?v=2fb05089';
+import { talonAxe } from './skinTalonAxe.js?v=2fb05089';
+import { talonKunai } from './skinTalonKunai.js?v=2fb05089';
+import { talonSickle } from './skinTalonSickle.js?v=2fb05089';
+import { talonSpear } from './skinTalonSpear.js?v=2fb05089';
+import { eclipseSpear } from './skinEclipseSpear.js?v=2fb05089';
+import { dressTalonRound, talonRevolver } from './skinTalonGun.js?v=2fb05089';
+import { dressTalonArrow, talonBow } from './skinTalonBow.js?v=2fb05089';
+import { talonRifle } from './skinTalonRifle.js?v=2fb05089';
+import { falconRifle } from './skinFalconRifle.js?v=2fb05089';
 // スキンの演出に渡す値。flare: 当てた瞬間に 1 にすると、飾りが光ってすぐに引く。focus: 一閃の構えの効き（0〜1）
 export const skinFx = { flare: 0, focus: 0 };
 // シリーズ: 同じ id のスキンを武器ごとに作り、共通の値をまとめて持たせる（形の飾りと振り音は武器ごと）
@@ -202,6 +203,18 @@ export const SKINS = [
         },
         decor: talonBow,
         arrow: dressTalonArrow,
+    },
+    {
+        ...TALON,
+        weapons: ['rifle'],
+        // 銃身と機関部は剣の爪と同じ黒、スコープの台座と照星は一段明るい黒、銃床と先台は爪の柄と同じ暗い色
+        looks: {
+            metal: { color: 0x0b0c0e, metalness: 0.85, roughness: 0.24, env: 1.5 },
+            trim: { color: 0x101215, metalness: 0.7, roughness: 0.32, env: 1.2 },
+            wrap: { color: 0x1a1d21, metalness: 0.6, roughness: 0.45 },
+        },
+        decor: talonRifle,
+        swish: 'talonGun', // スピンコックで回す音を低く暗くする
     },
     {
         id: 'falcon',

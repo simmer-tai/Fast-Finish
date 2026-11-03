@@ -20,6 +20,7 @@ const TALON_WEAPONS = [
     ['axe', 'バトルアックス'],
     ['bow', '弓'],
     ['spear', '槍'],
+    ['rifle', 'スナイパーライフル'],
 ];
 export const MISSIONS = TALON_WEAPONS.map(([weapon, ja]) => ({
     id: `talon-${weapon}`,

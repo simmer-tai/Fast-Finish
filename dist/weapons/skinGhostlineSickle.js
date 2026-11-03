@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=d61aec99';
-import { addGlow, removeGlow } from '../fx/glow.js?v=d61aec99';
-import { JOINT_Y, SHAFT_BUTT, SHAFT_TOP, sickleBladeFrames } from './chainSickle.js?v=d61aec99';
-import { HOLO_GLOW, createHoloMats, holoMat, tickHoloGlow } from './skinGhostline.js?v=d61aec99';
+import { loftRings } from '../geometry.js?v=2fb05089';
+import { addGlow, removeGlow } from '../fx/glow.js?v=2fb05089';
+import { JOINT_Y, SHAFT_BUTT, SHAFT_TOP, sickleBladeFrames } from './chainSickle.js?v=2fb05089';
+import { HOLO_GLOW, createHoloMats, holoMat, tickHoloGlow } from './skinGhostline.js?v=2fb05089';
 // ---- 鎖鎌のスキン: ホロライン ----
 // 剣のホロラインと同じ、黒い骨格をくり抜いて刃先を光の帯だけにした鎌。刃の曲がり方と柄の形は元の鎖鎌のまま。
 //   刃: 骨格は棟の側の背骨と、根元・切っ先の塊だけ。間の窓を暗いホログラムの板が埋め、刃先は細いシアンの帯が根元から切っ先まで張る。

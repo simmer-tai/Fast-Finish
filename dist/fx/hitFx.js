@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { rand } from '../random.js?v=d61aec99';
+import { rand } from '../random.js?v=2fb05089';
 let env;
 export function initHitFx(e) {
     env = e;

@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import type { SwishKind } from '../audio.js';
@@ -701,4 +702,29 @@ function applyInspect(dt: number) {
   }
   cameraFx.inspect.set(inspectCam.x * DEG * w, inspectCam.y * side * DEG * w, inspectCam.z * side * DEG * w);
   cameraFx.inspectZoom = inspectExtra.y * w;
+}
+
+
+const initial_viewState = snapshotState(viewState);
+export function resetViewModelMotion() {
+  
+  initial_viewState();
+  swordRunPose = 0;
+  swordSlidePose = 0;
+  bowSlidePose = 0;
+  axeSwayX = 0;
+  axeSwayY = 0;
+  axeSwayVelX = 0;
+  axeSwayVelY = 0;
+  bobPhase = 0;
+  bobAmount = 0;
+  dashPull = 0;
+  slidePose = 0;
+  mantlePose = 0;
+  chargePose = 0;
+  leftEmpty = 0;
+  spinPose = 0;
+  inspecting = INSPECT_PATTERNS[0];
+  inspectT = -1;
+  inspectWeight = 0;
 }

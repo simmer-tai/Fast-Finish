@@ -1,11 +1,11 @@
-import * as sfx from '../audio.js?v=d61aec99';
-import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, ruleTag, ruleText } from '../challenges.js?v=d61aec99';
-import { fmtTime } from '../result.js?v=d61aec99';
-import { LOCK } from './lvRoadmap.js?v=d61aec99';
-import { badgePlate } from './cardHonors.js?v=d61aec99';
-import { partSwatch } from './cardParts.js?v=d61aec99';
-import { SKINS } from '../weapons/skins.js?v=d61aec99';
-import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, ruleTag, ruleText } from '../challenges.js?v=2fb05089';
+import { fmtTime } from '../result.js?v=2fb05089';
+import { LOCK } from './lvRoadmap.js?v=2fb05089';
+import { badgePlate } from './cardHonors.js?v=2fb05089';
+import { partSwatch } from './cardParts.js?v=2fb05089';
+import { SKINS } from '../weapons/skins.js?v=2fb05089';
+import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=2fb05089';
 // ---- PLAY のタブの CHALLENGE ----
 // 上の MISSIONS / FEATS で切り替える。MISSIONS は左にミッションの一覧、右に選んだものの詳細と START。
 // 一覧はミッションを見出し（MISSION_GROUPS）でまとめて 1 行にし、見出しを押すと中のミッションを開く（もう一度押すと閉じる）。

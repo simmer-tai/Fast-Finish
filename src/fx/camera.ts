@@ -240,3 +240,7 @@ export function updateKick(dt: number) {
   kickVel.addScaledVector(kickTmp, dt);
   kick.addScaledVector(kickVel, dt);
 }
+
+export function resetCameraEffects() {
+  landShake = 0; landShakeT = 1; scopeMul = 1;
+}

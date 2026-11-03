@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { DEG } from '../math.js?v=d61aec99';
-import { AXE_REST_QUAT } from './battleAxe.js?v=d61aec99';
+import { DEG } from '../math.js?v=2fb05089';
+import { AXE_REST_QUAT } from './battleAxe.js?v=2fb05089';
 // 補間する値は 1 列に並べる: 手の位置 (3)、最初の key からの回転の積み重ね（回転軸 × 角度、カメラ空間）(3)。
 // 向きを回転の量でつなぐので、大きく回す区間でも回る速さがむらにならない
 export const AXE_CHANNELS = 6;

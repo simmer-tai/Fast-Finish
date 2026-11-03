@@ -1,23 +1,24 @@
+import { snapshotState } from '../game/resetState.js?v=2fb05089';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=d61aec99';
-import { camera, controls, scene } from '../core.js?v=d61aec99';
-import { ARROW_LEN, createArrow, setBowDraw } from './bow.js?v=d61aec99';
-import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js?v=d61aec99';
-import { findThrowAim } from './kunaiCombat.js?v=d61aec99';
-import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js?v=d61aec99';
-import { addGlow } from '../fx/glow.js?v=d61aec99';
-import { hitWithArcs } from '../fx/arcs.js?v=d61aec99';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=d61aec99';
-import { en, enemies, hitDir, setEn } from '../enemy/state.js?v=d61aec99';
-import { castHit, castThrow, castWorld } from '../world/raycast.js?v=d61aec99';
-import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js?v=d61aec99';
-import { spawnSparks } from '../fx/hitFx.js?v=d61aec99';
-import { findBankShot } from './bowBankShot.js?v=d61aec99';
-import { player, position } from '../player/state.js?v=d61aec99';
-import { DEG } from '../math.js?v=d61aec99';
-import { easeOutCubic } from '../ease.js?v=d61aec99';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=d61aec99';
-import { hooks } from '../game/hooks.js?v=d61aec99';
+import * as sfx from '../audio.js?v=2fb05089';
+import { camera, controls, scene } from '../core.js?v=2fb05089';
+import { ARROW_LEN, createArrow, setBowDraw } from './bow.js?v=2fb05089';
+import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js?v=2fb05089';
+import { findThrowAim } from './kunaiCombat.js?v=2fb05089';
+import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js?v=2fb05089';
+import { addGlow } from '../fx/glow.js?v=2fb05089';
+import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
+import { en, enemies, hitDir, setEn } from '../enemy/state.js?v=2fb05089';
+import { castHit, castThrow, castWorld } from '../world/raycast.js?v=2fb05089';
+import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js?v=2fb05089';
+import { spawnSparks } from '../fx/hitFx.js?v=2fb05089';
+import { findBankShot } from './bowBankShot.js?v=2fb05089';
+import { player, position } from '../player/state.js?v=2fb05089';
+import { DEG } from '../math.js?v=2fb05089';
+import { easeOutCubic } from '../ease.js?v=2fb05089';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2fb05089';
+import { hooks } from '../game/hooks.js?v=2fb05089';
 export const BOW_RICOCHET_STOCK = 3; // 跳弾矢を持てる本数
 export const BOW_RICOCHET_EMPTY_FLASH = 0.35; // 残りが無いのに引こうとしたとき、印を震わせる時間
 export const bowState = {
@@ -556,4 +557,15 @@ export function updateBow(dt) {
         a.position.copy(nockedArrow.position);
         a.rotation.z = nockedArrow.rotation.z + a.userData.side * VOLLEY_NOCK_FAN;
     }
+}
+const initial_bowState = snapshotState(bowState);
+export function resetBowCombat() {
+    endDrawSound();
+    while (arrows.length)
+        removeArrow(arrows.length - 1);
+    initial_bowState();
+    clock = 0;
+    drawTime = 0;
+    nockWait = 0;
+    stringBuzz = 0;
 }

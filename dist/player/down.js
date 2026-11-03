@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { game } from '../game/state.js?v=d61aec99';
+import { game } from '../game/state.js?v=2fb05089';
 // ---- 倒れる ----
 // ステージで体力が尽きたら、時間を測るのをやめて操作を取り上げ、世界を白黒のスローにしたまま視点を床へ崩す。
 // 倒れきってからゲームオーバーの画面を出す（そこからはやり直すかタイトルへ戻るだけ）

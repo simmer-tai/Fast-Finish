@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { camera, controls, scene } from '../core.js';
@@ -570,4 +571,15 @@ export function updateBow(dt: number) {
     a.rotation.z = nockedArrow.rotation.z + (a.userData.side as number) * VOLLEY_NOCK_FAN;
   }
 
+}
+
+
+const initial_bowState = snapshotState(bowState);
+export function resetBowCombat() {
+  endDrawSound(); while (arrows.length) removeArrow(arrows.length - 1);
+  initial_bowState();
+  clock = 0;
+  drawTime = 0;
+  nockWait = 0;
+  stringBuzz = 0;
 }

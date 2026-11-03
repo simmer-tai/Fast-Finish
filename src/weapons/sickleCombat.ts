@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playGrip, playRing, playSwish } from '../audio.js';
@@ -1713,3 +1714,25 @@ export function applyDrawHandPose(h: GrappleHook, handPos: THREE.Vector3) {
 }
 
 export const SICKLE_DAMAGE_SCALE = 0.85; // 鎖鎌の近接は刀と同じ 'sword' の量に、これを掛けて少し抑える
+
+
+const initial_sickleState = snapshotState(sickleState);
+export function resetSickleCombat() {
+  for (const ribbon of sickleTrails) { ribbon.update(Infinity); ribbon.cut(); }
+  for (const h of grappleHooks) {
+    h.launchIn = h.windT = h.catchT = h.stuckTime = -1;
+    h.thrown = h.back = false; h.aim = h.slide = h.punch = h.yank = h.twang = 0;
+    h.sickle.visible = h.chain.visible = false; h.head.visible = true;
+    h.head.position.set(0, 0, 0); h.head.quaternion.identity();
+  }
+  initial_sickleState();
+  grappleClock = 0;
+  hitBlock = null;
+  castEnemy = null;
+  sickleQueued = false;
+  sickleComboTimer = 0;
+  sickleBodyHand = 0;
+  slideFwd = 1;
+  slideRight = 0;
+  slideDirFresh = true;
+}

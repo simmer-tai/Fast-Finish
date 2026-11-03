@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playAxeGrip, playSwish } from '../audio.js';
@@ -1029,4 +1030,33 @@ export function sampleAxeTrail() {
       axeLastTrail = s;
     }
   }
+}
+
+
+const initial_axeState = snapshotState(axeState);
+export function resetAxeCombat() {
+  for (const ribbon of [axeRibbon, axeSlamRibbon]) { ribbon.update(Infinity); ribbon.cut(); }
+  axeHits.clear(); axeWheelHits.clear(); for (const s of axeShocks) { s.age = Infinity; s.disc.visible = s.wall.visible = s.cracks.visible = false; }
+  initial_axeState();
+  axeLaunchQueued = false;
+  axeRushTime = -1;
+  axeQueued = false;
+  axeComboTimer = 0;
+  axeFiredSwishes = 0;
+  axeFiredGrips = 0;
+  axeFiredKicks = 0;
+  axeFiredLunge = false;
+  axeFiredGround = false;
+  axeHitLanded = false;
+  axeBite = 0;
+  axeStance = false;
+  axeCocked = false;
+  axeLaunchedAir = false;
+  axePower = 0;
+  axeSmashFromY = NaN;
+  axeBossHit = false;
+  axeCrackSegs = 0;
+  axeSlamClock = 0;
+  axeSlamHold = 0;
+  axeLastTrail = -Infinity;
 }

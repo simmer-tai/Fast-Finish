@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playGrip, playRing, playSwish } from '../audio.js';
@@ -833,4 +834,33 @@ export function sampleSwordTrail() {
       swordLastTrail = s;
     }
   }
+}
+
+
+const initial_swordState = snapshotState(swordState);
+export function resetSwordCombat() {
+  for (const ribbon of [swordRibbon]) { ribbon.update(Infinity); ribbon.cut(); }
+  swordHits.clear(); lockonEl.style.opacity = "0";
+  initial_swordState();
+  swordQueued = false;
+  swordComboTimer = 0;
+  swordFiredSwishes = 0;
+  swordFiredGrips = 0;
+  swordFiredRings = 0;
+  swordFiredLunge = false;
+  swordTwirlTime = Infinity;
+  swordTwirlGripped = true;
+  focusTime = 0;
+  focusShownReady = false;
+  focusLocked = false;
+  rushArrived = false;
+  lockEnemy = null;
+  lockBoss = -1;
+  issenBoss = -1;
+  swordBossHit = false;
+  swordHitLanded = false;
+  swordExitBlend = 0;
+  shedPrevTime = -Infinity;
+  shedAcc = 0;
+  swordLastTrail = -Infinity;
 }

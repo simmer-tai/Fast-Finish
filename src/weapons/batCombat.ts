@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playSwish } from '../audio.js';
@@ -541,4 +542,20 @@ function sampleBatTrail() {
       lastTrail = s;
     }
   }
+}
+
+
+const initial_batState = snapshotState(batState);
+export function resetBatCombat() {
+  for (const ribbon of [batRibbon]) { ribbon.update(Infinity); ribbon.cut(); }
+  
+  initial_batState();
+  queued = false;
+  comboTimer = 0;
+  firedSwishes = 0;
+  firedImpact = false;
+  firedLunge = false;
+  pressedInEquip = false;
+  batExitBlend = 0;
+  lastTrail = -Infinity;
 }

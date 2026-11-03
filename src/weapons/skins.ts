@@ -30,6 +30,7 @@ import { talonSpear } from './skinTalonSpear.js';
 import { eclipseSpear } from './skinEclipseSpear.js';
 import { dressTalonRound, talonRevolver } from './skinTalonGun.js';
 import { dressTalonArrow, talonBow } from './skinTalonBow.js';
+import { talonRifle } from './skinTalonRifle.js';
 import { falconRifle } from './skinFalconRifle.js';
 
 // ---- 武器のスキン ----
@@ -270,6 +271,18 @@ export const SKINS: Skin[] = [
     },
     decor: talonBow,
     arrow: dressTalonArrow,
+  },
+  {
+    ...TALON,
+    weapons: ['rifle'],
+    // 銃身と機関部は剣の爪と同じ黒、スコープの台座と照星は一段明るい黒、銃床と先台は爪の柄と同じ暗い色
+    looks: {
+      metal: { color: 0x0b0c0e, metalness: 0.85, roughness: 0.24, env: 1.5 },
+      trim: { color: 0x101215, metalness: 0.7, roughness: 0.32, env: 1.2 },
+      wrap: { color: 0x1a1d21, metalness: 0.6, roughness: 0.45 },
+    },
+    decor: talonRifle,
+    swish: 'talonGun', // スピンコックで回す音を低く暗くする
   },
   {
     id: 'falcon',

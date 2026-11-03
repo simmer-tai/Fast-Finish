@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playGrip, playRing, playSwish } from '../audio.js';
@@ -1226,4 +1227,43 @@ export function findHitPoint(def: AttackDef, out: THREE.Vector3) {
   camera.updateMatrixWorld();
   kunai.updateWorldMatrix(true, false);
   hooks.hitPointFromTip(hitTip.copy(TRAIL_TIP).applyMatrix4(kunai.matrixWorld), out);
+}
+
+
+const initial_kunaiState = snapshotState(kunaiState);
+export function resetKunaiCombat() {
+  for (const ribbon of [...spinRibbons, slideSpinRibbon]) { ribbon.update(Infinity); ribbon.cut(); }
+  clearThrown();
+  initial_kunaiState();
+  throwClock = 0;
+  fireCooldown = 0;
+  chargeTime = 0;
+  chargeStage = 0;
+  fanSpin = 0;
+  fanSpinSpeed = 0;
+  spinBlend = 0;
+  reloadTime = 0;
+  kunaiSlideSpin = 0;
+  kunaiSlideSpinPrev = 0;
+  kunaiSlideSpinVel = 0;
+  kunaiSlideSpinTarget = NaN;
+  drawSpin = 0;
+  drawSpinPrev = 0;
+  drawSpinning = false;
+  drawFiredFan = true;
+  worldSlowAge = Infinity;
+  grappleTime = 0;
+  grappleFov = 0;
+  throwMotion = Infinity;
+  released = true;
+  redrawGrip = true;
+  markerTarget = null;
+  markerAge = 0;
+  attackQueued = false;
+  comboTimer = 0;
+  firedSwishes = 0;
+  firedLunge = false;
+  firedRing = false;
+  firedGrip = false;
+  lastTrailSample = -Infinity;
 }

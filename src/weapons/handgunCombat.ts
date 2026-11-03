@@ -1,3 +1,4 @@
+import { snapshotState } from '../game/resetState.js';
 import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import { playRing, playSwish } from '../audio.js';
@@ -869,3 +870,21 @@ export const BAT_TRACER_LEN = 6;
 export const BAT_TRACER_WIDTH = 0.09;
 export const BAT_RETURN_HIT: HitDef = { kick: [-2.2, 0, 0], knock: 600, hitStop: 0.16, fx: 1.8, dmg: 6 }; // バットの 20 × 6 = 120
 export const isParryReturn = (def: HitDef) => def === PARRY_RETURN_HIT || def === BAT_RETURN_HIT;
+
+
+const initial_gunState = snapshotState(gunState);
+export function resetHandgunCombat() {
+  for (const b of bullets) b.mesh.removeFromParent(); bullets.length = 0; for (const c of casings) c.mesh.removeFromParent(); casings.length = 0; endDeadEye(); muzzleFlash.visible = false;
+  initial_gunState();
+  twirlDuration = TWIRL_TIME;
+  slideSpin = 0;
+  slideSpinVel = 0;
+  slideSpinHold = 0;
+  slideSpinTarget = NaN;
+  twirlAngle = 0;
+  slideLay = 0;
+  drawEvent = 0;
+  deadEyeFullT = 0;
+  deadEyeOver = null;
+  deadEyeDwell = 0;
+}
