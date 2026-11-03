@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow } from '../fx/glow.js';
-import { AXE_EDGE_T, AXE_HEAD_T, axeBevel, axePointFromMm } from './battleAxe.js';
-import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js';
+import { addGlow } from '../fx/glow.js?v=2f0a24b4';
+import { AXE_EDGE_T, AXE_HEAD_T, axeBevel, axePointFromMm } from './battleAxe.js?v=2f0a24b4';
+import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=2f0a24b4';
 // ---- 斧のスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械の斧。柄の形は元の斧のまま、頭は作り直す（刃先の位置は元の斧とほぼ同じで、縦に少し長い）。
 //   頭: 柄から細く絞った首が伸び、その先で刃が上下へ大きく張り出す。刃先はまっすぐな一直線で、上の角は前へ尖り、

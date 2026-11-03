@@ -2,7 +2,7 @@
 
 ## コードの構成
 
-three.js の一人称アクション。`src/` の TypeScript を `npm run build`（tsc）で `dist/` に書き出す。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。
+three.js の一人称アクション。`src/` の TypeScript を `npm run build`（tsc）で `dist/` に書き出す。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。ビルドではキャッシュ対策として読み込み先に共通の `?v=` を付ける。
 
 ### フォルダーの役割
 

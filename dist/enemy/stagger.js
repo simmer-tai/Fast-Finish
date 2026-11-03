@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { DEFAULT_KNOCK, en, hitDir } from './state.js';
-import { AIR_TUCK, ENEMY_WALK_BOB, walkFeet } from './motion.js';
-import { DEG, UP } from '../math.js';
-import { DUMMY_ANKLE_Y, DUMMY_SHIN, DUMMY_THIGH } from './body.js';
+import { DEFAULT_KNOCK, en, hitDir } from './state.js?v=2f0a24b4';
+import { AIR_TUCK, ENEMY_WALK_BOB, walkFeet } from './motion.js?v=2f0a24b4';
+import { DEG, UP } from '../math.js?v=2f0a24b4';
+import { DUMMY_ANKLE_Y, DUMMY_SHIN, DUMMY_THIGH } from './body.js?v=2f0a24b4';
 export const spring = (k, d) => ({ x: new THREE.Vector3(), v: new THREE.Vector3(), k, d });
 export function stepSpring(s, dt) {
     s.v.multiplyScalar(Math.max(0, 1 - s.d * dt)).addScaledVector(s.x, -s.k * dt);

@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { camera, scene } from '../core.js';
-import { DEG } from '../math.js';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
-import { hooks } from '../game/hooks.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { isDown } from '../player/down.js';
-import { player, position } from '../player/state.js';
-import { castThrow, castHit } from '../world/raycast.js';
-import { en, hitDir, setEn } from '../enemy/state.js';
-import { makeFlashTexture } from './handgunCombat.js';
-import { createRound } from './revolver.js';
-import { skinOf } from './skins.js';
-import { rifleModel, weaponMats } from './viewModels.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { camera, scene } from '../core.js?v=2f0a24b4';
+import { DEG } from '../math.js?v=2f0a24b4';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { isDown } from '../player/down.js?v=2f0a24b4';
+import { player, position } from '../player/state.js?v=2f0a24b4';
+import { castThrow, castHit } from '../world/raycast.js?v=2f0a24b4';
+import { en, hitDir, setEn } from '../enemy/state.js?v=2f0a24b4';
+import { makeFlashTexture } from './handgunCombat.js?v=2f0a24b4';
+import { createRound } from './revolver.js?v=2f0a24b4';
+import { skinOf } from './skins.js?v=2f0a24b4';
+import { rifleModel, weaponMats } from './viewModels.js?v=2f0a24b4';
 // ---- スナイパーライフル ----
 // 右クリック（パッドは LT）を押している間、スコープを目の前へ持ち上げて覗く。覗ききったらスコープの絵（ui/scopeOverlay.ts）に切り替え、
 // 視野を SCOPE_ZOOM 倍に絞る（fx/camera.ts）。視点の速さは視野に合わせて落ちる（player/look.ts）

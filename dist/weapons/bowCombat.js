@@ -1,23 +1,23 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { camera, controls, scene } from '../core.js';
-import { ARROW_LEN, createArrow, setBowDraw } from './bow.js';
-import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js';
-import { findThrowAim } from './kunaiCombat.js';
-import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js';
-import { addGlow } from '../fx/glow.js';
-import { hitWithArcs } from '../fx/arcs.js';
-import { onSkinChange, skinFx, skinOf } from './skins.js';
-import { en, enemies, hitDir, setEn } from '../enemy/state.js';
-import { castHit, castThrow, castWorld } from '../world/raycast.js';
-import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { findBankShot } from './bowBankShot.js';
-import { player, position } from '../player/state.js';
-import { DEG } from '../math.js';
-import { easeOutCubic } from '../ease.js';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
-import { hooks } from '../game/hooks.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { camera, controls, scene } from '../core.js?v=2f0a24b4';
+import { ARROW_LEN, createArrow, setBowDraw } from './bow.js?v=2f0a24b4';
+import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js?v=2f0a24b4';
+import { findThrowAim } from './kunaiCombat.js?v=2f0a24b4';
+import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js?v=2f0a24b4';
+import { addGlow } from '../fx/glow.js?v=2f0a24b4';
+import { hitWithArcs } from '../fx/arcs.js?v=2f0a24b4';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=2f0a24b4';
+import { en, enemies, hitDir, setEn } from '../enemy/state.js?v=2f0a24b4';
+import { castHit, castThrow, castWorld } from '../world/raycast.js?v=2f0a24b4';
+import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { findBankShot } from './bowBankShot.js?v=2f0a24b4';
+import { player, position } from '../player/state.js?v=2f0a24b4';
+import { DEG } from '../math.js?v=2f0a24b4';
+import { easeOutCubic } from '../ease.js?v=2f0a24b4';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
 export const BOW_RICOCHET_STOCK = 3; // 跳弾矢を持てる本数
 export const BOW_RICOCHET_EMPTY_FLASH = 0.35; // 残りが無いのに引こうとしたとき、印を震わせる時間
 export const bowState = {

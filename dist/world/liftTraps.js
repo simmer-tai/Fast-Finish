@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { en, enemies, hitDir, setEn, RESPAWN_RISE_TIME } from '../enemy/state.js';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
-import { knockEnemy } from '../enemy/motion.js';
-import { staggerDummy } from '../enemy/stagger.js';
-import { GRAVITY, PLAYER_RADIUS } from '../player/config.js';
-import { player, position, velocity } from '../player/state.js';
-import { hooks } from '../game/hooks.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { UP } from '../math.js';
-import { rand } from '../random.js';
-import { STRUCT_GRID, boxGeo, gridMaterial } from './blocks.js';
-import { shaftTravel } from './shaft.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { en, enemies, hitDir, setEn, RESPAWN_RISE_TIME } from '../enemy/state.js?v=2f0a24b4';
+import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=2f0a24b4';
+import { knockEnemy } from '../enemy/motion.js?v=2f0a24b4';
+import { staggerDummy } from '../enemy/stagger.js?v=2f0a24b4';
+import { GRAVITY, PLAYER_RADIUS } from '../player/config.js?v=2f0a24b4';
+import { player, position, velocity } from '../player/state.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { UP } from '../math.js?v=2f0a24b4';
+import { rand } from '../random.js?v=2f0a24b4';
+import { STRUCT_GRID, boxGeo, gridMaterial } from './blocks.js?v=2f0a24b4';
+import { shaftTravel } from './shaft.js?v=2f0a24b4';
 const LEVELS = {
     // 次を出すまでの間 (s)。0 は出さない。double は落下物が 2 つ同時に落ちてくる割合
     easy: { laser: 22, drop: 0, steam: 0, patterns: ['half'], double: 0 },

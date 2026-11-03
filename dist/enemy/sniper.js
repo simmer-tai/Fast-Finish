@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { camera, scene } from '../core.js';
-import { weaponMats } from '../weapons/viewModels.js';
-import { MUZZLE_FLASH_LIFE, tracerGeo } from '../weapons/handgunCombat.js';
-import { ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en } from './state.js';
-import { ENEMY_LEAN_LIMIT, ENEMY_STAGGER_LIMIT, aimTarget, enemyBullets, enemyTracerMat, reachHands, updateDummyAim, } from './fire.js';
-import { castWorld } from '../world/raycast.js';
-import { game } from '../game/state.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { camera, scene } from '../core.js?v=2f0a24b4';
+import { weaponMats } from '../weapons/viewModels.js?v=2f0a24b4';
+import { MUZZLE_FLASH_LIFE, tracerGeo } from '../weapons/handgunCombat.js?v=2f0a24b4';
+import { ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en } from './state.js?v=2f0a24b4';
+import { ENEMY_LEAN_LIMIT, ENEMY_STAGGER_LIMIT, aimTarget, enemyBullets, enemyTracerMat, reachHands, updateDummyAim, } from './fire.js?v=2f0a24b4';
+import { castWorld } from '../world/raycast.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=2f0a24b4';
 // ---- 狙撃手 ----
 // 長いライフルを肩付けで構え、出た所から動かない。高い所や遠い所に出て、見通しの良い場所ほど怖い（駅の主役）。
 // プレイヤーが見えたら赤い照準線を出して狙いを追い（溜め）、撃つ少し前に線を止めて点滅させる（ロック）。

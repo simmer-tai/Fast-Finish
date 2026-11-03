@@ -1,9 +1,9 @@
-import { HOOK_RECHARGE, sickleState } from '../weapons/sickleCombat.js';
-import { BOW_RICOCHET_STOCK, bowState } from '../weapons/bowCombat.js';
-import { weaponHud } from './weaponHud.js';
-import { hudImpulse } from './hudSway.js';
-import { PLAYER_MAX_HP } from '../player/config.js';
-import { game } from '../game/state.js';
+import { HOOK_RECHARGE, sickleState } from '../weapons/sickleCombat.js?v=2f0a24b4';
+import { BOW_RICOCHET_STOCK, bowState } from '../weapons/bowCombat.js?v=2f0a24b4';
+import { weaponHud } from './weaponHud.js?v=2f0a24b4';
+import { hudImpulse } from './hudSway.js?v=2f0a24b4';
+import { PLAYER_MAX_HP } from '../player/config.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=2f0a24b4';
 // ---- HUD: ダッシュの残り回数（クロスヘア左右の円弧。左が 1 回目、右が 2 回目） ----
 export const dashGauges = [...document.querySelectorAll('#crosshair .gauge')];
 // ---- HUD: 鎖鎌の引き寄せの残り回数（クロスヘアの下の斜めの帯 2 本。左から使い、左から溜まる）。鎖鎌を構えている間だけ出す ----

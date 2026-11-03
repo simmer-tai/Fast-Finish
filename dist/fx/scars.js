@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
-import { rand } from '../random.js';
-import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js';
+import { rand } from '../random.js?v=2f0a24b4';
+import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js?v=2f0a24b4';
 const DEG = Math.PI / 180;
 const SCAR_MAX = 24; // これより多くなったら古いものから消す
 const SCAR_COOL = 0.35; // 白から黒へ冷めきるまで

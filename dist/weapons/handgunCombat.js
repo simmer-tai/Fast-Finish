@@ -1,24 +1,24 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { playRing, playSwish } from '../audio.js';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic } from '../ease.js';
-import { DEG, catmullRom, wrapAngle } from '../math.js';
-import { camera, controls, scene } from '../core.js';
-import { createRound } from './revolver.js';
-import { gunSpin, revolver, weaponMats } from './viewModels.js';
-import { FOCUS_EMPTY_FLASH, lockTo, swordState } from './swordCombat.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { addGlow } from '../fx/glow.js';
-import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
-import { onSkinChange, skinFx, skinOf } from './skins.js';
-import { en, hitDir, setEn } from '../enemy/state.js';
-import { floorAt } from '../world/blocks.js';
-import { castHit, castThrow } from '../world/raycast.js';
-import { bossAlive } from '../enemy/boss.js';
-import { lookEuler, player, position, velocity } from '../player/state.js';
-import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js';
-import { DEADEYE_MAX, game, kickVel } from '../game/state.js';
-import { hooks } from '../game/hooks.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { playRing, playSwish } from '../audio.js?v=2f0a24b4';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic } from '../ease.js?v=2f0a24b4';
+import { DEG, catmullRom, wrapAngle } from '../math.js?v=2f0a24b4';
+import { camera, controls, scene } from '../core.js?v=2f0a24b4';
+import { createRound } from './revolver.js?v=2f0a24b4';
+import { gunSpin, revolver, weaponMats } from './viewModels.js?v=2f0a24b4';
+import { FOCUS_EMPTY_FLASH, lockTo, swordState } from './swordCombat.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { addGlow } from '../fx/glow.js?v=2f0a24b4';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=2f0a24b4';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=2f0a24b4';
+import { en, hitDir, setEn } from '../enemy/state.js?v=2f0a24b4';
+import { floorAt } from '../world/blocks.js?v=2f0a24b4';
+import { castHit, castThrow } from '../world/raycast.js?v=2f0a24b4';
+import { bossAlive } from '../enemy/boss.js?v=2f0a24b4';
+import { lookEuler, player, position, velocity } from '../player/state.js?v=2f0a24b4';
+import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=2f0a24b4';
+import { DEADEYE_MAX, game, kickVel } from '../game/state.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
 // ---- ハンドガン ----
 // 射撃・装填・ガンスピン・デッドアイ・落ちた薬莢
 export const GUN_AMMO = 6; // 弾倉に入る弾の数

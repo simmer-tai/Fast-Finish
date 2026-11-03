@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js';
-import { SPEAR_TIP_Y } from './spear.js';
-import { MM, plate } from './skinTalon.js';
+import { loftRings } from '../geometry.js?v=2f0a24b4';
+import { SPEAR_TIP_Y } from './spear.js?v=2f0a24b4';
+import { MM, plate } from './skinTalon.js?v=2f0a24b4';
 // ---- 槍のスキン: 十文字 ----
 // 古い十文字槍の形。色は元の槍のまま、穂先と金具を作り直す（柄・巻き・石突きは元のまま）。
 //   穂: 反りのある片刃をやめ、まっすぐな両刃にする。断面は真ん中に鎬の通る菱形で、根元から少しふくらんでから切っ先へ絞る

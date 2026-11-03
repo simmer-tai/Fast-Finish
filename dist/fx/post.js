@@ -3,12 +3,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { camera, renderer, scene } from '../core.js';
-import { fxScene } from './hitFx.js';
-import { GlowPass } from './glow.js';
-import { ImpactFxShader, MotionBlurShader, SpeedFxShader } from './postShaders.js';
-import { player, velocity } from '../player/state.js';
-import { SPRINT_SPEED } from '../player/config.js';
+import { camera, renderer, scene } from '../core.js?v=2f0a24b4';
+import { fxScene } from './hitFx.js?v=2f0a24b4';
+import { GlowPass } from './glow.js?v=2f0a24b4';
+import { ImpactFxShader, MotionBlurShader, SpeedFxShader } from './postShaders.js?v=2f0a24b4';
+import { player, velocity } from '../player/state.js?v=2f0a24b4';
+import { SPRINT_SPEED } from '../player/config.js?v=2f0a24b4';
 // ---- ポストエフェクト ----（シェーダーは fx/postShaders.ts）
 // 周辺ブラー・ビネット・集中線: これより速いと効果が出始め、SPEED_FX_FULL で最大になる
 export const SPEED_FX_START = SPRINT_SPEED - 1;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js';
-import { MM, plate } from './skinTalon.js';
+import { loftRings } from '../geometry.js?v=2f0a24b4';
+import { MM, plate } from './skinTalon.js?v=2f0a24b4';
 // ---- 剣のスキン: 紅線 ----
 // 白と紅に塗り分けた、装甲板を重ねたような直刀。柄は指を通す枠になっている。
 //   刃: 反りの無い平たい刃。峰の側は白く、刃の側の半分に紅い板を貼り、刃先の面取りは明るい紅。

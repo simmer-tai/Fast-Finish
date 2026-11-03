@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js';
-import { addGlow } from '../fx/glow.js';
-import { MM, plate, swordPose } from './skinTalon.js';
-import { skinFx } from './skins.js';
-import { camera } from '../core.js';
-import { game } from '../game/state.js';
+import { loftRings } from '../geometry.js?v=2f0a24b4';
+import { addGlow } from '../fx/glow.js?v=2f0a24b4';
+import { MM, plate, swordPose } from './skinTalon.js?v=2f0a24b4';
+import { skinFx } from './skins.js?v=2f0a24b4';
+import { camera } from '../core.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=2f0a24b4';
 // ---- 剣のスキン: ホロライン ----
 // 黒い骨格の刀身をくり抜き、刃先を光の帯だけにした高速戦闘刀。
 //   刃: 骨格は棟の側の背骨と、根元・切っ先の塊だけ。間の窓を暗いホログラムの板が埋め、刃先は細いシアンの帯が根元から切っ先まで張る。

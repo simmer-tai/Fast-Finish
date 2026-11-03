@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js';
-import { AXE_EDGE_T, axeBevel, axePointFromMm } from './battleAxe.js';
-import { HOLO_GLOW, createHoloMats, holoMat, tickHoloGlow } from './skinGhostline.js';
-import { MM, plate } from './skinTalon.js';
+import { addGlow, removeGlow } from '../fx/glow.js?v=2f0a24b4';
+import { AXE_EDGE_T, axeBevel, axePointFromMm } from './battleAxe.js?v=2f0a24b4';
+import { HOLO_GLOW, createHoloMats, holoMat, tickHoloGlow } from './skinGhostline.js?v=2f0a24b4';
+import { MM, plate } from './skinTalon.js?v=2f0a24b4';
 // ---- 斧のスキン: ホロライン ----
 // 剣のホロラインと同じ、黒い骨格に光の帯の刃先を張った斧。柄の形は元の斧のまま、頭は作り直す。
 //   頭: 細く絞った首から、刃へ向かって上下に広がる黒い頭。背には細く長いスパイク。

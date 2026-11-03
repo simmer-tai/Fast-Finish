@@ -1,13 +1,13 @@
-import { shipState } from './shipState.js';
+import { shipState } from './shipState.js?v=2f0a24b4';
 import * as THREE from 'three';
-import { blocks } from './blocks.js';
-import { EYE_HEIGHT, PLAYER_RADIUS } from '../player/config.js';
-import { lookEuler, mantleFrom, mantleTo, player, position, velocity } from '../player/state.js';
-import { sickleState } from '../weapons/sickleCombat.js';
-import { hooks } from '../game/hooks.js';
-import { game } from '../game/state.js';
-import * as sfx from '../audio.js';
-import { enemies } from '../enemy/state.js';
+import { blocks } from './blocks.js?v=2f0a24b4';
+import { EYE_HEIGHT, PLAYER_RADIUS } from '../player/config.js?v=2f0a24b4';
+import { lookEuler, mantleFrom, mantleTo, player, position, velocity } from '../player/state.js?v=2f0a24b4';
+import { sickleState } from '../weapons/sickleCombat.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=2f0a24b4';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { enemies } from '../enemy/state.js?v=2f0a24b4';
 const movers = [];
 let hurry = false;
 // 駅の電車は平行移動だけ。静止電車には mover がない。

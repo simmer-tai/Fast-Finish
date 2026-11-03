@@ -1,26 +1,26 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { playRing, playSwish } from '../audio.js';
-import { DEG } from '../math.js';
-import { camera } from '../core.js';
-import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js';
-import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js';
-import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js';
-import { axeState, startAxeAttack } from '../weapons/axeCombat.js';
-import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js';
-import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js';
-import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js';
-import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js';
-import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js';
-import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js';
-import { handCam } from './handCam.js';
-import { player, position, right, velocity, wallNormal } from '../player/state.js';
-import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js';
-import { moveToward } from '../player/movement.js';
-import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js';
-import { game, kick, kickVel } from '../game/state.js';
-import { rumble } from '../player/rumble.js';
-import { shipSway } from '../world/sea.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { playRing, playSwish } from '../audio.js?v=2f0a24b4';
+import { DEG } from '../math.js?v=2f0a24b4';
+import { camera } from '../core.js?v=2f0a24b4';
+import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js?v=2f0a24b4';
+import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js?v=2f0a24b4';
+import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js?v=2f0a24b4';
+import { axeState, startAxeAttack } from '../weapons/axeCombat.js?v=2f0a24b4';
+import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js?v=2f0a24b4';
+import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js?v=2f0a24b4';
+import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js?v=2f0a24b4';
+import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js?v=2f0a24b4';
+import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js?v=2f0a24b4';
+import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js?v=2f0a24b4';
+import { handCam } from './handCam.js?v=2f0a24b4';
+import { player, position, right, velocity, wallNormal } from '../player/state.js?v=2f0a24b4';
+import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js?v=2f0a24b4';
+import { moveToward } from '../player/movement.js?v=2f0a24b4';
+import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js?v=2f0a24b4';
+import { game, kick, kickVel } from '../game/state.js?v=2f0a24b4';
+import { rumble } from '../player/rumble.js?v=2f0a24b4';
+import { shipSway } from '../world/sea.js?v=2f0a24b4';
 // ---- カメラ演出 ----
 // 本体からも読み書きする値
 export const cameraFx = {

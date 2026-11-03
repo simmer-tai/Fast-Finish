@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js';
-import { env } from './env.js';
-import { AXE_LAUNCH_ENEMY_SPEED, DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, WALL_SLAM_BOUNCE, en, enemies, } from './state.js';
-import { STAGGER_SUBSTEP, addImpulse } from './stagger.js';
-import { DEG, UP } from '../math.js';
-import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_RADIUS } from './body.js';
-import { blocks, floorAt, ramps } from '../world/blocks.js';
-import { playBounds } from '../world/arena.js';
-import { GRAVITY } from '../player/config.js';
-import { position } from '../player/state.js';
-import { rand } from '../random.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { moverThreat } from '../world/movers.js';
-import { camera } from '../core.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { env } from './env.js?v=2f0a24b4';
+import { AXE_LAUNCH_ENEMY_SPEED, DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, WALL_SLAM_BOUNCE, en, enemies, } from './state.js?v=2f0a24b4';
+import { STAGGER_SUBSTEP, addImpulse } from './stagger.js?v=2f0a24b4';
+import { DEG, UP } from '../math.js?v=2f0a24b4';
+import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_RADIUS } from './body.js?v=2f0a24b4';
+import { blocks, floorAt, ramps } from '../world/blocks.js?v=2f0a24b4';
+import { playBounds } from '../world/arena.js?v=2f0a24b4';
+import { GRAVITY } from '../player/config.js?v=2f0a24b4';
+import { position } from '../player/state.js?v=2f0a24b4';
+import { rand } from '../random.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { moverThreat } from '../world/movers.js?v=2f0a24b4';
+import { camera } from '../core.js?v=2f0a24b4';
 // ---- 打ち上げられた敵 ----
 // 斧の打ち上げで真上へ飛び、プレイヤーと同じ重力で落ちる。浮いている間は歩かず撃たない。
 // 叩きつけられて速く落ちてきたら、地面で重く鳴って小さく跳ねる

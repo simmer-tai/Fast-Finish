@@ -1,19 +1,19 @@
 import * as THREE from 'three';
-import { rumble } from '../player/rumble.js';
-import * as sfx from '../audio.js';
-import { DEG, UP } from '../math.js';
-import { camera, scene } from '../core.js';
-import { swordState } from '../weapons/swordCombat.js';
-import { batState } from '../weapons/batCombat.js';
-import { SPEAR_GUARD_ON, spearState } from '../weapons/spearCombat.js';
-import { SWORD_DRAW } from '../weapons/swordAttacks.js';
-import { bullets, tracerGeo } from '../weapons/handgunCombat.js';
-import { kunaiState } from '../weapons/kunaiCombat.js';
-import { spawnSparks } from '../fx/hitFx.js';
-import { ENEMY_BULLET_RANGE, aimTarget, enemyBody, enemyOnBody, enemyOnPath, enemyPath } from '../enemy/fire.js';
-import { bossReturnPoint } from '../enemy/boss.js';
-import { game, kickVel } from '../game/state.js';
-import { hooks } from '../game/hooks.js';
+import { rumble } from '../player/rumble.js?v=2f0a24b4';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { DEG, UP } from '../math.js?v=2f0a24b4';
+import { camera, scene } from '../core.js?v=2f0a24b4';
+import { swordState } from '../weapons/swordCombat.js?v=2f0a24b4';
+import { batState } from '../weapons/batCombat.js?v=2f0a24b4';
+import { SPEAR_GUARD_ON, spearState } from '../weapons/spearCombat.js?v=2f0a24b4';
+import { SWORD_DRAW } from '../weapons/swordAttacks.js?v=2f0a24b4';
+import { bullets, tracerGeo } from '../weapons/handgunCombat.js?v=2f0a24b4';
+import { kunaiState } from '../weapons/kunaiCombat.js?v=2f0a24b4';
+import { spawnSparks } from '../fx/hitFx.js?v=2f0a24b4';
+import { ENEMY_BULLET_RANGE, aimTarget, enemyBody, enemyOnBody, enemyOnPath, enemyPath } from '../enemy/fire.js?v=2f0a24b4';
+import { bossReturnPoint } from '../enemy/boss.js?v=2f0a24b4';
+import { game, kickVel } from '../game/state.js?v=2f0a24b4';
+import { hooks } from '../game/hooks.js?v=2f0a24b4';
 // ---- パリィ ----
 // クナイや刀を振っている間（斬撃の軌跡が出ている前後）や、槍の風車受けの間に、正面から体へ向かってくる弾が間合いへ入ったら弾き返す。
 // 弾き返した弾は敵の胸へまっすぐ飛び、自分の銃弾と同じように当たる

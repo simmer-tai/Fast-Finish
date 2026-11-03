@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js';
-import { RISER_C, limbPath } from './bow.js';
-import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js';
+import { addGlow, removeGlow } from '../fx/glow.js?v=2f0a24b4';
+import { RISER_C, limbPath } from './bow.js?v=2f0a24b4';
+import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=2f0a24b4';
 // ---- 弓のスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械の弓。色は skins.ts の looks で黒くし、柄・握り・リムは直線でできた刃の形に作り直す。
 //   リム: 元のリムの曲がりを 3 本の直線でなぞる板（柄から立ち上がり、射手の側へ大きく折れ、先で前へ折り返す）。

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "node node_modules/typescript/bin/tsc",
+    "build": "node node_modules/typescript/bin/tsc && node scripts/stamp.mjs",
     "watch": "node node_modules/typescript/bin/tsc --watch"
   },
   "devDependencies": {

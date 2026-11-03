@@ -1,9 +1,9 @@
-import * as sfx from '../audio.js';
-import { BACKGROUNDS, FRAMES, partSwatch } from './cardParts.js';
-import { MASTERY_MILESTONE, MASTERY_REWARDS, PLAYER_REWARDS, loadXp, masteryOf, playerMastery, playerXpToReach, xpToReach } from '../mastery.js';
-import { SKINS } from '../weapons/skins.js';
-import { BADGES, TITLES } from './cardHonors.js';
-import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js';
+import * as sfx from '../audio.js?v=2f0a24b4';
+import { BACKGROUNDS, FRAMES, partSwatch } from './cardParts.js?v=2f0a24b4';
+import { MASTERY_MILESTONE, MASTERY_REWARDS, PLAYER_REWARDS, loadXp, masteryOf, playerMastery, playerXpToReach, xpToReach } from '../mastery.js?v=2f0a24b4';
+import { SKINS } from '../weapons/skins.js?v=2f0a24b4';
+import { BADGES, TITLES } from './cardHonors.js?v=2f0a24b4';
+import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=2f0a24b4';
 let cardPreviewHtml = () => '';
 export const initCardPreview = (fn) => (cardPreviewHtml = fn);
 // ---- 熟練度のロードマップ ----

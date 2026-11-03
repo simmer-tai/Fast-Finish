@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RISER_C, loftClosed, section } from './bow.js';
+import { RISER_C, loftClosed, section } from './bow.js?v=2f0a24b4';
 // ---- 弓のスキン: 長弓 ----
 // 古い一本木の長弓の形。色は元の弓のまま、柄とリムを作り直す（弦・筈・矢を載せる棚は元のまま）。
 //   弓幹: 柄とリムの継ぎ目の無い一本の棒。握りで前（的の側）へいちばん張り出し、上下の先端へなだらかに弧を描いて細る。

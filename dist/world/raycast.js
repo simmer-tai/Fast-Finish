@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { enemies } from '../enemy/state.js';
-import { raycastBoss } from '../enemy/boss.js';
-import { blocks, rampUpDir, ramps } from './blocks.js';
+import { enemies } from '../enemy/state.js?v=2f0a24b4';
+import { raycastBoss } from '../enemy/boss.js?v=2f0a24b4';
+import { blocks, rampUpDir, ramps } from './blocks.js?v=2f0a24b4';
 // ---- 光線の当たり判定 ----
 // 投げた武器や照準の先が、壁・床・敵のどこに当たるか
 export const throwRaycaster = new THREE.Raycaster();

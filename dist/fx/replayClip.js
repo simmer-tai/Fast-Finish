@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { renderer } from '../core.js';
-import { composer } from './post.js';
+import { renderer } from '../core.js?v=2f0a24b4';
+import { composer } from './post.js?v=2f0a24b4';
 const PRE = 2.0; // キルの前に残す秒数（実時間。とどめのスローもそのまま入る）
 const POST = 0.7; // キルの後に残す秒数
 const FPS = 30;

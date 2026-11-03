@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { boxGeo, gridMaterial } from '../world/blocks.js';
+import { boxGeo, gridMaterial } from '../world/blocks.js?v=2f0a24b4';
 // ---- 床が波打つ ----
 // 重い物が床を叩くと、そこから輪になって広がる波に合わせて、床のグリッドのマス（1m 角）が持ち上がって沈む。
 // 見た目だけ（当たりはない）。マスは床の下まで伸ばした箱で、持ち上がっている間だけ描く

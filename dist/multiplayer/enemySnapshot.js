@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { enemies } from '../enemy/state.js';
+import { enemies } from '../enemy/state.js?v=2f0a24b4';
 const spawnIds = new WeakMap();
 let nextSpawnId = 1;
 export function markAddSpawn(e) { spawnIds.set(e, nextSpawnId++); }

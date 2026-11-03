@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { camera } from '../core.js';
-import { enemies } from '../enemy/state.js';
-import { enemyChest } from '../player/aimAssist.js';
-import { blocks } from '../world/blocks.js';
-import { castHit, castThrow, castWorld } from '../world/raycast.js';
-import { DEG } from '../math.js';
+import { camera } from '../core.js?v=2f0a24b4';
+import { enemies } from '../enemy/state.js?v=2f0a24b4';
+import { enemyChest } from '../player/aimAssist.js?v=2f0a24b4';
+import { blocks } from '../world/blocks.js?v=2f0a24b4';
+import { castHit, castThrow, castWorld } from '../world/raycast.js?v=2f0a24b4';
+import { DEG } from '../math.js?v=2f0a24b4';
 // ---- 跳弾の狙いの補助 ----
 // 跳弾矢を射る瞬間、照準のすぐ近くに「そこで跳ねれば敵に当たる」壁や天井の所があれば、その敵を狙いとして覚えておく（画面には何も出さない）。
 // 矢そのものは照準へ向けて射り、最初に跳ねるときに覚えた敵へ向け直す（bowCombat の ricochetArrow）。

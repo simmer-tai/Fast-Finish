@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js';
-import { GRIP_DEPTH, GRIP_OUTLINE } from './revolver.js';
+import { loftRings } from '../geometry.js?v=2f0a24b4';
+import { GRIP_DEPTH, GRIP_OUTLINE } from './revolver.js?v=2f0a24b4';
 // ---- リボルバーのスキン: 唐草 ----
 // 黒染めの鋼の銃に、銀の蔓が立体で絡みつく古典の拳銃。模様を描くのではなく、唐草を形として彫り出す。込めるのは銀の弾丸。
 //   本体: 丸みのある黒染めのフレーム（シリンダーの窓が抜けている）と、丸い銃身。銃口はラッパのように開く
