@@ -36,7 +36,9 @@ function restart(node, cls) {
 function addRow(b) {
     const row = document.createElement('div');
     row.className = 'row';
-    for (const [cls, text] of [['lbl', b.label], ['det', b.detail ?? ''], ['add', `+${b.add.toFixed(1)}`]]) {
+    if (b.kind)
+        row.classList.add(b.kind);
+    for (const [cls, text] of [['lbl', b.label], ['det', b.detail ?? ''], ['add', b.mult !== undefined ? `×${b.mult}` : `+${b.add.toFixed(1)}`]]) {
         const s = document.createElement('span');
         s.className = cls;
         s.textContent = text;
@@ -68,8 +70,9 @@ export function resetScore() {
 // base = 倍率を掛ける前の点数（ボスは本体を削った分。ふつうの敵は KILL_BASE）。返り値は倍率を掛けた点数
 export function showKillScore(bonuses, base = KILL_BASE) {
     bank();
-    const list = [...bonuses].sort((a, b) => a.add - b.add); // 大きい倍率ほど後に足して、盛り上がりを最後に置く
-    const final = base * (1 + list.reduce((s, b) => s + b.add, 0));
+    const list = [...bonuses].sort((a, b) => (a.mult !== undefined ? 1 : 0) - (b.mult !== undefined ? 1 : 0) || a.add - b.add); // 大きい倍率ほど後に足して、盛り上がりを最後に置く
+    const final = base * (1 + list.reduce((s, b) => s + (b.mult === undefined ? b.add : 0), 0))
+        * list.reduce((product, b) => product * (b.mult ?? 1), 1);
     pending = final;
     rowsEl.replaceChildren();
     el.classList.remove('slam', 'out');
@@ -82,9 +85,12 @@ export function showKillScore(bonuses, base = KILL_BASE) {
     queue = list.map((b, i) => ({
         at: FIRST_STEP + i * STEP_GAP,
         run: () => {
-            mult += b.add;
+            if (b.mult !== undefined)
+                mult *= b.mult;
+            else
+                mult += b.add;
             addRow(b);
-            multText.textContent = `×${mult.toFixed(1)}`;
+            multText.textContent = `×${Number(mult.toFixed(2))}`;
             restart(multEl, 'punch');
             restart(ptsEl, 'bump');
             ptsTarget = base * mult;

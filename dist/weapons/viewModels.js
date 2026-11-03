@@ -5,6 +5,7 @@ import { AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js';
 import { BOW_VIEW_MODEL_POS, createHeldBow } from './bow.js';
 import { BAT_VIEW_MODEL_POS, createHeldBat } from './bat.js';
 import { SPEAR_VIEW_MODEL_POS, createHeldSpear } from './spear.js';
+import { RIFLE_VIEW_MODEL_POS, createHeldRifle } from './rifle.js';
 import { REST_TIP, createKunai } from './kunai.js';
 import { createRevolver } from './revolver.js';
 import { SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './sword.js';
@@ -187,6 +188,10 @@ export const batRest = heldBat.userData.rest;
 export const batModel = heldBat.userData.bat;
 batViewModel.add(heldBat);
 batViewModel.visible = false;
+// 形の飾りが付くスキン（補修など）を着せる
+const dressBat = () => dressModel(batModel, skinOf('bat'), skinMats.bat);
+dressBat();
+onSkinChange((id) => id === 'bat' && dressBat());
 // ---- 武器: 槍 ----
 // 刃と金具はクナイと同じ黒光り、柄は剣の柄の色、巻きは鎖鎌の巻きと同じ暗い色。右手で上の巻きを握る
 export const spearViewModel = new THREE.Group();
@@ -201,10 +206,24 @@ spearViewModel.visible = false;
 const dressSpear = () => dressModel(spearModel, skinOf('spear'), skinMats.spear);
 dressSpear();
 onSkinChange((id) => id === 'spear' && dressSpear());
+// ---- 武器: スナイパーライフル ----
+// 銃身と機関部はクナイと同じ黒光り、銃床と先台は鎖鎌の巻きと同じ暗い色、スコープの台座は剣の柄の色。右手で握りを持つ
+export const rifleViewModel = new THREE.Group();
+rifleViewModel.position.copy(RIFLE_VIEW_MODEL_POS);
+camera.add(rifleViewModel);
+export const heldRifle = createHeldRifle({ metal: skinMats.rifle.metal, stock: skinMats.rifle.wrap, trim: skinMats.rifle.trim, lens: weaponMats.bore });
+export const rifleRest = heldRifle.userData.rest;
+export const rifleModel = heldRifle.userData.rifle;
+export const rifleSpin = heldRifle.userData.spin;
+rifleViewModel.add(heldRifle);
+rifleViewModel.visible = false;
+const dressRifle = () => dressModel(rifleModel, skinOf('rifle'), skinMats.rifle);
+dressRifle();
+onSkinChange((id) => id === 'rifle' && dressRifle());
 // ---- 手元の武器に乗る影 ----
 // 箱や天井の下に入ったら、手元の武器にも影が乗るようにする（武器からは影を落とさない）。
 // スキンで飾りの形が付け替わるので、替えるたびに付け直す。後から部品を足したところ（つがえた矢など）でも呼ぶ
-const viewModelRoots = [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, bowViewModel, batViewModel, spearViewModel];
+const viewModelRoots = [viewModel, leftViewModel, gunViewModel, swordViewModel, sickleViewModel, axeViewModel, bowViewModel, batViewModel, spearViewModel, rifleViewModel];
 export const receiveShadows = () => {
     for (const root of viewModelRoots) {
         root.traverse((o) => {

@@ -25,9 +25,9 @@ import type { Danger } from '../world/liftTraps.js';
 
 // ---- ボス ----
 // 廃墟のステージに立つ機体（体は enemy/mech.ts）。両腕・両脚の 4 つの部位と、胴体の中のボット（本体）に体力がある。
-// 部位は削りきると故障する（動けはする）。4 つとも故障すると動けなくなり、そこで初めて本体にダメージが通る。これを繰り返す。
-// 故障しても攻撃はできるが性能が落ちる（脚: 歩き・突進が遅く、踏みつけの構えが長く、跳ぶのが低い / 腕: 砲を垂らし、弾が散らばり、数が減る）。4 つとも故障するとしゃがみ込んで（down）、
-// その間は本体（腰から上）にダメージが通る。故障した部位には、近接は当たらず、ほかの攻撃は当たっても何も起きない。しばらくすると部位を直して起き上がる（rise）。本体を削りきると止まる（dead）。
+// 部位は削りきると故障する。4 つとも故障すると本体にダメージが通るようになる。故障した部位は直らない。
+// 故障しても攻撃はできるが性能が落ちる（脚: 歩き・突進が遅く、踏みつけの構えが長く、跳ぶのが低い / 腕: 弾が散らばり、数が減る）。4 つとも故障しても動きと攻撃を続ける。
+// 故障した部位には、近接は当たらず、ほかの攻撃は当たっても何も起きない。本体を削りきると止まる（dead）。
 // 攻撃: 踏みつけ（足もとまで寄られたら、近い方の脚を高く上げて踏み下ろす。床が波打って衝撃波が広がる）。
 // 銃（離れていれば、砲口を赤く光らせて構えてから、両腕の砲で交互に連射する。弾はパリィで撃った砲へ弾き返せる）。
 // 連射の 1 発おきに動く先を読む偏差射撃と、砲を横へ振って弾の壁を作る薙ぎ払いがある。
@@ -79,8 +79,6 @@ const BODY_HALF = 1.8; // 当たり判定の箱の半幅（向きによらず囲
 const BODY_TOP = 6.6;
 const TWIST_MAX = 0.6; // 胴体を脚に対してひねる限り (rad)
 const BOUNDS_MARGIN = 5; // ステージの端からこれだけ内側までしか歩かない
-const DOWN_TIME = 7; // しゃがみ込んでいる時間
-const RISE_TIME = 0.9; // 起き上がるのにかける時間
 const DOWN_HIP = -1.9; // しゃがみ込んだときに腰を下げる量（窓が跳べば届く高さまで下がる）
 const DEAD_HIP = -2.1;
 const DOWN_LEAN = 0.5; // しゃがみ込んだときに胴体を余分に前へ倒す (rad)
@@ -886,16 +884,6 @@ export function updateBoss(dt: number) {
 
   // ---- 段の移り変わり ----
   boss.phaseT += dt;
-  if (boss.phase === 'down' && boss.phaseT >= DOWN_TIME) {
-    // 部位を直して起き上がる
-    for (const k of BOSS_LIMBS) boss.limbs[k] = { hp: boss.limbMax, broken: false };
-    setPhase('rise');
-    const snd = soundAt();
-    sfx.playBossPowerUp(RISE_TIME, snd.volume, snd.pan);
-  } else if (boss.phase === 'rise' && boss.phaseT >= RISE_TIME) {
-    setPhase('walk');
-    boss.ult.pending = true; // 起き上がったら必殺技を出す
-  }
   if (boss.phase !== 'walk' && boss.stomp.leg >= 0) endStomp(true); // 踏む途中でしゃがみ込んだら、足を下ろす
   if (boss.phase !== 'walk' && boss.dash.stage >= 0) endDash();
   if (boss.phase !== 'walk' && boss.jump.stage >= 0) abortJump(); // 跳んでいる途中でしゃがみ込んだら、その場で落ちる
@@ -3623,7 +3611,7 @@ function setPhase(p: BossPhase) {
 }
 
 // ---- ダメージ ----
-// limb: 部位を削った / break: 部位が故障した / down: 4 つ目が故障してしゃがみ込んだ / idle: 故障済みの部位で何も起きない /
+// limb: 部位を削った / break: 部位が故障した / down: 4 つ目が故障した / idle: 故障済みの部位で何も起きない /
 // locked: 部位が残っていて本体に通らない / core: 本体を削った / kill: 本体を削りきった
 export type BossHitResult = 'limb' | 'break' | 'down' | 'idle' | 'locked' | 'core' | 'kill';
 export function damageBoss(part: BossPart, amount: number): BossHitResult {
@@ -3640,10 +3628,12 @@ export function damageBoss(part: BossPart, amount: number): BossHitResult {
   }
   return result;
 }
+const allLimbsBroken = () => BOSS_LIMBS.every((k) => boss.limbs[k].broken);
+
 function damageResult(part: BossPart, amount: number): BossHitResult {
   if (boss.phase === 'dead') return 'idle';
-  // しゃがみ込んでいる間は、本体（腰から上）に当てたときだけ通す（腕・脚は 4 つとも故障している）
-  if (boss.phase === 'down') {
+  // 腕・脚が 4 つとも故障している間は、本体（腰から上）に当てたときだけ通す
+  if (allLimbsBroken()) {
     if (part !== 'core') return 'idle';
     boss.coreHp -= amount;
     if (boss.coreHp > 0) {
@@ -3665,11 +3655,7 @@ function damageResult(part: BossPart, amount: number): BossHitResult {
   if (limb.hp > 0) return 'limb';
   limb.hp = 0;
   limb.broken = true;
-  if (BOSS_LIMBS.every((k) => boss.limbs[k].broken)) {
-    setPhase('down');
-    boss.speed = 0;
-    return 'down';
-  }
+  if (allLimbsBroken()) return 'down';
   return 'break';
 }
 
@@ -3693,6 +3679,8 @@ export function raycastBoss(origin: THREE.Vector3, dir: THREE.Vector3, far: numb
 const MELEE_RAY_EXTRA = 1.2; // 視線の先を調べる距離を、届く距離より延ばす分（機体は大きいので、表面までの距離で測る）
 const MELEE_POINT_RADIUS = 0.6; // 目印から表面までのおおよその距離
 const MELEE_HEIGHT = 2.6; // 足もとからこの高さまでの目印に届く
+const MELEE_CORE_HEIGHT = 5.4; // 立ち姿勢の目印は 3.85 + 1.4*cos(0.2) - 0.8*sin(0.2) ≈ 5.06。動きの余裕を含める
+const MELEE_CORE_RADIUS = 1.2; // 全四肢故障時は真下や胴体のすぐ近くからも本体に届く
 const markers: { obj: THREE.Object3D; offset: THREE.Vector3 }[] = [];
 let markersOf: MechRig | null = null;
 // 部位の目印: すね・かかとの骨・足・太ももの前、砲の先、胴体の窓（骨の座標でのずれ）。近接の当たりと、一閃のロックオンの的に使う
@@ -3716,10 +3704,10 @@ export function bossTargetCount() {
 }
 export const bossTargetAt = (i: number, out: THREE.Vector3) => markers[i].obj.localToWorld(out.copy(markers[i].offset));
 export const bossTargetPart = (i: number) => partOf(markers[i].obj);
-// その部位に当てればダメージが通るか（しゃがみ込んでいる間は本体だけ、そうでなければ故障していない腕・脚だけ）
+// その部位に当てればダメージが通るか（全て故障したら本体だけ、そうでなければ故障していない腕・脚だけ）
 export function bossPartOpen(part: BossPart) {
   if (!boss.rig || boss.phase === 'dead') return false;
-  if (boss.phase === 'down') return part === 'core';
+  if (allLimbsBroken()) return part === 'core';
   return part !== 'core' && !boss.limbs[part].broken;
 }
 export const bossAlive = () => !!boss.rig && boss.phase !== 'dead';
@@ -3737,12 +3725,15 @@ export function bossMeleeTarget(reach: number, angle: number, eye: THREE.Vector3
   flatLook.set(look.x, 0, look.z).normalize();
   let best: { point: THREE.Vector3; part: BossPart } | null = null;
   let bestD = Infinity;
+  const coreOpen = allLimbsBroken();
   for (const m of markers) {
-    if (!hittable(partOf(m.obj))) continue;
+    const part = partOf(m.obj);
+    if (!hittable(part)) continue;
+    const openCore = coreOpen && part === 'core';
     m.obj.localToWorld(mark.copy(m.offset));
-    if (mark.y - position.y > MELEE_HEIGHT || mark.y < position.y - 1) continue;
+    if (mark.y - position.y > (openCore ? MELEE_CORE_HEIGHT : MELEE_HEIGHT) || mark.y < position.y - 1) continue;
     toMark.set(mark.x - position.x, 0, mark.z - position.z);
-    const d = toMark.length() - MELEE_POINT_RADIUS;
+    const d = toMark.length() - (openCore ? MELEE_CORE_RADIUS : MELEE_POINT_RADIUS);
     if (d > reach || d >= bestD) continue;
     if (d > 0.3 && flatLook.lengthSq() > 0 && flatLook.angleTo(toMark.normalize()) > angle) continue;
     bestD = d;

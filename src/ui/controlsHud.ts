@@ -7,8 +7,9 @@ interface ControlBind { input: ControlInput; hold?: boolean }
 // padKeys: パッドだけ押し方が違うとき
 const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; padKeys?: ControlBind[] }[]> = {
   kunai: [
-    { label: '攻撃', keys: [{ input: 'attack' }] },
-    { label: '溜め投げ', keys: [{ input: 'aim', hold: true }] },
+    { label: '投げる / 連射', keys: [{ input: 'attack' }] },
+    { label: '呼び戻す（R またはホイール）', keys: [{ input: 'reload' }], padKeys: [{ input: 'reload' }] },
+    { label: '刺さったクナイに照準でグラップル（押している間）', keys: [{ input: 'aim', hold: true }], padKeys: [{ input: 'aim', hold: true }] },
   ],
   handgun: [
     { label: '射撃', keys: [{ input: 'attack' }] },
@@ -46,6 +47,12 @@ const WEAPON_CONTROLS: Record<WeaponId, { label: string; keys: ControlBind[]; pa
     { label: '突進突き', keys: [{ input: 'aim', hold: true }, { input: 'attack' }] },
     { label: '投げる / 呼び戻す', keys: [{ input: 'wheel' }], padKeys: [{ input: 'dash' }, { input: 'aim' }] },
   ],
+  rifle: [
+    { label: '撃つ', keys: [{ input: 'attack' }] },
+    { label: 'スコープを覗く', keys: [{ input: 'aim', hold: true }] },
+    { label: 'リロード（1 発ずつ）', keys: [{ input: 'reload' }] },
+    { label: 'スピンコック乱射', keys: [{ input: 'wheel', hold: true }], padKeys: [{ input: 'dash' }, { input: 'aim', hold: true }] },
+  ],
 };
 // マウス: 押すボタンの側を塗る
 const mouseIcon = (side: 'left' | 'right') =>
@@ -61,13 +68,13 @@ const keyIcon = (label: string) =>
 const triggerIcon = (label: string) =>
   `<svg viewBox="0 0 30 24"><path class="o" d="M1 23 V9 Q1 1 9 1 H21 Q29 1 29 9 V23 Z"/><text class="t" x="15" y="13">${label}</text></svg>`;
 // パッドの右の 4 ボタン: 押す位置だけ塗る（機種で名前が違っても位置は同じ）
-const faceIcon = (pos: 'left' | 'down' | 'right' | 'up') => {
+export const faceIcon = (pos: 'left' | 'down' | 'right' | 'up') => {
   const at = { up: [12, 4.5], right: [19.5, 12], down: [12, 19.5], left: [4.5, 12] } as const;
   return `<svg viewBox="0 0 24 24">${(Object.keys(at) as (keyof typeof at)[])
     .map((p) => `<circle class="${p === pos ? 'f' : 'o'}" cx="${at[p][0]}" cy="${at[p][1]}" r="3.6"/>`)
     .join('')}</svg>`;
 };
-const CONTROL_ICONS: Record<ControlInput, [string, string]> = {
+export const CONTROL_ICONS: Record<ControlInput, [string, string]> = {
   attack: [mouseIcon('left'), triggerIcon('ZR')],
   aim: [mouseIcon('right'), triggerIcon('ZL')],
   reload: [keyIcon('R'), faceIcon('left')],

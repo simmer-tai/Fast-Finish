@@ -6,7 +6,7 @@ import { DEG, UP, catmullRom } from '../math.js';
 import { camera, controls, scene } from '../core.js';
 import { REST_TIP, THROW_RANGE, createKunai } from './kunai.js';
 import {
-  COMBO_RESET, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLIDE_UP, THROW_SWISH, type AttackDef, type HitDef, type Pose,
+  COMBO_RESET, KUNAI_THROW, THROW_REDRAW, THROW_RELEASE, DASH_SLASH, GROUND_COMBO, RETURN_SWISH, SLIDE_UP, THROW_SWISH, type AttackDef, type HitDef, type Pose,
 } from './kunaiAttacks.js';
 import {
   LEFT_FAN_ANGLES, attackPivot, kunai, leftFanPivots, leftKunaiRest, leftKunais, leftViewModel, spinPivot, viewModel, kunaiWeaponMats, skinMats,
@@ -16,6 +16,7 @@ import { axeState } from './axeCombat.js';
 import { swordState } from './swordCombat.js';
 import { batState } from './batCombat.js';
 import { spearState } from './spearCombat.js';
+import { rifleState } from './rifleCombat.js';
 import { SLIDE_SPIN_SWISH, TAU, gunState } from './handgunCombat.js';
 import { sickleState } from './sickleCombat.js';
 import {
@@ -25,17 +26,41 @@ import { addGlow } from '../fx/glow.js';
 import { hitWithArcs } from '../fx/arcs.js';
 import { en, enemies, hitDir, hitPoint, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow, castWorld } from '../world/raycast.js';
-import { player, position, velocity } from '../player/state.js';
+import { player, position, velocity, wish } from '../player/state.js';
+import { PLAYER_GRAVITY } from '../player/config.js';
 import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
-import { keys } from '../input.js';
+import { keys, pressed } from '../input.js';
 import { hooks } from '../game/hooks.js';
 import { tryWallHit } from './wallHit.js';
+import { raycastBoss } from '../enemy/boss.js';
+
+const GRAPPLE_AIM_CONE = 12 * (Math.PI / 180); // 照準からこの角度以内なら狙ったものとして選ぶ
+const GRAPPLE_VIEW_CONE = 50 * (Math.PI / 180); // 狙いが無くても、この角度以内に見えていれば最後に投げたものへ掛ける
+const GRAPPLE_ACCEL = 45;
+const GRAPPLE_MAX_SPEED = 24;
+const GRAPPLE_RAMP_TIME = 0.15;
+const GRAPPLE_LATERAL_DAMPING = 2.5;
+const GRAPPLE_OUTWARD_DAMPING = 6;
+const GRAPPLE_GRAVITY_CANCEL = 0.7;
+const GRAPPLE_STEER_ACCEL = 10;
+const GRAPPLE_SLOW_DISTANCE = 3; // 外れる距離と揃えて、手前で減速せずに引き寄せた勢いのまま放す
+const GRAPPLE_APPROACH_SPEED = 5;
+const GRAPPLE_APPROACH_DAMPING = 10;
+const GRAPPLE_RELEASE_DISTANCE = 3;
+const GRAPPLE_LAUNCH_SPEED = 3;
+const GRAPPLE_LEDGE_SPEED = 4;
+const GRAPPLE_MAX_FOV = 6;
+const GRAPPLE_FOV_DAMPING = 10;
 
 // ---- クナイ ----
 // 右手の近接攻撃と斬撃の軌跡・左手の投擲・スライディング中の回し
 // 本体からも読み書きする値
 export const kunaiState = {
+  ammo: 6,
+  grappleTarget: null as Thrown | null,
+  grapple: null as Thrown | null,
+  grappleHeld: false, // グラップルのボタンを押していて、まだ掛かっていない（刺さったら掛ける）
   throwPunch: 0, // 投げた左手を前へ突き出す量（1 から 0 へ戻る）
   charging: false,
   reloading: false,
@@ -56,6 +81,7 @@ export const kunaiState = {
 export const THROW_STAGE_TIME = 0.4; // この時間ごとに投げる本数が 1 本増える（最大で左手の 3 本）
 export const THROW_ORDER = [[1], [0, 2], [1, 0, 2]]; // 本数ごとに、左手のどのクナイをどの順で放つか
 export const THROW_SPEED = 55;
+export const KUNAI_AMMO = 6;
 export const THROW_STAGGER = 0.035; // 1 本ずつずらして放つ間隔
 export const THROW_RELOAD = 0.45; // 投げ終えてから左手に新しいクナイが戻るまで
 export const MISS_MARGIN = 0.05; // 狙った所を過ぎてもこの時間何にも当たらなければ引き返す
@@ -74,10 +100,11 @@ export const HOMING_TURN = 3; // 曲がる速さの上限 (rad/s)。55 m/s な�
 export const HOMING_GIVE_UP = 60 * (Math.PI / 180); // 狙いがこれ以上横や後ろへ外れたら追うのをやめる
 // 数本が続けて当たるたびに時間を止めるとカクつくので、投擲ではヒットストップを使わない
 export const THROW_HIT: HitDef = { kick: [-1.5, 0, 0], knock: 140, hitStop: 0, fx: 0.7 };
+export const RECALL_HITS: HitDef[] = Array.from({ length: KUNAI_AMMO }, (_, i) => ({ ...THROW_HIT, dmg: 0.7 * (i + 1), knock: 140 * (i + 1) }));
 // 投げたクナイが敵に刺さったら、世界（敵・敵の弾・破片）の時間だけ一瞬遅くする。プレイヤーはそのまま動ける
 export const WORLD_SLOW_SCALE = 0.25;
 export const WORLD_SLOW_HOLD = 0.3; // この間は遅いまま
-export const WORLD_SLOW_RELEASE = 0.2; // この時間をかけて元の速さへ戻す
+export const WORLD_SLOW_RELEASE = 0; // スローを解除する時間
 export const WORLD_SLOW_COOLDOWN = 0.5; // 明けてからこの間は、刺さってもかけ直さない
 export const WORLD_SLOW_RING_TIME = 0.3; // 入った瞬間の歪みの輪が画面の端まで広がる時間
 
@@ -96,6 +123,7 @@ export const FLIGHT_TRAIL_WIDTH = 0.02; // 飛んでいるクナイの軌跡の�
 // 振り音はスキン（爪など）が替えていればそちら
 const kunaiSwish = () => skinOf('kunai').swish ?? 'kunai';
 let throwClock = 0;
+let fireCooldown = 0;
 let chargeTime = 0;
 let chargeStage = 0;
 let fanSpin = 0; // 左手のクナイを輪を中心に回している角度
@@ -293,6 +321,11 @@ export interface Thrown {
   spin: number;
   trail: Ribbon | null;
   target: Enemy | null; // ホーミングで追う敵
+  stuckEnemy: Enemy | null;
+  worldAnchor: boolean;
+  recallHits: Set<Enemy>;
+  recallBoss: Set<string>;
+  damagingReturn: boolean;
 }
 export const thrown: Thrown[] = [];
 // 投げるクナイは作っておいて使い回す。スキンの飾り（爪など）を着せたままにする
@@ -410,12 +443,10 @@ export function sampleFlightTrail(t: Thrown, at: THREE.Vector3, dir: THREE.Vecto
   t.trail.push(flightA, flightB, throwClock);
 }
 
-export function launchKunai(index: number) {
-  const hand = leftKunais[index];
-  hand.updateWorldMatrix(true, false);
-  throwFrom.setFromMatrixPosition(hand.matrixWorld);
-  hand.visible = false;
-  spinRibbons[index].cut();
+export function launchKunai() {
+  // 右手のクナイの位置から放つ
+  kunai.updateWorldMatrix(true, false);
+  throwFrom.setFromMatrixPosition(kunai.matrixWorld);
 
   // 1 本ずつ、放つ瞬間の照準の先へまっすぐ飛ばす（重力も回転もなし）
   findThrowAim(throwAim);
@@ -430,12 +461,11 @@ export function launchKunai(index: number) {
   let reach = throwFrom.distanceTo(throwAim);
   if (target) reach = Math.max(reach, throwFrom.distanceTo(enemyChest(target, homingWant)) * 1.2);
   const missAt = Math.min(MISS_RETURN_MAX, reach / THROW_SPEED + MISS_MARGIN);
-  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target };
+  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target, stuckEnemy: null, worldAnchor: false, recallHits: new Set(), recallBoss: new Set(), damagingReturn: false };
   orientThrown(t, throwDir);
   sampleFlightTrail(t, throwFrom, throwDir);
   thrown.push(t);
 
-  kunaiState.throwPunch = 1;
   kickVel.x += 1.2 * DEG * 22;
   kickVel.y += -0.6 * DEG * 22;
   sfx.playThrow(THROW_SWISH, kunaiSwish());
@@ -447,19 +477,30 @@ export function orientThrown(t: Thrown, dir: THREE.Vector3) {
 }
 
 export function removeThrown(i: number) {
+  if (kunaiState.grappleTarget === thrown[i]) kunaiState.grappleTarget = null;
   thrown[i].mesh.removeFromParent();
+  thrown[i].mesh.visible = true;
   thrownSpare.push(thrown[i].mesh);
   thrown[i].trail?.dispose();
   thrown.splice(i, 1);
 }
 
+// ステージに入り直したときなど、投げたクナイを全部片付けて手持ちへ戻す
+export function clearThrown() {
+  releaseKunaiGrapple();
+  for (let i = thrown.length - 1; i >= 0; i--) removeThrown(i);
+}
+
 export function stickThrown(t: Thrown, at: THREE.Vector3, onDummy: Enemy | null, dir: THREE.Vector3) {
   t.phase = 'stuck';
+  t.worldAnchor = !onDummy;
+  t.stuckEnemy = null;
   t.age = 0;
   t.mesh.position.copy(at).addScaledVector(dir, STICK_DEPTH - BLADE_TIP);
   orientThrown(t, dir);
   sampleFlightTrail(t, at, dir);
   if (onDummy) {
+    t.stuckEnemy = onDummy;
     setEn(onDummy);
     // 敵に刺さったものは、刺さった部位の骨に付けて、よろめきや震えに一緒についていく
     (castHit.part?.parent ?? en.shake).attach(t.mesh);
@@ -468,7 +509,6 @@ export function stickThrown(t: Thrown, at: THREE.Vector3, onDummy: Enemy | null,
     hitDir.normalize();
     hitWithArcs(skinOf('kunai'), THROW_HIT.fx ?? 1, dir, () => hooks.applyHit(THROW_HIT, at, 'throw'), at);
     skinFx.flare = 1; // スキンの飾りを光らせる
-    startWorldSlow();
   } else {
     sfx.playStick(); // 壁や地面に刺さった「カッ」
   }
@@ -478,20 +518,16 @@ let worldSlowAge = Infinity; // 世界のスローをかけてからの時間（
 
 // 遅いままの間に刺さったら、残りを最大へ戻すだけ（時間は足さない）。戻りかけと明けた直後は何もしない
 export function startWorldSlow() {
-  if (worldSlowAge < WORLD_SLOW_HOLD) {
-    worldSlowAge = 0;
-  } else if (worldSlowAge >= WORLD_SLOW_HOLD + WORLD_SLOW_RELEASE + WORLD_SLOW_COOLDOWN) {
-    worldSlowAge = 0;
-    kunaiState.worldSlowRingAge = 0; // 輪と音は、入ったときだけ（かけ直しでは出さない）
-    sfx.playWorldSlow(WORLD_SLOW_HOLD, WORLD_SLOW_RELEASE);
-  }
+  worldSlowAge = 0;
+  kunaiState.worldSlowRingAge = 0;
+  sfx.playWorldSlow(WORLD_SLOW_HOLD, WORLD_SLOW_RELEASE);
 }
 
 // 時間を進め、世界の時間に掛ける速さを返す
 export function worldSlowFactor(dt: number) {
   worldSlowAge += dt;
   kunaiState.worldSlowRingAge += dt;
-  const u = THREE.MathUtils.clamp((worldSlowAge - WORLD_SLOW_HOLD) / WORLD_SLOW_RELEASE, 0, 1);
+  const u = worldSlowAge < WORLD_SLOW_HOLD ? 0 : 1;
   return THREE.MathUtils.lerp(WORLD_SLOW_SCALE, 1, u * u);
 }
 
@@ -503,6 +539,7 @@ export function startReturn(t: Thrown) {
     t.vel.set(0, 0, 0);
   }
   t.phase = 'back';
+  t.mesh.visible = true;
   t.age = 0;
   if (!t.trail) {
     t.trail = newFlightTrail();
@@ -515,6 +552,179 @@ export function startReturn(t: Thrown) {
 export const catchPoint = new THREE.Vector3();
 export const returnWant = new THREE.Vector3();
 export const backDir = new THREE.Vector3();
+const recallRay = new THREE.Raycaster();
+const recallAt = new THREE.Vector3();
+const targetPoint = new THREE.Vector3();
+const targetDir = new THREE.Vector3();
+const targetAim = new THREE.Vector3();
+
+export function detachEnemyKunai(enemy: Enemy) {
+  for (const t of thrown) if (t.phase === 'stuck' && t.stuckEnemy === enemy) {
+    scene.attach(t.mesh);
+    t.stuckEnemy = null;
+  }
+}
+
+export function recallKunai() {
+  if (!kunaiReady()) return;
+  const counts = new Map<Enemy, number>();
+  for (const t of thrown) if (t.phase === 'stuck' && t.stuckEnemy?.alive)
+    counts.set(t.stuckEnemy, (counts.get(t.stuckEnemy) ?? 0) + 1);
+  for (const t of thrown) {
+    if (t.phase === 'back') {
+      t.damagingReturn = true; t.recallHits.clear(); t.recallBoss.clear();
+      continue;
+    }
+    t.recallHits.clear();
+    t.recallBoss.clear();
+    const e = t.phase === 'stuck' ? t.stuckEnemy : null;
+    t.mesh.getWorldPosition(recallAt);
+    startReturn(t);
+    t.damagingReturn = true;
+    if (e?.alive) {
+      t.recallHits.add(e);
+      setEn(e);
+      hitDir.subVectors(position, recallAt).setY(0).normalize();
+      hooks.applyHit(RECALL_HITS[(counts.get(e) ?? 1) - 1], recallAt, 'throw');
+    }
+    t.stuckEnemy = null;
+  }
+}
+
+function updateGrappleTarget() {
+  kunaiState.grappleTarget = null;
+  if (!kunaiReady()) return;
+  camera.getWorldDirection(targetAim);
+  // 照準の近く（GRAPPLE_AIM_CONE 以内）にあればいちばん近いもの。なければ、視界に入っている中で最後に投げたもの
+  let best = GRAPPLE_AIM_CONE;
+  let newest: Thrown | null = null;
+  for (const t of thrown) {
+    if (t.phase !== 'stuck' || !t.worldAnchor) continue;
+    t.mesh.getWorldPosition(targetPoint);
+    targetDir.subVectors(targetPoint, camera.position);
+    const distance = targetDir.length();
+    if (distance < 1e-5) continue;
+    targetDir.divideScalar(distance);
+    const angle = targetDir.angleTo(targetAim);
+    if (angle > GRAPPLE_VIEW_CONE || castWorld(camera.position, targetDir, distance) < distance - 0.25) continue;
+    newest = t; // thrown は投げた順に並ぶ
+    if (angle < best) {
+      best = angle;
+      kunaiState.grappleTarget = t;
+    }
+  }
+  kunaiState.grappleTarget ??= newest;
+}
+
+const grappleLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: 0xdedede, depthTest: false }),
+);
+grappleLine.visible = false;
+grappleLine.renderOrder = 999;
+scene.add(grappleLine);
+let grappleTime = 0;
+let grappleFov = 0;
+
+export function releaseKunaiGrapple() {
+  kunaiState.grappleHeld = false; // 外れたら押し直すまで掛け直さない
+  kunaiState.grapple = null;
+  grappleLine.visible = false;
+}
+
+export function toggleKunaiGrapple() {
+  if (!controls.isLocked || game.unarmed || !kunaiReady()) return;
+  if (kunaiState.grapple) { releaseKunaiGrapple(); return; }
+  updateGrappleTarget();
+  const t = kunaiState.grappleTarget;
+  if (!t) return;
+  kunaiState.grapple = t;
+  grappleTime = 0;
+  grappleFov = 0;
+  if (player.onGround) {
+    player.onGround = false;
+    velocity.y = GRAPPLE_LAUNCH_SPEED;
+  }
+  player.dashTime = 0;
+  player.wallRunning = false;
+  player.sliding = false;
+}
+
+// Gravity is applied by the player update before the grapple forces.
+export function updateKunaiGrapple(dt: number) {
+  const t = kunaiState.grapple;
+  if (!t) return;
+  if (!controls.isLocked || game.unarmed || !kunaiReady() || t.phase !== 'stuck' || !t.worldAnchor || pressed.has('Space')) {
+    releaseKunaiGrapple();
+    return;
+  }
+  t.mesh.getWorldPosition(targetPoint);
+  targetDir.set(targetPoint.x - position.x, targetPoint.y - (position.y + player.eyeHeight * 0.5), targetPoint.z - position.z);
+  const distance = targetDir.length();
+  if (distance < GRAPPLE_RELEASE_DISTANCE) {
+    if (targetPoint.y > position.y) velocity.y = Math.max(velocity.y, GRAPPLE_LEDGE_SPEED);
+    releaseKunaiGrapple();
+    return;
+  }
+  targetDir.divideScalar(distance);
+  grappleTime += dt;
+  velocity.y += PLAYER_GRAVITY * GRAPPLE_GRAVITY_CANCEL * dt;
+  const inward = velocity.dot(targetDir);
+  const lateralDecay = Math.exp(-GRAPPLE_LATERAL_DAMPING * dt);
+  velocity.multiplyScalar(lateralDecay).addScaledVector(targetDir, inward * (1 - lateralDecay));
+  if (inward < 0) velocity.addScaledVector(targetDir, -inward * (1 - Math.exp(-GRAPPLE_OUTWARD_DAMPING * dt)));
+  const steerInward = wish.dot(targetDir);
+  velocity.addScaledVector(wish, GRAPPLE_STEER_ACCEL * dt)
+    .addScaledVector(targetDir, -steerInward * GRAPPLE_STEER_ACCEL * dt);
+  if (velocity.dot(targetDir) < GRAPPLE_MAX_SPEED) {
+    const ramp = easeOutCubic(Math.min(grappleTime / GRAPPLE_RAMP_TIME, 1));
+    const proximity = Math.min(distance / GRAPPLE_SLOW_DISTANCE, 1);
+    velocity.addScaledVector(targetDir, GRAPPLE_ACCEL * ramp * proximity * dt);
+  }
+  if (distance < GRAPPLE_SLOW_DISTANCE) {
+    const excess = velocity.dot(targetDir) - distance * GRAPPLE_APPROACH_SPEED;
+    if (excess > 0) velocity.addScaledVector(targetDir, -excess * (1 - Math.exp(-GRAPPLE_APPROACH_DAMPING * dt)));
+  }
+  const targetFov = GRAPPLE_MAX_FOV * Math.min(velocity.length() / GRAPPLE_MAX_SPEED, 1);
+  grappleFov += (targetFov - grappleFov) * (1 - Math.exp(-GRAPPLE_FOV_DAMPING * dt));
+  game.fovKick = Math.max(game.fovKick, grappleFov);
+  player.wallRunning = false;
+  player.sliding = false;
+}
+
+function updateKunaiGrappleLine() {
+  const t = kunaiState.grapple;
+  grappleLine.visible = !!t && t.phase === 'stuck';
+  if (!grappleLine.visible || !t) return;
+  leftKunaiRest.getWorldPosition(catchPoint);
+  t.mesh.getWorldPosition(targetPoint);
+  const points = grappleLine.geometry.attributes.position as THREE.BufferAttribute;
+  points.setXYZ(0, catchPoint.x, catchPoint.y, catchPoint.z);
+  points.setXYZ(1, targetPoint.x, targetPoint.y, targetPoint.z);
+  points.needsUpdate = true;
+  grappleLine.geometry.computeBoundingSphere();
+}
+
+function hitReturnPath(t: Thrown, origin: THREE.Vector3, dir: THREE.Vector3, distance: number) {
+  if (!t.damagingReturn || distance <= 0) return;
+  recallRay.set(origin, dir);
+  recallRay.far = distance;
+  for (const e of enemies) {
+    if (!e.alive || t.recallHits.has(e)) continue;
+    const hit = recallRay.intersectObjects(e.parts, false)[0];
+    if (!hit) continue;
+    t.recallHits.add(e);
+    setEn(e);
+    hitDir.set(dir.x, 0, dir.z).normalize();
+    hooks.applyHit(RECALL_HITS[0], hit.point, 'throw');
+  }
+  const bossHit = raycastBoss(origin, dir, distance);
+  if (bossHit && !t.recallBoss.has('boss')) {
+    t.recallBoss.add('boss');
+    recallAt.copy(origin).addScaledVector(dir, bossHit.dist);
+    hooks.hitBoss(RECALL_HITS[0], recallAt, 'throw', bossHit.part, dir);
+  }
+}
 export function updateReturn(t: Thrown, dt: number): boolean {
   leftKunaiRest.getWorldPosition(catchPoint);
   returnWant.subVectors(catchPoint, t.mesh.position);
@@ -524,6 +734,8 @@ export function updateReturn(t: Thrown, dt: number): boolean {
   returnWant.setLength(speed);
   t.vel.lerp(returnWant, Math.min(1, dt * RETURN_TURN));
   const step = t.vel.length() * dt;
+  throwDir.copy(t.vel).normalize();
+  hitReturnPath(t, t.mesh.position, throwDir, Math.min(step, dist));
   if (dist < CATCH_DIST || step >= dist) {
     playRing(1.9, 0.3, 0.04); // 受け止めた「チャキッ」
     return true;
@@ -551,10 +763,14 @@ export function updateThrown(dt: number) {
       }
     }
     if (t.phase === 'stuck') {
-      if (t.age > STUCK_HOLD) startReturn(t);
+      if (t.stuckEnemy && !t.stuckEnemy.alive) { scene.attach(t.mesh); t.stuckEnemy = null; }
+      continue; // 呼び戻すまでずっと刺さったまま
+    }
+    if (t.phase === 'fly' && t.age > t.missAt) {
+      t.damagingReturn = false;
+      startReturn(t);
       continue;
     }
-    if (t.phase === 'fly' && t.age > t.missAt) startReturn(t);
     if (t.phase === 'back') {
       if (updateReturn(t, dt)) removeThrown(i);
       continue;
@@ -570,7 +786,10 @@ export function updateThrown(dt: number) {
         const boss = castHit.boss;
         hitWithArcs(skinOf('kunai'), THROW_HIT.fx ?? 1, throwDir, () => hooks.hitBoss(THROW_HIT, castHit.point, 'throw', boss, throwDir), castHit.point);
         skinFx.flare = 1;
-        startReturn(t);
+        t.phase = 'stuck';
+        t.worldAnchor = false;
+        t.age = 0;
+        t.vel.set(0, 0, 0);
         continue;
       }
       stickPoint.copy(castHit.point);
@@ -584,78 +803,113 @@ export function updateThrown(dt: number) {
 }
 
 // ---- 投擲の毎フレームの処理（左手のクナイ） ----
+let throwMotion = Infinity; // 投げの動きを始めてからの時間（動いていないときは Infinity）
+let released = true;
+let redrawGrip = true;
+export const throwPosing = () => throwMotion < KUNAI_THROW.duration;
 export function updateThrow(dt: number) {
   throwClock += dt;
-
-  if (kunaiState.charging && !controls.isLocked) cancelCharge();
-  if (game.throwHeld && controls.isLocked && !kunaiState.charging && !kunaiState.reloading && kunaiReady()) {
-    kunaiState.charging = true;
-    chargeTime = 0;
-    chargeStage = 1;
-    fanSpin = 0;
-    fanSpinSpeed = SPIN_SPEED_BASE; // 押した瞬間から 1 段目の速さで回す
-    sfx.playCharge(0);
+  fireCooldown = Math.max(0, fireCooldown - dt);
+  updateGrappleTarget();
+  if (controls.isLocked && kunaiReady() && game.attackHeld && fireCooldown <= 0 && released && thrown.length < KUNAI_AMMO) {
+    // 投げの動きを始め、振り抜いた瞬間に放す
+    copyPose(fromPose, curPose);
+    throwMotion = 0;
+    released = false;
+    fireCooldown = KUNAI_THROW.duration;
   }
-  if (kunaiState.charging) {
-    chargeTime += dt;
-    const stage = Math.min(THROW_ORDER.length, 1 + Math.floor(chargeTime / THROW_STAGE_TIME));
-    if (stage > chargeStage) {
-      // 1 段溜まるごとに高い金属音と小さな揺れで知らせる
-      chargeStage = stage;
-      sfx.playCharge(stage);
-      hooks.addTrauma(stage === THROW_ORDER.length ? 0.06 : 0.03);
+  if (throwMotion < KUNAI_THROW.duration) {
+    throwMotion += dt;
+    if (!released && throwMotion >= THROW_RELEASE) {
+      released = true;
+      if (thrown.length < KUNAI_AMMO) launchKunai();
     }
-    if (!game.throwHeld) releaseThrow();
+    if (!redrawGrip && throwMotion >= THROW_REDRAW + 0.07) { redrawGrip = true; if (thrown.length < KUNAI_AMMO) playGrip(); }
   }
-
-  // 溜めるほど速く回す。輪が半周するたびに小さく鳴らす
-  spinBlend += ((kunaiState.charging ? 1 : 0) - spinBlend) * Math.min(1, dt * 60);
-  const spinTarget = kunaiState.charging ? SPIN_SPEED_BASE + 10 * (chargeStage - 1) : 0;
-  fanSpinSpeed += (spinTarget - fanSpinSpeed) * Math.min(1, dt * 20);
-  const prevSpin = fanSpin;
-  fanSpin += fanSpinSpeed * dt;
-  if (kunaiState.charging && Math.floor(fanSpin / Math.PI) > Math.floor(prevSpin / Math.PI)) playRing(1.3, 0.25, 0.08);
-  // 回している間は小刻みに震わせる（溜めるほど強く）。軌跡は fanPose から直接取るので震えない
-  const jitter = kunaiState.charging ? spinBlend * SPIN_JITTER * (1 + 0.6 * (chargeStage - 1)) : 0;
-  for (const [i, pivot] of leftFanPivots.entries()) {
-    fanPose(i, fanSpin, pivot.position, pivot.quaternion);
-    if (jitter > 0) {
-      pivot.position.x += (Math.random() * 2 - 1) * jitter;
-      pivot.position.y += (Math.random() * 2 - 1) * jitter;
-      pivot.position.z += (Math.random() * 2 - 1) * jitter;
-    }
-  }
-
-  // 回転の軌跡: 1 フレームで大きく回るので、角度を細かく刻んで弧を滑らかにする
-  const spinning = spinBlend > 0.15 && fanSpinSpeed > 3;
-  const steps = spinning ? Math.max(1, Math.ceil((fanSpin - prevSpin) / SPIN_TRAIL_STEP)) : 0;
-  for (const [i, ribbon] of spinRibbons.entries()) {
-    if (!spinning || !leftKunais[i].visible) {
-      ribbon.cut();
-    } else {
-      for (let s = 1; s <= steps; s++) {
-        const u = s / steps;
-        sampleSpinTrail(i, prevSpin + (fanSpin - prevSpin) * u, throwClock - dt * (1 - u));
-      }
-    }
-    ribbon.update(throwClock);
-  }
-
-  while (pendingThrows.length > 0 && throwClock >= pendingThrows[0].at) {
-    launchKunai(pendingThrows.shift()!.index);
-  }
-
-  if (kunaiState.reloading) {
-    reloadTime -= dt;
-    if (reloadTime <= 0) {
-      // 手を下げている間に新しい 3 本へ持ち替えたことにする
-      kunaiState.reloading = false;
-      fanSpinSpeed = 0;
-      for (const k of leftKunais) k.visible = true;
-    }
-  }
-
+  if (!game.attackHeld) fireCooldown = 0;
+  // 放してから次の 1 本が現れるまでと、手持ちが尽きている間は右手を空にする
+  const handEmpty = (released && throwMotion < THROW_REDRAW) || thrown.length >= KUNAI_AMMO;
+  kunai.visible = !handEmpty;
+  if (throwMotion < THROW_REDRAW) redrawGrip = false;
+  for (const [i, pivot] of leftFanPivots.entries()) fanPose(i, 0, pivot.position, pivot.quaternion);
+  for (const ribbon of spinRibbons) { ribbon.cut(); ribbon.update(throwClock); }
   updateThrown(dt);
+  // 刺さる前に押していたら、刺さった瞬間に掛ける
+  if (kunaiState.grappleHeld && !kunaiState.grapple) toggleKunaiGrapple();
+  kunaiState.ammo = KUNAI_AMMO - thrown.length;
+  updateGrappleTarget();
+  updateTeleportMarker(dt);
+  updateStuckMarks();
+  updateKunaiGrappleLine();
+}
+
+// ---- グラップル対象の印 ----
+// 照準が合った刺さったクナイに、画面上で同じ大きさに見える輪を重ね、ゆっくり回して脈打たせる。
+// 敵や壁の陰でも見えるよう、深度を見ずに最後に描く
+const MARKER_SIZE = 0.035; // 1 m 先での輪の半径 (m)
+const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
+const teleportMarker = new THREE.Group();
+teleportMarker.add(new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 4, 1, Math.PI / 4), markerMat));
+for (let k = 0; k < 4; k++) {
+  // 輪の外の 4 つの角に短い棒を付けて、狙いが合っているのを照準器らしく見せる
+  const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.45), markerMat);
+  tick.position.set(Math.cos(k * Math.PI / 2) * 1.35, Math.sin(k * Math.PI / 2) * 1.35, 0);
+  tick.rotation.z = k * Math.PI / 2 + Math.PI / 2;
+  teleportMarker.add(tick);
+}
+teleportMarker.traverse((o) => { o.renderOrder = 999; });
+teleportMarker.visible = false;
+scene.add(teleportMarker);
+let markerTarget: Thrown | null = null;
+let markerAge = 0;
+const markerAt = new THREE.Vector3();
+// ---- 刺さったクナイの印 ----
+// 刺さっている所すべてに、墨色の小さな菱形の枠を重ねる（壁や敵の陰でも見える）。
+const STUCK_MARK_SIZE = 0.012; // 1 m 先での菱形の半径 (m)
+const stuckMarkMat = new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false });
+const stuckFillMat = stuckMarkMat.clone();
+stuckFillMat.opacity = 0.55;
+const stuckMarkFrame = new THREE.RingGeometry(0.7, 1, 4, 1, Math.PI / 4);
+const stuckMarkFill = new THREE.CircleGeometry(0.55, 4, Math.PI / 4);
+const stuckMarks = Array.from({ length: KUNAI_AMMO }, () => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(stuckMarkFrame, stuckMarkMat));
+  g.add(new THREE.Mesh(stuckMarkFill, stuckFillMat));
+  g.traverse((o) => { o.renderOrder = 998; });
+  g.visible = false;
+  scene.add(g);
+  return g;
+});
+function updateStuckMarks() {
+  let n = 0;
+  for (const t of thrown) {
+    if (t.phase !== 'stuck' || n >= stuckMarks.length) continue;
+    const g = stuckMarks[n++];
+    // 照準が合っているものは大きな印に任せる
+    g.visible = t.mesh.visible && t !== kunaiState.grappleTarget && t !== kunaiState.grapple;
+    t.mesh.getWorldPosition(markerAt);
+    g.position.copy(markerAt);
+    g.quaternion.copy(camera.quaternion);
+    g.scale.setScalar(markerAt.distanceTo(camera.position) * STUCK_MARK_SIZE);
+  }
+  for (; n < stuckMarks.length; n++) stuckMarks[n].visible = false;
+}
+
+function updateTeleportMarker(dt: number) {
+  const t = kunaiState.grappleTarget;
+  if (t !== markerTarget) { markerTarget = t; markerAge = 0; }
+  teleportMarker.visible = !!t && t.mesh.visible;
+  if (!t) return;
+  markerAge += dt;
+  t.mesh.getWorldPosition(markerAt);
+  teleportMarker.position.copy(markerAt);
+  teleportMarker.quaternion.copy(camera.quaternion);
+  teleportMarker.rotateZ(markerAge * 1.5);
+  // 合った瞬間は大きく出て締まり、その後は小さく脈打つ
+  const snap = 1 + 1.2 * Math.exp(-markerAge * 18);
+  const pulse = 1 + 0.08 * Math.sin(markerAge * 9);
+  teleportMarker.scale.setScalar(markerAt.distanceTo(camera.position) * MARKER_SIZE * snap * pulse);
+  markerMat.opacity = Math.min(1, markerAge * 12) * 0.9;
 }
 
 // ---- 近接攻撃（クナイ） ----
@@ -781,8 +1035,8 @@ export function updateAttack(dt: number) {
       else if (game.shownWeapon === 'axe') axeState.axePressed = true;
       else if (game.shownWeapon === 'bat') batState.pressed = true;
       else if (game.shownWeapon === 'spear') spearState.pressed = true;
-    } else if (!kunaiState.attack) startAttack(chooseAttack());
-    else if (kunaiState.attackTime >= kunaiState.attack.cancel - ATTACK_BUFFER) attackQueued = true;
+      else if (game.shownWeapon === 'rifle') rifleState.pressed = true;
+    }
   }
 
   if (kunaiState.attack) {
@@ -835,6 +1089,9 @@ export function updateKunaiPose(dt: number) {
   if (kunaiState.attack) {
     sampleTrail();
     attackPoseAt(kunaiState.attack, kunaiState.attackTime, curPose);
+  } else if (throwPosing()) {
+    attackPoseAt(KUNAI_THROW, throwMotion, curPose);
+    curPose.spin -= (kunaiSlideSpin + drawSpin) / DEG;
   } else {
     copyPose(curPose, restPose);
     kunaiState.dashSpinTime += dt;

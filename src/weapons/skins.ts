@@ -1,14 +1,27 @@
 import * as THREE from 'three';
 import { WEAPON_IDS, type WeaponId } from './ids.js';
+import { loadXp, masteryOf } from '../mastery.js';
+import { MISSIONS, loadMission } from '../challenges.js';
 import type { WeaponMats } from './materials.js';
 import type { SwishKind } from '../audio.js';
 import type { ArcLook } from '../fx/arcs.js';
-import type { HitSparks, HologramLook } from '../fx/hitFx.js';
+import type { CutLineLook, HitSparks, HologramLook, LeafLook } from '../fx/hitFx.js';
 import { kintsugiSword } from './skinKintsugi.js';
 import { protoRevolver } from './skinProto.js';
+import { dressFiligreeRound, filigreeRevolver } from './skinFiligree.js';
 import { redlineSword } from './skinRedline.js';
 import { relicSword } from './skinRelic.js';
-import { ghostlineSword } from './skinGhostline.js';
+import { willowKunai } from './skinWillowKunai.js';
+import { octagonRevolver } from './skinOctagonRevolver.js';
+import { harvestSickle } from './skinHarvestSickle.js';
+import { beardedAxe } from './skinBeardedAxe.js';
+import { longbow } from './skinLongbow.js';
+import { hexBat } from './skinHexBat.js';
+import { jumonjiSpear } from './skinJumonjiSpear.js';
+import { HOLO_FOCUS, ghostlineSword } from './skinGhostline.js';
+import { ghostlineSickle } from './skinGhostlineSickle.js';
+import { ghostlineAxe } from './skinGhostlineAxe.js';
+import { ghostlineSpear } from './skinGhostlineSpear.js';
 import { TALON_FOCUS, talonSword } from './skinTalon.js';
 import { talonAxe } from './skinTalonAxe.js';
 import { talonKunai } from './skinTalonKunai.js';
@@ -17,6 +30,7 @@ import { talonSpear } from './skinTalonSpear.js';
 import { eclipseSpear } from './skinEclipseSpear.js';
 import { dressTalonRound, talonRevolver } from './skinTalonGun.js';
 import { dressTalonArrow, talonBow } from './skinTalonBow.js';
+import { falconRifle } from './skinFalconRifle.js';
 
 // ---- 武器のスキン ----
 // 武器の色と質感を部位ごとに差し替える。部位は 3 つ:
@@ -37,12 +51,15 @@ export interface Skin {
   looks: Partial<Record<SkinPart, SkinLook>>;
   weapons?: WeaponId[]; // 選べる武器（無ければどの武器でも）
   unlock?: string; // 解放の条件（選択画面に出す）。無ければ最初から使える
+  level?: number; // その武器の熟練度がこのレベルに届くと解放する（unlock には条件の文を入れる。ロードマップにも出る）
   decor?: SkinDecor;
   trail?: SkinTrail; // 斬撃の軌跡の色（剣・斧・鎖鎌・クナイ・槍。リボルバーは弾の光の尾、弓は飛ぶ矢の筋、クナイは投げたクナイの筋も）
   swish?: SwishKind; // 振りの風切り音（無ければ武器の元の音）
   arc?: ArcLook; // 当てたところに稲妻を走らせる（fx/arcs.ts。剣・斧・鎖鎌・リボルバー・弓・クナイ・槍）
   hitSparks?: HitSparks; // 敵に当てたときの火花を強める（fx/hitFx.ts。剣・斧・鎖鎌・リボルバー・弓・クナイ・槍）
   hologram?: HologramLook; // 命中点から散る、連結した三角ポリゴンのホログラム
+  cutLine?: CutLineLook; // 命中点を通る振りの向きの紅い線。締めの技では画面ごと斬る
+  leaves?: LeafLook; // 命中点から散って舞い落ちる葉
   spark?: number; // 近接の空振りで壁や床を叩いたときの火花の色（weapons/wallHit.ts。無ければ白）
   focus?: SkinFocus; // 一閃の構え（剣だけ。無ければ元の構え）
   round?: (round: THREE.Group, env: THREE.Texture | null) => void; // 弾の見た目（リボルバーだけ）。落ちた薬莢に着せる（銃の中の弾は decor が着せる）
@@ -71,6 +88,8 @@ export interface SkinDecor {
   // mats: その武器の部位のマテリアル（映り込みの envMap はこれから取る。描画の土台ごとに別の物なので）
   // model: モデルそのもの（userData の部品を動かすとき）。部位の外を書き換えたら、返す物の userData.undo に戻し方を入れる
   build(parts: Record<string, THREE.Mesh>, mats: SkinMats, model: THREE.Object3D): THREE.Object3D;
+  // 振りの軌跡を取るたびに呼ぶ（剣だけ）。at: その瞬間の武器のカメラから見た行列、time: 軌跡の時刻（game.trailNow の目盛り）
+  swing?(at: THREE.Matrix4, time: number): void;
 }
 // スキンの演出に渡す値。flare: 当てた瞬間に 1 にすると、飾りが光ってすぐに引く。focus: 一閃の構えの効き（0〜1）
 export const skinFx = { flare: 0, focus: 0 };
@@ -83,12 +102,40 @@ const TALON = {
   ja: '爪',
   swatch: ['#0b0c0e', '#8c1515', '#1a1d21'],
   looks: {},
-  unlock: '条件は未定',
+  unlock: 'チャレンジ「TALON TRIAL」: LIFT（HARD）をノーダメージで倒しきる', // その武器のミッションを達成すると解放（challenges.ts の MISSIONS）
   // 光る刃先と同じ赤で、軌跡も光らせる。縁は一段暗く、芯は明るく
   trail: { body: 0xa81818, edge: 0x7a1010, core: 0xd02a2a, glow: true },
   // 刃先と同じ赤の稲妻。芯は白く光らせる
   arc: { glow: 0xc01010, body: 0xe01414, core: 0xffffff },
   spark: 0xe01414, // 壁を叩いた火花も稲妻と同じ赤
+} satisfies Partial<Skin>;
+
+// ホロライン（HOLOLINE）: くり抜いた黒い骨格に、シアンの光の帯の刃先とホログラム。軌跡は黒にシアンの細い線、破片はホログラム
+const HOLOLINE = {
+  id: 'ghostline',
+  name: 'HOLOLINE',
+  ja: 'ホロライン',
+  swatch: ['#071117', '#1ec8ff', '#090d10'],
+  looks: {
+    metal: { color: 0x071117, metalness: 0.92, roughness: 0.2, env: 1.7 },
+    trim: { color: 0x07131a, metalness: 0.75, roughness: 0.28, env: 1.2 },
+    wrap: { color: 0x111b20, metalness: 0.35, roughness: 0.5 },
+  },
+  unlock: '条件は未定',
+  // 刃と同じく、黒い軌跡の切っ先側にだけ細いシアンの線を通す。にじませると黒い本体まで暗いもやになるので光らせない
+  trail: { body: 0x071117, edge: 0x071117, core: 0x5fe4ff },
+  spark: 0x6fe8ff,
+  hitSparks: { count: 2.4, life: 1.35, size: 1.1, embers: 0.8, tint: 0x6fe8ff },
+  // 破片は薄く透けるガラスにシアンの線
+  hologram: { color: 0x7fdcf2, core: 0xc4f8ff, count: 24, size: 0.09, life: 0.6, shed: 90 },
+} satisfies Partial<Skin>;
+
+// 色はそのまま形を作り直すスキン（遺物など）の共通の値。色見本は STANDARD と同じ
+const SHAPE_ONLY = {
+  swatch: ['#111', '#3b444c', '#23282d'],
+  looks: {},
+  unlock: '熟練度 LV5',
+  level: 5,
 } satisfies Partial<Skin>;
 
 // 区切りに使うグリーンとマゼンタ（プレビュー動画の継ぎ目）は使わない
@@ -98,17 +145,19 @@ export const SKINS: Skin[] = [
     id: 'eclipse',
     name: 'ECLIPSE',
     ja: '蝕',
-    swatch: ['#0b141d', '#00d5ff', '#10191e'],
+    swatch: ['#0b0c0e', '#f2f4f5', '#1e2125'],
     looks: {
-      metal: { color: 0x0b141d, metalness: 0.85, roughness: 0.28, env: 1.4 },
-      trim: { color: 0x0b141d, metalness: 0.7, roughness: 0.32, env: 1.2 },
-      wrap: { color: 0x10191e, metalness: 0.05, roughness: 0.8 },
+      metal: { color: 0x0b0c0e, metalness: 0.88, roughness: 0.2, env: 1.7 },
+      trim: { color: 0x101114, metalness: 0.6, roughness: 0.4, env: 1.1 },
+      wrap: { color: 0x1e2125, metalness: 0.2, roughness: 0.75 },
     },
     weapons: ['spear'],
+    unlock: '条件は未定',
     decor: eclipseSpear,
-    trail: { body: 0x00a9cf, edge: 0x075474, core: 0xa4f5ff, glow: true },
-    spark: 0x35dfff,
-    hitSparks: { count: 1.5, life: 1.2, size: 1.1, embers: 0.6, tint: 0x35dfff },
+    // 装甲の継ぎ目から漏れる白い光の残像。本体は灰色、縁は暗く、芯は白く光らせる
+    trail: { body: 0x9aa0a6, edge: 0x3a3e42, core: 0xffffff, glow: true },
+    spark: 0xe6edf0,
+    hitSparks: { count: 1.5, life: 1.2, size: 1.1, embers: 0.6, tint: 0xffffff },
   },
   {
     id: 'kintsugi',
@@ -135,6 +184,8 @@ export const SKINS: Skin[] = [
     spark: 0x8c1a26, // 壁を叩いた火花は軌跡の芯と同じ色
     // 敵に当てた火花を 2.5 倍に増やし、大きく速く長く飛ばす。白から赤へ変わり、ゆっくり落ちる火の粉も残す
     hitSparks: { count: 2.5, life: 1.6, size: 1.3, embers: 1.2, tint: 0xff3020 },
+    // 命中点を通る紅い直線。芯は軌跡の芯、縁は軌跡の縁と同じ色で、光らせずに塗る
+    cutLine: { body: 0x8c1a26, edge: 0x22060a, len: 1.1, width: 0.012, life: 0.42 },
   },
   {
     id: 'relic',
@@ -143,26 +194,27 @@ export const SKINS: Skin[] = [
     swatch: ['#111', '#111', '#3b444c'],
     looks: {}, // 色は元の剣のまま、形だけ替える
     weapons: ['sword'],
-    unlock: '条件は未定',
+    unlock: '熟練度 LV5',
+    level: 5,
     decor: relicSword,
   },
+  // 遺物と同じく、色は元の武器のまま形を作り直す（古い時代の形。武器ごとに別の名前）
+  { ...SHAPE_ONLY, id: 'willow', name: 'WILLOW', ja: '柳葉', weapons: ['kunai'], decor: willowKunai },
+  { ...SHAPE_ONLY, id: 'octagon', name: 'OCTAGON', ja: '八角銃身', weapons: ['handgun'], decor: octagonRevolver },
+  { ...SHAPE_ONLY, id: 'harvest', name: 'HARVEST', ja: '稲刈り', weapons: ['sickle'], decor: harvestSickle },
+  { ...SHAPE_ONLY, id: 'bearded', name: 'BEARDED', ja: '髭斧', weapons: ['axe'], decor: beardedAxe },
+  { ...SHAPE_ONLY, id: 'longbow', name: 'LONGBOW', ja: '長弓', weapons: ['bow'], decor: longbow },
+  { ...SHAPE_ONLY, id: 'hexclub', name: 'HEXCLUB', ja: '六角棍', weapons: ['bat'], decor: hexBat },
+  { ...SHAPE_ONLY, id: 'jumonji', name: 'JUMONJI', ja: '十文字', weapons: ['spear'], decor: jumonjiSpear },
   {
-    id: 'ghostline',
-    name: 'GHOSTLINE',
-    ja: 'ゴーストライン',
-    swatch: ['#c3d7de', '#39d8ee', '#09131a'],
-    looks: {
-      metal: { color: 0xaebfc5, metalness: 0.92, roughness: 0.2, env: 1.45 },
-      trim: { color: 0x07131a, metalness: 0.75, roughness: 0.28, env: 1.2 },
-      wrap: { color: 0x111b20, metalness: 0.35, roughness: 0.5 },
-    },
+    ...HOLOLINE,
     weapons: ['sword'],
     decor: ghostlineSword,
-    trail: { body: 0x159bb5, edge: 0x073e50, core: 0xb9fbff, glow: true },
-    spark: 0x68f4ff,
-    hitSparks: { count: 1.6, life: 1.25, size: 1.05, embers: 0.5, tint: 0x68f4ff },
-    hologram: { color: 0x627980, core: 0xd7eef0, count: 8, size: 0.085, life: 0.48 },
+    focus: HOLO_FOCUS, // 刀を縦に立て、光る刃先の線越しに敵を見る
   },
+  { ...HOLOLINE, weapons: ['sickle'], decor: ghostlineSickle },
+  { ...HOLOLINE, weapons: ['axe'], decor: ghostlineAxe },
+  { ...HOLOLINE, weapons: ['spear'], decor: ghostlineSpear },
   {
     ...TALON,
     weapons: ['sword'],
@@ -220,6 +272,21 @@ export const SKINS: Skin[] = [
     arrow: dressTalonArrow,
   },
   {
+    id: 'falcon',
+    name: 'FALCON',
+    ja: '隼',
+    swatch: ['#2a2d31', '#878f99', '#5b636a'],
+    // 銃身・側面の刃・細枠は暗い灰色、機関部・翼・握りは青みの灰色、装填口の芯は一段暗い灰色（形は decor が作り直す）
+    looks: {
+      metal: { color: 0x2a2d31, metalness: 0.8, roughness: 0.3, env: 1.3 },
+      trim: { color: 0x878f99, metalness: 0.45, roughness: 0.42, env: 0.9 },
+      wrap: { color: 0x5b636a, metalness: 0.4, roughness: 0.5 },
+    },
+    weapons: ['rifle'],
+    unlock: '条件は未定',
+    decor: falconRifle,
+  },
+  {
     id: 'proto',
     name: 'PROTO',
     ja: '試作機',
@@ -230,6 +297,28 @@ export const SKINS: Skin[] = [
     unlock: '条件は未定',
     decor: protoRevolver,
   },
+  {
+    id: 'filigree',
+    name: 'FILIGREE',
+    ja: '唐草',
+    swatch: ['#1b1e23', '#d8dce0', '#efe6d2'],
+    // 黒染めの本体に銀の蔓が絡む（decor が作り直す）。シリンダーは銀で溝は黒染めの鋼、グリップは象牙
+    looks: {
+      metal: { color: 0xc4c8cc, metalness: 1, roughness: 0.18, env: 1.6 },
+      trim: { color: 0x14171b, metalness: 0.8, roughness: 0.3, env: 1.2 },
+    },
+    weapons: ['handgun'],
+    unlock: '条件は未定',
+    decor: filigreeRevolver,
+    round: dressFiligreeRound,
+    // 銀の弾丸の尾。本体は銀、縁は暗い銀、芯は白く光らせる
+    trail: { body: 0xb4b9be, edge: 0x5e6368, core: 0xffffff, glow: true },
+    spark: 0xf2eee4,
+    // 当てた火花は白く、少し多く長く散らす
+    hitSparks: { count: 1.8, life: 1.3, size: 1, embers: 0.5, tint: 0xfff6e8 },
+    // 唐草の蔓と同じ銀の葉を散らす
+    leaves: { color: 0xc4c8cc, count: 9, size: 0.07, life: 1.6 },
+  },
 ];
 // スキンで変わるもの（選択画面のタグ）。持っている値から決める
 //   look: 色・形・弾や矢の見た目、hit: 軌跡・稲妻・火花、motion: 構え
@@ -237,14 +326,22 @@ export type SkinTag = 'look' | 'hit' | 'motion';
 export function skinTags(s: Skin): SkinTag[] {
   const tags: SkinTag[] = [];
   if (Object.keys(s.looks).length || s.decor || s.round || s.arrow) tags.push('look');
-  if (s.trail || s.arc || s.hitSparks || s.hologram || s.spark !== undefined) tags.push('hit');
+  if (s.trail || s.arc || s.hitSparks || s.hologram || s.cutLine || s.leaves || s.spark !== undefined) tags.push('hit');
   if (s.focus) tags.push('motion');
   return tags;
 }
 export const skinsFor = (id: WeaponId) => SKINS.filter((s) => !s.weapons || s.weapons.includes(id));
-// 作者の手元（localhost で開いたとき）と ?devmode を付けたときは全部使える。公開版では条件の付いたスキンは解放するまで使えない
-const OWNER = ['localhost', '127.0.0.1'].includes(location.hostname) || new URLSearchParams(location.search).has('devmode');
-export const skinUnlocked = (s: Skin) => OWNER || !s.unlock;
+// 作者の手元（localhost で開いたとき）と ?devmode を付けたときは全部使える（localhost でも ?new なら公開版と同じ）。公開版では条件の付いたスキンは解放するまで使えない。
+// 熟練度で解放するスキンは、選べる武器（1 つ）の熟練度で決める。チャレンジのご褒美のスキンは、その武器のミッションを達成したら使える
+const params = new URLSearchParams(location.search);
+export const OWNER = (['localhost', '127.0.0.1'].includes(location.hostname) && !params.has('new')) || params.has('devmode');
+export const skinUnlocked = (s: Skin) => {
+  if (OWNER || !s.unlock) return true;
+  const weapon = s.weapons?.[0];
+  if (weapon === undefined) return false;
+  if (MISSIONS.some((m) => m.weapon === weapon && m.reward.skin === s.id && loadMission(m.id))) return true;
+  return s.level !== undefined && masteryOf(loadXp(weapon)).level >= s.level;
+};
 // 使えないスキンは STANDARD に読み替える（覚えていたスキンが使えないときも）
 const skinById = (weapon: WeaponId, id: string | undefined) =>
   skinsFor(weapon).find((s) => s.id === id && skinUnlocked(s)) ?? SKINS[0];

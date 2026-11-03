@@ -6,8 +6,9 @@ import { type WeaponId } from '../weapons/ids.js';
 import { type Scar } from '../fx/scars.js';
 
 // 敵の種類: 銃撃役（間合いを保って撃つ）、ストライカー（刃の腕で斬りかかってくる近接型。体と動きは enemy/striker.ts）、
-// 狙撃手（動かずに照準線を出して溜め、重い一発を撃つ。enemy/sniper.ts）
-export type EnemyKind = 'gunner' | 'striker' | 'sniper';
+// 狙撃手（動かずに照準線を出して溜め、重い一発を撃つ。enemy/sniper.ts）、二丁拳銃（銃撃役の強化版。左右交互に連射する。enemy/dual.ts）
+// ドローン（浮遊して回り込み、二連砲で撃つ。enemy/droneAI.ts）
+export type EnemyKind = 'gunner' | 'striker' | 'sniper' | 'dual' | 'drone';
 export type StrikePhase = 'chase' | 'windup' | 'slash' | 'recover' | 'drop';
 
 // ---- 敵 1 体分の状態 ----
@@ -17,6 +18,7 @@ export interface Enemy extends EnemyBody {
   kind: EnemyKind;
   gun: THREE.Group;
   muzzle: THREE.Object3D;
+  muzzles: THREE.Object3D[]; // 銃口の全部（二丁拳銃は [右, 左]、ほかは muzzle だけ）
   muzzleFx: THREE.Object3D; // 撃ったときのマズルフラッシュ
   pelvisSpring: Spring; // 腰の位置のずれ (m)。y は膝が沈む分
   leanSpring: Spring; // 上体の傾き（回転ベクトル, rad）。y は使わない
@@ -98,6 +100,8 @@ export interface Enemy extends EnemyBody {
   // 狙撃手の溜め（ほかの敵では使わない）
   charge: number; // 狙い始めてからの時間（-1 = 狙っていない）
   laser: THREE.Line | null; // 照準線
+  // 二丁拳銃の連射（ほかの敵では使わない）
+  burst: number; // 今の連射で撃つ残りの数（0 = 連射していない）。奇数・偶数で撃つ手を交互にする
   // 倒すまでの過程（とどめのスコアに足す）。出てくるたびに戻す
   hits: number; // この敵に当てた数
   lastHitAt: number; // この敵に最後に当てた時刻（実時間）

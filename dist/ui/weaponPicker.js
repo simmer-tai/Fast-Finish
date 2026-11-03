@@ -3,6 +3,7 @@ import { skinOf } from '../weapons/skins.js';
 import { loadXp, masteryOf } from '../mastery.js';
 import { options } from './options.js';
 import { closeSkin, onSkinClick, onSkinKey, openSkin, skinOpen } from './skinPicker.js';
+import { closeLv, lvOpen, onLvClick, onLvKey, onLvWheel, openLv, showNextReward } from './lvRoadmap.js';
 // ---- 武器の選択画面 ----
 const overlay = document.getElementById('overlay');
 // 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく
@@ -10,7 +11,7 @@ const LOADOUT_STORE = 'fast-finish.weapon';
 // 詳細の欄には今の武器を 1 行で出し、押すと武器の選択画面を開く。選択画面では上下左右・マウスを乗せる・ホイールでカーソルを動かして
 // グリッドのタイルを選択状態にする。クリックで持ち替えて（EQUIPPED の印が移る）右に大きく見せる。決定で詳細の欄へ戻す。
 // 上下左右のキーはカーソルと持ち替えを一緒に動かす。名前と和名は選択画面のタイルから写す
-const loadoutSlot = overlay.querySelector('.si-weapon .sw-slot');
+const loadoutSlot = overlay.querySelector('[data-action="weapon-open"]');
 const picker = overlay.querySelector('.sw-picker');
 const pickerRows = [...picker.querySelectorAll('.sw-rows [data-weapon]')];
 const pickerPreview = picker.querySelector('.sw-preview');
@@ -42,6 +43,13 @@ catch {
     // 保存できない環境では毎回クナイから
 }
 export const selectedLoadout = () => LOADOUT_IDS[loadoutIndex];
+export function restoreLoadout(id) {
+    const i = LOADOUT_IDS.findIndex((weapon) => weapon === id);
+    if (i < 0)
+        return false;
+    selectLoadout(i);
+    return true;
+}
 export const pickerOpen = () => overlay.classList.contains('pick-weapon');
 function selectLoadout(i) {
     loadoutIndex = i;
@@ -168,6 +176,12 @@ function showLvSlot(i) {
     lvSlot.querySelector('.lv-xp').textContent = `${fmtXp(m.into)} / ${fmtXp(m.need)} XP`;
     lvSlot.querySelector('.lv-next').textContent = `NEXT LV${m.level + 1}`;
     lvSlot.style.setProperty('--xp', String(m.into / m.need));
+    showNextReward(LOADOUT_IDS[i]);
+}
+// LV を押すとロードマップを開く。スキンと同じく、開いている間は動画を止める
+function openLvRoadmap() {
+    pausePickerVideos();
+    openLv(LOADOUT_IDS[pickedIndex], pickerRows[pickedIndex].dataset.name ?? '', resumePickerVideo);
 }
 // カーソル（選択状態）だけを動かす。右の見せ方は変えない
 function moveCursor(i) {
@@ -267,6 +281,8 @@ picker.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (skinOpen())
         return; // スキンの選択画面では、そちらで受ける
+    if (lvOpen())
+        return onLvWheel(e);
     if (!e.deltaY || e.timeStamp - pickerWheelAt < 160)
         return;
     pickerWheelAt = e.timeStamp;
@@ -275,8 +291,12 @@ picker.addEventListener('wheel', (e) => {
 export function onPickerClick(target) {
     if (skinOpen())
         return onSkinClick(target);
+    if (lvOpen())
+        return onLvClick(target);
     if (target.closest('[data-action="skin-open"]'))
         return openSkinPicker();
+    if (target.closest('[data-action="lv-open"]'))
+        return openLvRoadmap();
     const row = target.closest('.sw-rows [data-weapon]');
     // 行を押したら持ち替える（閉じずに、決定を待つ）
     if (row) {
@@ -296,6 +316,8 @@ export function onPickerClick(target) {
 export function onPickerKey(e) {
     if (skinOpen())
         return onSkinKey(e);
+    if (lvOpen())
+        return onLvKey(e);
     switch (e.code) {
         case 'KeyO': // パッドの X
             return openSkinPicker();
@@ -324,6 +346,7 @@ export function onPickerKey(e) {
 // 選択画面を閉じたままにする（ステージ選択を出し入れしたとき）
 export function hidePicker() {
     closeSkin(false, true);
+    closeLv(true);
     stopClosing();
     overlay.classList.remove('pick-weapon');
     pausePickerVideos();

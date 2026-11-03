@@ -59,7 +59,16 @@ export interface StageMoverPart {
   boxes: StageBox[]; // 当たり判定のある箱
   decor: StageBox[]; // 見た目だけの箱
   colliders?: StageLayout['colliders']; // 当たり判定だけの見えない箱
+  rooms?: StageLayout['colliders']; // 中に入れる空間（扉の開いたコンテナの中）。中にいるプレイヤーは一緒に運び、跳ね飛ばさない
   follow?: 'x' | 'z'; // その向きにだけついて動く（クレーンの橋桁は z だけ、巻き上げ機と吊り荷は両方）。省けば両方
+  doors?: StageMoverDoors[]; // 止まっている間だけ開く引き戸（電車）
+}
+// 引き戸: 箱は閉まった位置で書く。止まってしばらくすると z へ slide だけ動いて開き、走り出す少し前に閉まる。
+// colliders は閉まっている間だけ効く（開いている間は通れる）
+export interface StageMoverDoors {
+  slide: number;
+  decor: StageBox[];
+  colliders: StageLayout['colliders'];
 }
 export interface StageMoverStep {
   x: number;
@@ -67,12 +76,16 @@ export interface StageMoverStep {
   yaw?: number; // 動き出す前からの向きの変わり (rad)。省けば前の行き先のまま
   time: number;
   ease?: 'both' | 'in' | 'out' | 'none'; // 速さの付け方: 両端でゆっくり（省いたとき）/ 動き出しだけ / 止まりぎわだけ / 一定
+  skip?: boolean; // 止まって待つ所で、急ぐとき（setMoversHurry）は飛ばす
 }
 export interface StageMover {
+  cargo?: { band: number; minX: number; maxX: number; rail: number };
   parts: StageMoverPart[];
   path: StageMoverStep[];
   pivot?: { x: number; z: number }; // 向きを変えるときの中心
   hazard?: boolean; // 速く動いている間は、ぶつかったプレイヤーと敵を跳ね飛ばす（車）
+  frontOnly?: boolean; // 跳ね飛ばすのは進む向きの先頭だけ。側面にはぶつかっても平気（電車）
+  harmless?: boolean; // 跳ね飛ばすだけで、プレイヤーにダメージは与えない（船の滑る積み荷）
 }
 
 // 昇り続けるリフトのシャフト（LIFT）: リフトは動かさず、まわりのシャフトを下へ流して昇っているように見せる（world/shaft.ts）。
@@ -94,6 +107,15 @@ export interface StageShaft {
   ledges: StageShaftLedge[];
 }
 
+// 海（SHIP）: 地面の代わりにうねる海面を敷く（world/sea.ts）。flow は水が +z へ流れる速さ (m/s。船が -z へ進む速さ)。
+// hull は船体の形（ship.ts の船体と同じ数）で、そのまわりと船首・船尾から白い泡を立てる。
+// sway は船の揺れ: 横揺れ・縦揺れの幅（度）と周期（秒）、上下の幅 (m) と周期、揺れの中心の高さ。見た目だけで、当たり判定は傾かない
+export interface StageSea {
+  flow: number;
+  hull: { beam: number; bow: number; midBow: number; midStern: number; stern: number };
+  sway?: { roll: number; rollPeriod: number; pitch: number; pitchPeriod: number; heave: number; heavePeriod: number; pivotY: number };
+}
+
 export interface StageLayout {
   boxes: StageBox[]; // 当たり判定のある箱
   movers?: StageMover[]; // 動く物
@@ -104,15 +126,19 @@ export interface StageLayout {
   lines: StageLine[];
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   start: { x: number; y: number; z: number }; // 足もとの位置。-Z を向いて始める
-  // 敵が現れる足もとの位置。倒すたびにこの中から選び直す。perch は狙撃手だけが使う高い所（歩き回る敵は出さない）
-  enemySpawns: { x: number; y: number; z: number; perch?: boolean }[];
+  // 敵が現れる足もとの位置。倒すたびにこの中から選び直す。perch は狙撃手だけが使う高い所（歩き回る敵は出さない）。
+  // train は電車のドアの中（番号は movers の何番目か。その電車が止まっていて、しばらく動かないときだけ選ぶ）
+  enemySpawns: { x: number; y: number; z: number; perch?: boolean; train?: number }[];
+  trainOnly?: boolean; // 始めに出たあとの敵は、train の出現位置（電車のドア）からだけ出す。電車が来るまで出ずに待つ
   // ボス（enemy/boss.ts）の足もとの位置と向き（省けば +Z を向く）。箱が組み上がりきってから、登場の演出で現れる。
   // breach は登場で突き破る外壁（ボスはその奥に隠れて待つ）
   boss?: { x: number; z: number; yaw?: number; breach?: StageBreach };
   lead?: EnemyKind; // このステージの主役の敵。その空間で一番怖くなる敵を、難易度で決まる数だけ銃撃役に混ぜる。省けば銃撃役だけ
   guest?: EnemyKind; // 主役より少なく混ぜる脇役の敵。省けば混ぜない
-  // 難易度ごとの、倒す数のうちの敵の種類の割合（足して 1）。あれば主役と脇役の代わりにこれで混ぜる
+  // 難易度ごとの、倒す数のうちの敵の種類の割合（足して 1）。あれば主役と脇役の代わりにこれで混ぜる。
+  // 同時に出る数は、種類ごとの上限（main.ts の KIND_AT_ONCE）で抑える
   mix?: Record<'easy' | 'normal' | 'hard', Partial<Record<EnemyKind, number>>>;
   shaft?: StageShaft; // 昇り続けるリフトのシャフト。あれば地面を消す
+  sea?: StageSea; // 海。あれば地面の代わりに海面を敷く
   view: { eye: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } }; // ステージ選択の背景で、景色を見せるカメラの位置と見る先
 }

@@ -17,6 +17,7 @@ import { hooks } from '../game/hooks.js';
 import { tryWallHit } from './wallHit.js';
 import { castHit, castThrow } from '../world/raycast.js';
 import { player, velocity } from '../player/state.js';
+import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js';
 
 // ---- 槍 ----
 // 両手で柄の中ほどを持ち、そこを支点にブンブン回しながら打つ。穂先と石突きが代わる代わる正面を通り、通るたびに当たる。
@@ -308,6 +309,36 @@ export const SPEAR_SPIN = makeSpearAttack({
   dmg: 1.2,
 });
 
+// ---- 取り出し ----
+// 持ち替えたとき: 右肩の後ろに背負った槍を、画面の右下から手を上げながら引き抜き、体の右で縦の風車を 1 回転と少し回す
+// （穂先が頭の上を越えて前へ、下を通って後ろから上へ）。回し終えて穂先が前へ来たところで、そのまま照準へまっすぐ突き出して
+// ぴたりと止め、「ガチッ」と握り直してから構えへ引き戻す。当たりは無い
+const EQUIP_UP: V3 = [0.33, 0.94, 0]; // 回す面の上（軸に直交するよう、上を少し右へ倒す）
+const EQUIP_WHEEL: Spin = {
+  t0: 0.1, t1: 0.46, axis: [-1, 0.35, 0], from: [EQUIP_UP[0] * 0.71, EQUIP_UP[1] * 0.71, 0.71], turns: 1.375, pos: [0.12, -0.04, 0],
+};
+export const SPEAR_EQUIP_THRUST = 0.53; // 突き出しきって止めた瞬間
+export const SPEAR_EQUIP = makeSpearAttack({
+  keys: [
+    { t: 0, pos: [0.16, -0.36, 0.14], tip: EQUIP_WHEEL.from, edge: { about: EQUIP_WHEEL.axis } }, // 画面の右下から引き抜き始める
+    spinStart(EQUIP_WHEEL),
+    ...spinKeys(EQUIP_WHEEL),
+    { t: SPEAR_EQUIP_THRUST, pos: [-0.03, 0.03, -0.3], tip: [-0.02, 0.05, -1], ease: easeOutCubic }, // 照準へ突き出す
+    { t: 0.63, pos: [-0.03, 0.03, -0.28], tip: [-0.02, 0.05, -1] }, // 止めて見せる
+    { t: 0.9, ease: easeOutBack }, // 構えへ引き戻す
+  ],
+  trails: [[EQUIP_WHEEL.t0, SPEAR_EQUIP_THRUST + 0.03]],
+  hits: [],
+  reach: 0,
+  angle: 0,
+  impact: SPEAR_EQUIP_THRUST,
+  lunge: 0,
+  lungeAt: 0,
+  cancel: 0,
+  swishes: [...passSwishes(spinPasses(EQUIP_WHEEL), 0.35), { at: EQUIP_WHEEL.t1 - 0.02, dur: 0.12, f0: 260, f1: 1100, gain: 0.45 }],
+  kick: [-1.2, 0, 0],
+});
+
 export const SPEAR_COMBO = [SPEAR_TWIRL_1, SPEAR_TWIRL_2, SPEAR_WHEEL, SPEAR_HELI, SPEAR_FINISHER];
 export const SPEAR_ATTACKS: Record<string, SpearAttackDef> = {
   twirl1: SPEAR_TWIRL_1, twirl2: SPEAR_TWIRL_2, wheel: SPEAR_WHEEL, heli: SPEAR_HELI, finisher: SPEAR_FINISHER, spin: SPEAR_SPIN,
@@ -315,6 +346,9 @@ export const SPEAR_ATTACKS: Record<string, SpearAttackDef> = {
 
 // 本体からも読み書きする値
 export const spearState = {
+  cleaveHitting: false,
+  swingHits: new Set<Enemy>(),
+  swingBossHit: false,
   attack: null as SpearAttackDef | null,
   time: 0,
   pressed: false,
@@ -324,6 +358,7 @@ export const spearState = {
   guard: 0, // 風車受けの回り具合。0 = 構え, 1 = 回しきっている
   guardAngle: 0, // 風車受けで回した角度 (rad)
   guardGauge: 1, // 風車受けのゲージ (0〜1)。回している間は減り、回していない間は溜まる
+  equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 export const spearCharged = () => spearState.hold >= SPEAR_CHARGE_DELAY + SPEAR_CHARGE_TIME;
 const spearSwish = () => skinOf('spear').swish ?? 'axe'; // 振りの風切り音（スキンが音を持てばその音）
@@ -384,7 +419,45 @@ export function applySpearPose(p: SpearPose) {
   spearRest.quaternion.setFromRotationMatrix(basis.makeBasis(edgeDir, p.tip, faceDir));
 }
 
+// 刃先を、切っ先が実際に動いている向きへ回す。速く振っているほど動く向きに寄せ、止まりかけなら key の向きのまま。
+// 向きが急に裏返るとき（振りかぶりから振り出しへの切り返しなど）は、柄を軸に手首を返すように短い時間で回す
+const SWING_MIN = 4; // 切っ先の角速度 (rad/s)。これより遅ければ key の向き
+const SWING_FULL = 10; // これより速ければ動く向きそのまま
+const EDGE_TURN = 28; // 刃先が狙う向きへ追いつく速さ (1/s)
+const prevTip = new THREE.Vector3();
+const shownEdge = new THREE.Vector3();
+const swingVel = new THREE.Vector3();
+const edgeGoal = new THREE.Vector3();
+const edgeSide = new THREE.Vector3();
+let followFresh = true;
+function followSwing(p: SpearPose, dt: number) {
+  const perp = (v: THREE.Vector3) => v.addScaledVector(p.tip, -v.dot(p.tip));
+  edgeGoal.copy(p.edge);
+  if (perp(edgeGoal).lengthSq() < 1e-8) edgeGoal.set(1, 0, 0).addScaledVector(p.tip, -p.tip.x);
+  edgeGoal.normalize();
+  if (followFresh || dt > 0.1 || p.tip.dot(prevTip) < 0.3) { // 初めてか、構えが飛んだ（素手から戻ったなど）ときは key の向きから
+    followFresh = false;
+    shownEdge.copy(edgeGoal);
+  } else if (dt > 1e-4) {
+    swingVel.subVectors(p.tip, prevTip).divideScalar(dt);
+    perp(swingVel);
+    const speed = swingVel.length();
+    const a = THREE.MathUtils.smoothstep(speed, SWING_MIN, SWING_FULL);
+    if (a > 0) edgeGoal.lerp(swingVel.divideScalar(speed), a).normalize();
+    // 前の刃先を今の柄に直交させてから、柄のまわりに狙う向きへ回す
+    if (perp(shownEdge).lengthSq() < 1e-8) shownEdge.copy(edgeGoal);
+    shownEdge.normalize();
+    edgeSide.crossVectors(p.tip, shownEdge);
+    const ang = Math.atan2(edgeGoal.dot(edgeSide), edgeGoal.dot(shownEdge));
+    shownEdge.applyAxisAngle(p.tip, ang * (1 - Math.exp(-EDGE_TURN * dt)));
+  }
+  prevTip.copy(p.tip);
+  p.edge.copy(shownEdge);
+}
+
 export function startSpearAttack(def: SpearAttackDef) {
+  spearState.swingHits.clear();
+  spearState.swingBossHit = false;
   spearFrom.pos.copy(spearCur.pos);
   spearFrom.tip.copy(spearCur.tip);
   spearFrom.edge.copy(spearCur.edge);
@@ -433,6 +506,18 @@ function spearPointAt(def: SpearAttackDef, t: number, local: THREE.Vector3, out:
 // 届く範囲にいる敵（今の時間帯でまだ当てていないもの）すべてに当てる。時間帯の間ずっと調べるので、
 // 振りが通り過ぎる間に範囲へ入った敵にも当たる
 function trySpearHit(def: SpearAttackDef, scale: number) {
+  // 同じフレームの命中を先に集め、最初のとどめにも CLEAVE を付ける。
+  const targets: Enemy[] = [];
+  for (const e of enemies) {
+    if (spearHits.has(e)) continue;
+    setEn(e);
+    if (hooks.inReachOf(def.reach, def.angle)) targets.push(e);
+  }
+  const bossTarget = !spearBossHit && hooks.bossInReach(def.reach, def.angle);
+  if (bossTarget) hooks.clearBossTarget();
+  for (const e of targets) spearState.swingHits.add(e);
+  if (bossTarget) spearState.swingBossHit = true;
+  spearState.cleaveHitting = spearState.swingHits.size + (spearState.swingBossHit ? 1 : 0) >= 2;
   let any = false;
   let dmgScale = scale;
   const hitOne = () => {
@@ -451,8 +536,7 @@ function trySpearHit(def: SpearAttackDef, scale: number) {
     hitWithArcs(skinOf('spear'), def.fx ?? 1, spearSwing, () => hooks.applyHit(def, hitPoint, 'sword', spearSwing, undefined, dmgScale));
     skinFx.flare = 1; // スキンの飾りを光らせる
   };
-  for (const e of enemies) {
-    if (spearHits.has(e)) continue;
+  for (const e of targets) {
     setEn(e);
     if (!hooks.inReachOf(def.reach, def.angle)) continue;
     spearHits.add(e);
@@ -460,11 +544,12 @@ function trySpearHit(def: SpearAttackDef, scale: number) {
     if (e.alive && !hooks.enemyHeld()) knockEnemy(hitDir, def.knock ?? DEFAULT_KNOCK);
   }
   // ボスの機体（時間帯ごとに 1 回）
-  if (!spearBossHit && hooks.bossInReach(def.reach, def.angle)) {
+  if (bossTarget && hooks.bossInReach(def.reach, def.angle)) {
     spearBossHit = true;
     hitOne();
   }
   if (any) landedAny = true;
+  spearState.cleaveHitting = false;
 }
 
 function updateSpearAttack(dt: number) {
@@ -627,7 +712,7 @@ const RUSH_THRUST = 0.07; // 引いた所から突き出しきるまで
 const RUSH_SPEED = 44; // (m/s)。0.32 秒で約 14m
 const RUSH_EXIT = 8; // やめたときに残す水平の速さの上限 (m/s)。勢いを少し残して滑り込む
 const RUSH_EXIT_UP = 4; // やめたときに残す上向きの速さの上限 (m/s)
-const RUSH_COST = 0.15; // 始めたときに使うゲージ
+const RUSH_COST = 0.2; // 始めたときに使うゲージ
 const RUSH_REACH = 3.2;
 const RUSH_ANGLE = 28 * DEG;
 export const RUSH_HIT: HitDef = { kick: [-1.2, 0, 0], knock: 700, hitStop: 0.06, fx: 1.3, dmg: 2.4 };
@@ -912,6 +997,43 @@ function updateGuardHud(dt: number) {
   guardShownReady = ready;
 }
 
+let equipSwishes = 0;
+export function startSpearEquip() {
+  spearState.equipT = 0;
+  equipSwishes = 0;
+  lastTrail = -Infinity;
+  spearRibbon.cut();
+  buttRibbon.cut();
+}
+
+// 取り出しの途中で振り・溜め・風車受け・投げ・ダッシュの回しに移ったら、取り出しの形からそのまま滑らかにつなぐ
+function updateSpearEquip(dt: number) {
+  if (spearState.equipT === Infinity) return;
+  if (game.shownWeapon !== 'spear') {
+    spearState.equipT = Infinity;
+    return;
+  }
+  if (spearState.attack || spearState.hold >= 0 || spearState.guard > 0 || rushT >= 0 || dashSpin >= 0 || spearThrow.phase !== 'none') {
+    spearExit.pos.copy(spearCur.pos);
+    spearExit.tip.copy(spearCur.tip);
+    spearExit.edge.copy(spearCur.edge);
+    spearExitBlend = 1;
+    spearState.equipT = Infinity;
+    return;
+  }
+  const prev = spearState.equipT;
+  const t = (spearState.equipT += dt);
+  while (equipSwishes < SPEAR_EQUIP.swishes.length && t >= SPEAR_EQUIP.swishes[equipSwishes].at) {
+    playSwish(SPEAR_EQUIP.swishes[equipSwishes++], spearSwish());
+  }
+  if (prev < SPEAR_EQUIP_THRUST && t >= SPEAR_EQUIP_THRUST) {
+    sfx.playBatGrip(); // 突き出して止めた所で握り直す「ガチッ」
+    kickVel.x += SPEAR_EQUIP.kick[0] * DEG * 22;
+    hooks.addTrauma(0.06);
+  }
+  if (t >= SPEAR_EQUIP.duration) spearState.equipT = Infinity;
+}
+
 const spearExit = newSpearPose(); // 振りの途中から溜めへ移ったときの、振っていた形
 let spearExitBlend = 0;
 const SPEAR_EXIT_TIME = 0.15;
@@ -925,10 +1047,17 @@ export function updateSpear(dt: number) {
   updateGuard(dt);
   updateSpearThrow(dt);
   updateDashSpin(dt);
+  updateSpearEquip(dt);
   if (spearState.attack) {
     spearExitBlend = 0;
-    sampleSpearTrail();
+    sampleSpearTrail(spearState.attack, spearState.time);
     spearPoseAt(spearState.attack, spearState.time, spearCur);
+    followSwing(spearCur, dt);
+    applySpearPose(spearCur);
+  } else if (spearState.equipT !== Infinity) {
+    sampleSpearTrail(SPEAR_EQUIP, spearState.equipT);
+    evalSpearAttack(SPEAR_EQUIP, spearState.equipT, spearCur);
+    followSwing(spearCur, dt);
     applySpearPose(spearCur);
   } else {
     spearCur.pos.set(0, 0, 0);
@@ -977,6 +1106,7 @@ export function updateSpear(dt: number) {
       spearCur.tip.lerp(THROW_TIP, w).normalize();
       spearCur.edge.lerp(DOWN, w);
     }
+    followSwing(spearCur, dt);
     applySpearPose(spearCur);
     sampleGuardTrail();
     sampleRushTrail();
@@ -993,6 +1123,7 @@ export function updateSpear(dt: number) {
 export const SPEAR_THROW_WINDUP = 0.14; // 振りかぶってから手を離すまで
 const THROW_SPEED = 46; // m/s
 const THROW_GRAVITY = 5; // 少しずつ落ちる (m/s²)
+export const SPEAR_THROW_RANGE = THROW_SPEED * THROW_SPEED / THROW_GRAVITY; // 放物線で届く最大の水平距離
 const RETURN_SPEED = 48;
 export const SPEAR_STUCK_TIME = 3.5; // 刺さってから自分で戻るまで
 export const SKEWER_GAP = 0.45; // 刺した敵どうしの間隔（穂先から順に後ろへ）
@@ -1042,6 +1173,14 @@ function placeFlying() {
 function releaseThrow() {
   camera.updateMatrixWorld();
   camera.getWorldDirection(throwLook);
+  const target = findAssistTarget();
+  if (target && target.angle < target.size * ASSIST_SNAP) {
+    const horizontal = Math.hypot(throwLook.x, throwLook.z);
+    const dx = target.point.x - camera.position.x;
+    const dz = target.point.z - camera.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > 0) { throwLook.x = dx / distance * horizontal; throwLook.z = dz / distance * horizontal; }
+  }
   flyDir.copy(throwLook);
   flyVel.copy(throwLook).multiplyScalar(THROW_SPEED);
   flyTip.copy(camera.position).addScaledVector(throwLook, 0.3);
@@ -1277,11 +1416,9 @@ let lastTrail = -Infinity;
 const spearTrailPose = newSpearPose();
 const trailA = new THREE.Vector3();
 const trailB = new THREE.Vector3();
-function sampleSpearTrail() {
-  const def = spearState.attack;
-  if (!def) return;
+function sampleSpearTrail(def: SpearAttackDef, time: number) {
   for (const [from, to] of def.trails) {
-    const end = Math.min(to, spearState.time);
+    const end = Math.min(to, time);
     for (let s = Math.max(from, lastTrail + TRAIL_STEP); s <= end; s += TRAIL_STEP) {
       if (s - lastTrail > TRAIL_STEP * 1.5) { // 別の時間帯の軌跡とはつながない
         spearRibbon.cut();
@@ -1290,7 +1427,7 @@ function sampleSpearTrail() {
       spearPoseAt(def, s, spearTrailPose);
       applySpearPose(spearTrailPose);
       spearModel.updateWorldMatrix(true, false);
-      const at = game.trailNow - (spearState.time - s);
+      const at = game.trailNow - (time - s);
       camera.worldToLocal(trailA.copy(SPEAR_TRAIL_TIP).applyMatrix4(spearModel.matrixWorld));
       camera.worldToLocal(trailB.copy(SPEAR_TRAIL_BASE).applyMatrix4(spearModel.matrixWorld));
       spearRibbon.push(trailA, trailB, at);

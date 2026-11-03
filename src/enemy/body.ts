@@ -4,7 +4,7 @@ import * as THREE from 'three';
 export const DUMMY_RADIUS = 0.3;
 export const DUMMY_HEIGHT = 1.8;
 // 人型のローポリロボット。赤い装甲と黒い関節の 2 色で、面ごとの陰影だけで形を見せる（正面は +Z）
-const DUMMY_COLOR = 0xc0392b;
+export const DUMMY_COLOR = 0xc0392b;
 const DUMMY_JOINT_COLOR = 0x222222;
 export const DUMMY_UPPER_ARM = 0.34; // 肩から肘
 export const DUMMY_FOREARM = 0.36; // 肘から手の中心
@@ -31,7 +31,7 @@ const joint = (r: number) => new THREE.IcosahedronGeometry(r, 1);
 
 // 骨組み: 銃撃役とストライカーで同じ骨を使う（脚の IK とよろめきの決まりを共有する）。
 // 当たったときの白い光りを 1 体ずつ出せるよう、マテリアルも 1 体ごとに作る
-function buildEnemyRig(color: number) {
+export function buildEnemyRig(color: number) {
   const root = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ color, emissive: 0xffffff, emissiveIntensity: 0, flatShading: true });
   const jointMat = new THREE.MeshLambertMaterial({ color: DUMMY_JOINT_COLOR, emissive: 0xffffff, emissiveIntensity: 0, flatShading: true });

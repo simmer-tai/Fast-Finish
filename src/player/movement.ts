@@ -286,16 +286,18 @@ export function updateMantle(dt: number) {
 
 // 体の横に触れている箱の側面を探し、その外向きの法線を out に入れる。
 // 上端が足元から minAbove 以上高い壁だけを見る
-export function findWall(minAbove: number, out: THREE.Vector3): boolean {
+let wallDistance = 0; // 見つけた側面からの距離
+export function findWall(minAbove: number, out: THREE.Vector3, margin: number): boolean {
   for (const b of blocks) {
     if (b.h - position.y < minAbove) continue;
     if ((b.y0 ?? 0) > position.y + 1) continue; // 底面が胸より高い浮いた箱は壁にしない
     const dx = position.x - THREE.MathUtils.clamp(position.x, b.minX, b.maxX);
     const dz = position.z - THREE.MathUtils.clamp(position.z, b.minZ, b.maxZ);
-    if ((dx === 0 && dz === 0) || Math.hypot(dx, dz) > PLAYER_RADIUS + 0.05) continue;
+    if ((dx === 0 && dz === 0) || Math.hypot(dx, dz) > PLAYER_RADIUS + margin) continue;
     // 角に触れているときは近い方の面とみなす
     if (Math.abs(dx) >= Math.abs(dz)) out.set(Math.sign(dx), 0, 0);
     else out.set(0, 0, Math.sign(dz));
+    wallDistance = out.x !== 0 ? Math.abs(dx) : Math.abs(dz);
     return true;
   }
   return false;
@@ -303,7 +305,7 @@ export function findWall(minAbove: number, out: THREE.Vector3): boolean {
 
 // 空中で壁に沿って十分な速さで動き、前へ入力していれば壁走りを始める
 export function tryStartWallRun(): boolean {
-  if (!findWall(WALLRUN_MIN_HEIGHT, wallProbe)) return false;
+  if (!findWall(WALLRUN_MIN_HEIGHT, wallProbe, 0.35)) return false;
   if (player.hasLastWall && wallProbe.dot(lastWallNormal) > 0.7) return false;
   const vn = velocity.x * wallProbe.x + velocity.z * wallProbe.z;
   const tx = velocity.x - wallProbe.x * vn;
@@ -311,11 +313,12 @@ export function tryStartWallRun(): boolean {
   const along = Math.hypot(tx, tz);
   if (along < WALLRUN_MIN_SPEED) return false;
   wallTangent.set(tx / along, 0, tz / along);
-  if (wish.dot(wallTangent) < 0.3 || wish.dot(wallProbe) > 0.5) return false;
+  if (wish.dot(wallTangent) < 0.1 || wish.dot(wallProbe) > 0.5) return false;
 
   player.wallRunning = true;
   player.wallRunTime = 0;
   wallNormal.copy(wallProbe);
+  position.addScaledVector(wallNormal, PLAYER_RADIUS + 0.01 - wallDistance);
   velocity.x = wallTangent.x * along;
   velocity.z = wallTangent.z * along;
   velocity.y = THREE.MathUtils.clamp(velocity.y, 0, WALLRUN_START_LIFT);
@@ -328,7 +331,7 @@ export function canKeepWallRun(): boolean {
   if (player.onGround || player.wallRunTime > WALLRUN_MAX_TIME) return false;
   if (wish.dot(wallTangent) <= 0 || wish.dot(wallNormal) > 0.5) return false;
   if (Math.hypot(velocity.x, velocity.z) < WALLRUN_MIN_SPEED * 0.5) return false; // 前の壁にぶつかった等
-  return findWall(0.3, wallProbe) && wallProbe.dot(wallNormal) > 0.9;
+  return findWall(0.3, wallProbe, 0.05) && wallProbe.dot(wallNormal) > 0.9;
 }
 
 export function endWallRun() {

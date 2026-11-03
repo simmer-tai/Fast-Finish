@@ -67,6 +67,7 @@ const missiles: Missile[] = [];
 let nextMissileId = 1;
 export type MissileSnapshot = [number, number, number, number, number, number, number, number];
 const remoteMissiles = new Map<number, THREE.Group>();
+const presentRemoteMissiles = new Set<number>();
 export function captureMissileSnapshots(): MissileSnapshot[] {
   return missiles.map((m) => [m.id, m.pos.x, m.pos.y, m.pos.z, m.dir.x, m.dir.y, m.dir.z, Number(m.reflected)]);
 }
@@ -75,7 +76,8 @@ export function isMissileSnapshots(value: unknown): value is MissileSnapshot[] {
     && m.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 100000) && (m[7] === 0 || m[7] === 1));
 }
 export function updateRemoteMissiles(snapshots: MissileSnapshot[], dt: number) {
-  const present = new Set<number>();
+  const present = presentRemoteMissiles;
+  present.clear();
   for (const [id, x, y, z, dx, dy, dz, reflected] of snapshots) {
     present.add(id);
     let mesh = remoteMissiles.get(id);

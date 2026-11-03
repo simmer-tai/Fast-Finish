@@ -1,3 +1,4 @@
+import { shipState } from './shipState.js';
 import * as THREE from 'three';
 import type { StageMover, StageMoverPart } from '../stage.js';
 import { blocks, type Block } from './blocks.js';
@@ -7,15 +8,24 @@ import { sickleState } from '../weapons/sickleCombat.js';
 import { hooks } from '../game/hooks.js';
 import { game } from '../game/state.js';
 import * as sfx from '../audio.js';
+import { enemies } from '../enemy/state.js';
 
 // ---- 動く物 ----
 // ステージの movers（天井クレーン、走る車など）を道のりに沿って動かす。見た目は部品ごとの root ごと動かし、
 // 当たり判定の箱は blocks に入れたものの座標を毎フレーム書き換える。
 // 上に立っているプレイヤー、よじ登っている途中の行き先、鎖鎌の掛かった所も一緒に運ぶ（向きが変われば一緒に回す）
-interface Part { def: StageMoverPart; root: THREE.Object3D; boxes: { b: Block; base: Block }[]; x: number; z: number; yaw: number }
-interface Mover { def: StageMover; parts: Part[]; period: number; vx: number; vz: number; hitCool: number }
+interface Doors { slide: number; root: THREE.Object3D; blocks: { b: Block; base: Block }[]; open: number }
+interface Part { def: StageMoverPart; root: THREE.Object3D; boxes: { b: Block; base: Block }[]; doors: Doors[]; x: number; z: number; yaw: number }
+// clock は動く物ごとの時刻（急ぐときは待ちを飛ばして進める）
+interface Mover { def: StageMover; parts: Part[]; period: number; vx: number; vz: number; hitCool: number; clock: number; cargoX: number; cargoV: number; fallen: boolean }
 const movers: Mover[] = [];
-let clock = 0;
+let hurry = false;
+
+// 駅の電車は平行移動だけ。静止電車には mover がない。
+export function trainOffset(index: number): number {
+  const m = movers[index];
+  return m ? moverOffset(m, m.clock).z : 0;
+}
 
 // 車にはねられたとき
 const HAZARD_SPEED = 2; // これより速く動いている間だけ跳ね飛ばす (m/s)
@@ -26,29 +36,40 @@ const HAZARD_LIFT = 6; // 跳ね上げる速さ (m/s)
 const HAZARD_COOL = 1; // 続けてはねられない時間 (s)
 const PLAYER_HEIGHT = EYE_HEIGHT + 0.2;
 
+// 引き戸: 止まってから DOOR_AFTER 秒で開き始め、走り出す DOOR_BEFORE 秒前に閉まり始める。開け閉めに DOOR_TIME 秒
+const DOOR_AFTER = 0.3;
+const DOOR_BEFORE = 2;
+const DOOR_TIME = 0.5;
+
 // ステージへ入り直すときに外す（blocks は呼ぶ側で空にする）
 export function clearMovers() {
   movers.length = 0;
-  clock = 0;
+  hurry = false;
 }
 
-// roots は部品ごとの親（def.parts と同じ順）。当たり判定の箱を blocks に足す。
+// roots は部品ごとの親（def.parts と同じ順）、doorRoots はその中の引き戸ごとの親（部品の親の子）。当たり判定の箱を blocks に足す。
 // 継ぎ目のつっかえを消すまとめ（mergeBoxes）は、動かす箱には掛けない
-export function addMover(def: StageMover, roots: THREE.Object3D[]) {
-  const parts = def.parts.map((p, i) => ({
-    def: p,
-    root: roots[i],
-    boxes: [...p.boxes, ...(p.colliders ?? [])].map((s) => {
-      const base: Block = { minX: s.minX, maxX: s.maxX, minZ: s.minZ, maxZ: s.maxZ, h: s.h, y0: s.y0 };
-      const b = { ...base };
-      blocks.push(b);
-      return { b, base };
-    }),
-    x: 0,
-    z: 0,
-    yaw: 0,
-  }));
-  movers.push({ def, parts, period: def.path.reduce((t, s) => t + s.time, 0), vx: 0, vz: 0, hitCool: 0 });
+export function addMover(def: StageMover, roots: THREE.Object3D[], doorRoots: THREE.Object3D[][]) {
+  const track = (s: StageMoverPart['boxes'][number] | NonNullable<StageMoverPart['colliders']>[number]) => {
+    const base: Block = { minX: s.minX, maxX: s.maxX, minZ: s.minZ, maxZ: s.maxZ, h: s.h, y0: s.y0 };
+    const b = { ...base };
+    blocks.push(b);
+    return { b, base };
+  };
+  const parts = def.parts.map((p, i) => {
+    const doors = (p.doors ?? []).map((d, j) => ({ slide: d.slide, root: doorRoots[i][j], blocks: d.colliders.map(track), open: 0 }));
+    return {
+      def: p,
+      root: roots[i],
+      // 引き戸の当たり判定も、部品と一緒に運ぶ
+      boxes: [...[...p.boxes, ...(p.colliders ?? [])].map(track), ...doors.flatMap((d) => d.blocks)],
+      doors,
+      x: 0,
+      z: 0,
+      yaw: 0,
+    };
+  });
+  movers.push({ def, parts, period: def.path.reduce((t, s) => t + s.time, 0), vx: 0, vz: 0, hitCool: 0, clock: 0, cargoX: 0, cargoV: 0, fallen: false });
 }
 
 // 時刻 t での、動き出す前の位置からのずれと向き
@@ -60,7 +81,8 @@ const EASE = {
   none: (u: number) => u,
 };
 function moverOffset(m: Mover, t: number) {
-  let u = t % m.period;
+  if (m.def.cargo) { at.x = m.cargoX; at.z = 0; at.yaw = 0; return at; }
+  let u = ((t % m.period) + m.period) % m.period; // 始まる前の時刻（負）は、1 周前として見る
   let px = 0;
   let pz = 0;
   let pyaw = 0;
@@ -117,10 +139,128 @@ function carry(pivot: { x: number; z: number }, p: Part, nx: number, nz: number,
   v.z = q.z;
 }
 
+// 急ぐ間は、道のりの skip の待ちを飛ばす（駅で降りる敵が待っているときに、電車を早く来させる）
+export function setMoversHurry(on: boolean) {
+  hurry = on;
+}
+// 時刻 t が skip の待ちの中なら、その待ちの終わりの時刻を返す
+function skipWait(m: Mover, t: number) {
+  let u = ((t % m.period) + m.period) % m.period;
+  for (const s of m.def.path) {
+    if (u < s.time) return s.skip ? t + (s.time - u) : t;
+    u -= s.time;
+  }
+  return t;
+}
+
+// SHIP cargo is integrated in small steps so contacts remain ordered on long frames.
+function updateCargo(dt: number) {
+  const cargo = movers.filter((m) => m.def.cargo && !m.fallen);
+  const steps = Math.max(1, Math.ceil(dt / 0.01));
+  const step = dt / steps;
+  for (let n = 0; n < steps; n++) {
+    for (const m of cargo) {
+      if (m.fallen) continue;
+      const c = m.def.cargo!;
+      const oldV = m.cargoV;
+      // 傾きが 4° より浅いと滑らせず、滑っている物はブレーキをかけて止める（浅い揺れでは甲板の途中で止まる）
+      const still = Math.abs(shipState.roll) < 4 * Math.PI / 180;
+      const acceleration = still ? 0 : -Math.sin(shipState.roll) * 65;
+      m.cargoV += acceleration * step;
+      const friction = (still ? 7 : 1.5) * step;
+      m.cargoV = Math.sign(m.cargoV) * Math.max(0, Math.abs(m.cargoV) - friction);
+      m.cargoV = THREE.MathUtils.clamp(m.cargoV, -14, 14);
+      m.cargoX += m.cargoV * step;
+      const side = c.minX + m.cargoX < -c.rail ? -1 : c.maxX + m.cargoX > c.rail ? 1 : 0;
+      if (!side) continue;
+      const impact = m.cargoV;
+      m.cargoX = side < 0 ? -c.rail - c.minX : c.rail - c.maxX;
+      slamSound(m, impact);
+      const remaining = cargo.filter((other) => !other.fallen && other.def.cargo!.band === c.band).length;
+      const waveFalls = shipState.fallen.filter((f) => f.wave === shipState.wave).length;
+      if (shipState.big > 0 && Math.abs(impact) >= 10 && Math.sign(impact) === side && remaining > 1 && waveFalls < 2) {
+        m.fallen = true;
+        for (const part of m.parts) {
+          for (const { b } of part.boxes) { const index = blocks.indexOf(b); if (index >= 0) blocks.splice(index, 1); }
+          shipState.fallen.push({ root: part.root, time: shipState.time, direction: side, wave: shipState.wave });
+        }
+      } else if (Math.abs(oldV) > 2 && m.parts.some(isRidingCargo)) {
+        velocity.x += oldV * 0.8;
+        velocity.y = Math.max(velocity.y, 3);
+        player.onGround = false;
+      }
+      m.cargoV = 0;
+    }
+    // Repeated relaxation handles a chain of contacting cargo and rail constraints.
+    for (let pass = 0; pass < cargo.length + 1; pass++) {
+      let changed = false;
+      for (let j = 0; j < cargo.length; j++) for (let k = j + 1; k < cargo.length; k++) {
+        const a = cargo[j], b = cargo[k], ca = a.def.cargo!, cb = b.def.cargo!;
+        if (a.fallen || b.fallen || ca.band !== cb.band) continue;
+        const left = ca.minX < cb.minX ? a : b, right = left === a ? b : a;
+        const l = left.def.cargo!, r = right.def.cargo!;
+        const overlap = l.maxX + left.cargoX - r.minX - right.cargoX;
+        if (overlap <= 0) continue;
+        const oldLeftX = left.cargoX, oldRightX = right.cargoX;
+        const roomL = l.minX + left.cargoX + l.rail;
+        const roomR = r.rail - r.maxX - right.cargoX;
+        const shiftL = Math.min(Math.max(0, roomL), overlap / 2 + Math.max(0, overlap / 2 - roomR));
+        left.cargoX -= shiftL; right.cargoX += overlap - shiftL;
+        if (left.cargoX !== oldLeftX || right.cargoX !== oldRightX) changed = true;
+        if (left.cargoV > right.cargoV) {
+          changed = true; // This branch can also push the player.
+          const v = (left.cargoV + right.cargoV) / 2;
+          for (const m of [left, right]) {
+            const lost = m.cargoV - v;
+            if (Math.abs(lost) > 2 && m.parts.some(isRidingCargo)) {
+              velocity.x += m.cargoV * 0.8;
+              velocity.y = Math.max(velocity.y, 3);
+              player.onGround = false;
+            }
+          }
+          left.cargoV = right.cargoV = v;
+        }
+      }
+      // Without a position change or velocity response, the next pass is identical.
+      if (!changed) break;
+    }
+  }
+  // 落ちた積み荷が海へ落ちていく動きは world/sea.ts
+}
+// 積み荷が手すりにぶつかった音。近いほど大きく、左右は聞こえる向きに振る
+const SLAM_MIN = 4; // これより遅ければ鳴らさない (m/s)
+const SLAM_HEAR = 45; // これより遠ければ聞こえない (m)
+function slamSound(m: Mover, impact: number) {
+  const speed = Math.abs(impact);
+  const b = m.parts[0]?.boxes[0]?.b;
+  if (speed < SLAM_MIN || !b) return;
+  const dx = (b.minX + b.maxX) / 2 - position.x;
+  const dz = (b.minZ + b.maxZ) / 2 - position.z;
+  const far = Math.hypot(dx, dz) / SLAM_HEAR;
+  if (far >= 1) return;
+  // 視点の右の向き（-z を向いて yaw 0）
+  const pan = THREE.MathUtils.clamp((dx * Math.cos(lookEuler.y) - dz * Math.sin(lookEuler.y)) / 15, -1, 1);
+  sfx.playCargoSlam(Math.min(1, speed / 14), (1 - far) ** 2, pan);
+}
+function isRidingCargo(p: Part) {
+  return (player.onGround && player.mantleTime < 0 && p.boxes.some(({ b }) => Math.abs(position.y - b.h) < 1e-3 && onTop(b, position.x, position.z)))
+    || inRoom(p, position.x, position.z, position.y);
+}
+export function inheritCargoVelocity(worldSlow: number) {
+  const m = movers.find((m) => m.def.cargo && !m.fallen && m.parts.some(isRidingCargo));
+  if (m) velocity.x += m.cargoV * worldSlow;
+}
+
 export function updateMovers(dt: number) {
-  clock += dt;
+  if (dt > 0) updateCargo(dt);
   for (const m of movers) {
+    if (m.fallen) continue;
+    m.clock += dt;
+    if (hurry) m.clock = skipWait(m, m.clock);
+    const clock = m.clock;
     m.hitCool -= dt;
+    // 引き戸は先に動かす（中で moverOffset を呼ぶので、next を取った後に呼ぶと next が書き換わる）
+    if (m.parts.some((p) => p.doors.length > 0)) updateDoors(m, dt);
     const next = moverOffset(m, clock);
     const pivot = m.def.pivot ?? ORIGIN;
     for (const p of m.parts) {
@@ -135,13 +275,23 @@ export function updateMovers(dt: number) {
         m.vz = dz / dt;
       }
       if (dx === 0 && dz === 0 && dyaw === 0) continue;
-      // 動かす前に、何が載っているかを調べておく
-      const riding = player.onGround && player.mantleTime < 0 && p.boxes.some(({ b }) => Math.abs(position.y - b.h) < 1e-3 && onTop(b, position.x, position.z));
+      // 動かす前に、何が載っているかを調べておく。車が走っている間は、載っていても運ばない（下をすり抜けて落ちる）
+      // 傷を負わせない物（船の滑る積み荷）は、速くても載っている人を運ぶ
+      const racing = !!m.def.hazard && !m.def.harmless && dt > 0 && Math.hypot(dx, dz) / dt > HAZARD_SPEED;
+      const riding = !racing && player.onGround && player.mantleTime < 0 && p.boxes.some(({ b }) => Math.abs(position.y - b.h) < 1e-3 && onTop(b, position.x, position.z));
+      // 中に入れる物（扉の開いたコンテナ）の中にいれば、床が動かなくても一緒に運ぶ
+      const within = !riding && inRoom(p, position.x, position.z, position.y);
       const mantling = player.mantleTime >= 0 && p.boxes.some(({ b }) => Math.abs(mantleTo.y - b.h) < 1e-3 && onTop(b, mantleTo.x, mantleTo.z));
       const g = sickleState.grapple;
       const hooked = !!g?.block && p.boxes.some(({ b }) => b === g.block);
 
-      if (riding) {
+      if (m.def.cargo) for (const e of enemies) {
+        if (!e.alive) continue;
+        const ep = e.root.position;
+        const onCargo = e.airY <= 0 && p.boxes.some(({ b }) => Math.abs(ep.y - b.h) < 0.05 && onTop(b, ep.x, ep.z));
+        if (onCargo || inRoom(p, ep.x, ep.z, ep.y)) carry(pivot, p, nx, nz, nyaw, ep);
+      }
+      if (riding || within) {
         carry(pivot, p, nx, nz, nyaw, position);
         lookEuler.y += dyaw; // 車が曲がれば、乗っている人も一緒に向きを変える
       }
@@ -180,24 +330,105 @@ export function updateMovers(dt: number) {
       p.root.position.set(o.x, 0, o.z);
       p.root.rotation.y = nyaw;
     }
-    if (m.def.hazard) hitPlayer(m);
+    // 中にいる人は、壁に触れていても跳ね飛ばさない
+    if (m.def.hazard && !m.parts.some((p) => inRoom(p, position.x, position.z, position.y))) hitPlayer(m);
   }
 }
 
-// 動いている車にプレイヤーが触れたら、車の進む向きへ跳ね飛ばす
+// (x, z, y) が部品の中の空間（rooms。動き出す前の位置で書いてある）にあるか。向きを変える物には使わない
+function inRoom(p: Part, x: number, z: number, y: number) {
+  return (p.def.rooms ?? []).some((r) =>
+    x > r.minX + p.x && x < r.maxX + p.x && z > r.minZ + p.z && z < r.maxZ + p.z && y > (r.y0 ?? 0) - 0.1 && y < r.h);
+}
+
+// frontOnly の車は、進む向きの先頭（先端から FRONT_REACH の間）にいるときだけ当たる。横から触れるだけなら平気
+const FRONT_REACH = 1.5;
+function atFront(m: Mover, x: number, z: number, speed: number) {
+  if (!m.def.frontOnly) return true;
+  const dx = m.vx / speed;
+  const dz = m.vz / speed;
+  let front = -Infinity;
+  for (const p of m.parts) {
+    for (const { b } of p.boxes) {
+      for (const bx of [b.minX, b.maxX]) {
+        for (const bz of [b.minZ, b.maxZ]) front = Math.max(front, bx * dx + bz * dz);
+      }
+    }
+  }
+  return x * dx + z * dz >= front - FRONT_REACH;
+}
+
+// 引き戸を開け閉めする。止まってしばらくしたら開き、走り出す少し前に閉まる。
+// 閉まりきるまでは通れる。閉まりきったときにプレイヤーが戸の所にいれば、出るまで当たり判定を効かせない（車内に閉じ込めない）
+function updateDoors(m: Mover, dt: number) {
+  const clock = m.clock;
+  const now = moverOffset(m, clock);
+  const [x, z] = [now.x, now.z];
+  const still = (t: number) => {
+    const a = moverOffset(m, t);
+    return Math.abs(a.x - x) < 1e-3 && Math.abs(a.z - z) < 1e-3;
+  };
+  const open = still(clock - DOOR_AFTER) && still(clock + DOOR_BEFORE);
+  const top = position.y + PLAYER_HEIGHT;
+  for (const p of m.parts) {
+    for (const d of p.doors) {
+      d.open = THREE.MathUtils.clamp(d.open + (open ? dt : -dt) / DOOR_TIME, 0, 1);
+      d.root.position.z = d.slide * EASE.both(d.open);
+      for (const { b, base } of d.blocks) {
+        const blocked = b.h > (b.y0 ?? 0);
+        const shut = d.open === 0 && (blocked || !touches({ ...b, h: base.h }, position.x, position.z, position.y, top, PLAYER_RADIUS));
+        b.h = shut ? base.h : (b.y0 ?? 0) - 1;
+      }
+    }
+  }
+}
+
+// 動いている車にプレイヤーが触れたら、車の進む向きへ跳ね飛ばす（harmless なら傷は負わせない）
 function hitPlayer(m: Mover) {
   const speed = Math.hypot(m.vx, m.vz);
-  if (speed < HAZARD_SPEED || m.hitCool > 0 || game.playerHp <= 0) return;
+  if (speed < HAZARD_SPEED || m.hitCool > 0 || game.playerHp <= 0 || !atFront(m, position.x, position.z, speed)) return;
   const top = position.y + PLAYER_HEIGHT;
   if (!m.parts.some((p) => p.boxes.some(({ b }) => touches(b, position.x, position.z, position.y, top, PLAYER_RADIUS + 0.05)))) return;
   m.hitCool = HAZARD_COOL;
   const throwSpeed = Math.max(speed * HAZARD_THROW, HAZARD_THROW_MIN);
   velocity.set((m.vx / speed) * throwSpeed, HAZARD_LIFT, (m.vz / speed) * throwSpeed);
   player.onGround = false;
-  hooks.damagePlayer(HAZARD_DAMAGE);
   sfx.playAxeGround(1.2);
+  if (m.def.harmless) {
+    hooks.addTrauma(0.5);
+    return;
+  }
+  hooks.damagePlayer(HAZARD_DAMAGE);
   sfx.playHurt();
   hooks.addTrauma(0.8);
+}
+
+// index 番目の動く物が、動き出す前の位置（駅）に止まって引き戸が開ききっていて、ahead 秒先まで動かないか（その動く物が無ければ true）。
+// 遠くで待っている間（駅にいない）は false
+export function trainNeedsClear(index: number, x: number, z: number, y: number, dt: number): boolean {
+  const m = movers[index];
+  if (!m || y < 0.9 || Math.abs(x) < 12) return false;
+  const now = moverOffset(m, m.clock);
+  if (Math.abs(now.x) > 1e-3 || Math.abs(now.z) > 1e-3) return false;
+  const future = moverOffset(m, m.clock + DOOR_BEFORE + 0.25 + dt);
+  if (Math.abs(future.x) < 1e-3 && Math.abs(future.z) < 1e-3) return false;
+  return m.parts.some((p) => {
+    const boxes = p.boxes.map(({ b }) => b);
+    return boxes.length > 0 && x >= Math.min(...boxes.map((b) => b.minX)) && x <= Math.max(...boxes.map((b) => b.maxX))
+      && z >= Math.min(...boxes.map((b) => b.minZ)) && z <= Math.max(...boxes.map((b) => b.maxZ));
+  });
+}
+
+export function moverDocked(ahead: number, index: number): boolean {
+  const m = movers[index];
+  if (!m) return true;
+  const home = (t: number) => {
+    const a = moverOffset(m, t);
+    return Math.abs(a.x) < 1e-3 && Math.abs(a.z) < 1e-3;
+  };
+  // 間で動いて戻ってくることは無いものとして、前後と途中の時刻を見る
+  const clock = m.clock;
+  return home(clock - DOOR_AFTER - DOOR_TIME) && home(clock) && home(clock + ahead / 2) && home(clock + ahead);
 }
 
 // これから ahead 秒の間に、走っている車が足もと y0・高さ h・半径 r の円柱に触れるか（道のりを先まで読む）。
@@ -209,9 +440,9 @@ export function moverThreat(x: number, z: number, y0: number, h: number, r: numb
     if (!m.def.hazard) continue;
     const pivot = m.def.pivot ?? ORIGIN;
     for (let t = 0; t <= ahead + 1e-6; t += THREAT_STEP) {
-      const a = moverOffset(m, clock + t);
+      const a = moverOffset(m, m.clock + t);
       const [ox, oz, yaw] = [a.x, a.z, a.yaw];
-      const b = moverOffset(m, clock + t + 0.05);
+      const b = moverOffset(m, m.clock + t + 0.05);
       const vx = b.x - ox;
       const vz = b.z - oz;
       const speed = Math.hypot(vx, vz) / 0.05;
@@ -248,8 +479,79 @@ export function moverThreat(x: number, z: number, y0: number, h: number, r: numb
 const hazardVel = new THREE.Vector3();
 export function moverHazardAt(x: number, z: number, y0: number, h: number, r: number): THREE.Vector3 | null {
   for (const m of movers) {
-    if (!m.def.hazard || Math.hypot(m.vx, m.vz) < HAZARD_SPEED) continue;
+    const speed = Math.hypot(m.vx, m.vz);
+    if (!m.def.hazard || speed < HAZARD_SPEED || !atFront(m, x, z, speed)) continue;
     if (m.parts.some((p) => p.boxes.some(({ b }) => touches(b, x, z, y0, y0 + h, r)))) return hazardVel.set(m.vx, 0, m.vz);
+  }
+  return null;
+}
+
+// Cargo is handled separately from vehicles, including when it stops against a rail.
+export function hasCargo(): boolean { return movers.some((m) => !!m.def.cargo); }
+// Sample live cargo surfaces and open rooms, leaving room for the whole body.
+export function cargoSpawnPoints(radius: number, height: number): { x: number; y: number; z: number }[] {
+  const points: { x: number; y: number; z: number }[] = [];
+  const sample = (area: { minX: number; maxX: number; minZ: number; maxZ: number }, y: number, top: boolean) => {
+    const margin = radius + 0.15;
+    const x0 = area.minX + margin, x1 = area.maxX - margin;
+    const z0 = area.minZ + margin, z1 = area.maxZ - margin;
+    if (x0 > x1 || z0 > z1) return;
+    const nx = Math.max(1, Math.ceil((x1 - x0) / 1.5));
+    const nz = Math.max(1, Math.ceil((z1 - z0) / 1.5));
+    for (let i = 0; i <= nx; i++) for (let j = 0; j <= nz; j++) {
+      const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
+      const blocked = blocks.some((b) => b.h > y + 0.05 && (top || (b.y0 ?? 0) < y + height)
+        && Math.hypot(x - THREE.MathUtils.clamp(x, b.minX, b.maxX), z - THREE.MathUtils.clamp(z, b.minZ, b.maxZ)) < margin);
+      if (!blocked) points.push({ x, y, z });
+    }
+  };
+  for (const m of movers) {
+    if (!m.def.cargo || m.fallen) continue;
+    for (const p of m.parts) {
+      for (const { b } of p.boxes) sample(b, b.h, true);
+      for (const room of p.def.rooms ?? []) {
+        if (room.h - (room.y0 ?? 0) < height) continue;
+        sample({ minX: room.minX + p.x, maxX: room.maxX + p.x, minZ: room.minZ + p.z, maxZ: room.maxZ + p.z }, room.y0 ?? 0, false);
+      }
+    }
+  }
+  return points;
+}
+// Return the closest approaching face and its live block for landing tracking.
+export function approachingCargo(x: number, z: number, y: number, h: number, r: number) {
+  let best: { block: Block; speed: number; time: number } | null = null;
+  for (const m of movers) {
+    if (!m.def.cargo || m.fallen || Math.abs(m.cargoV) < 0.15) continue;
+    for (const p of m.parts) {
+      if (inRoom(p, x, z, y)) continue;
+      for (const { b } of p.boxes) {
+        if (b.h <= y + 0.1 || (b.y0 ?? 0) >= y + h || z < b.minZ - r || z > b.maxZ + r) continue;
+        const gap = m.cargoV > 0 ? x - r - b.maxX : b.minX - x - r;
+        if (gap < -0.1 || gap > Math.abs(m.cargoV) * 1.8 + 1) continue;
+        const time = Math.max(0, gap) / Math.abs(m.cargoV);
+        if (!best || time < best.time) best = { block: b, speed: m.cargoV, time };
+      }
+    }
+  }
+  return best;
+}
+export function cargoBlockActive(block: Block): boolean {
+  return movers.some((m) => !!m.def.cargo && !m.fallen && m.parts.some((p) => p.boxes.some((box) => box.b === block)));
+}
+export function cargoBlocksAhead(x: number, z: number, y: number, h: number, r: number): boolean {
+  return movers.some((m) => !m.fallen && !!m.def.cargo && m.parts.some((p) => p.boxes.some(({ b }) => {
+    const dx = m.cargoV;
+    const swept = { ...b, minX: b.minX + Math.min(0, dx), maxX: b.maxX + Math.max(0, dx) };
+    return touches(swept, x, z, y, y + h, r);
+  })));
+}
+export function cargoContact(x: number, z: number, y: number, h: number, r: number): { block: Block; dx: number } | null {
+  for (const m of movers) {
+    if (!m.def.cargo || m.fallen || Math.abs(m.vx) < 1e-6) continue;
+    for (const p of m.parts) {
+      if (inRoom(p, x, z, y)) continue;
+      for (const { b } of p.boxes) if (touches(b, x, z, y, y + h, r)) return { block: b, dx: m.vx };
+    }
   }
   return null;
 }

@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { camera, controls } from '../core.js';
 import { THROW_RANGE } from '../weapons/kunai.js';
+import { ARROW_FLY_MAX, ARROW_SPEED_MIN, ARROW_SPEED_MAX, BOW_VOLLEY_SPEED, bowState } from '../weapons/bowCombat.js';
+import { SPEAR_THROW_RANGE, spearThrow } from '../weapons/spearCombat.js';
 import { enemies, type Enemy } from '../enemy/state.js';
 import { castWorld } from '../world/raycast.js';
 import { game } from '../game/state.js';
 
-// ---- エイムアシスト（パッドで、クナイと銃を構えているときだけ） ----
+// ---- エイムアシスト（パッドで、射撃武器や投げ槍を構えているとき） ----
 // 照準の近くにいる敵の胸を探し、視点を遅くする / 寄せる / 撃った弾を向ける。
 // 効く範囲は敵の周りの半径 (m) で決めるので、近い敵ほど画面上で広く、遠い敵ほど狭くなる
 export const ASSIST_RADIUS = 1.1; // 視点を遅くし、寄せ始める範囲（胸からの半径, m）
@@ -17,8 +19,17 @@ export const assistTarget = { point: new THREE.Vector3(), angle: 0, size: 0, yaw
 export const assistNeck = new THREE.Vector3();
 export const assistDir = new THREE.Vector3();
 export const assistInv = new THREE.Quaternion();
+export function isAssistWeaponActive() {
+  return game.shownWeapon === 'kunai' || game.shownWeapon === 'handgun'
+    || (game.shownWeapon === 'bow' && bowState.drawing)
+    || (game.shownWeapon === 'spear' && spearThrow.phase === 'windup');
+}
+
 export function findAssistTarget(): typeof assistTarget | null {
-  if (!game.usingPad || !controls.isLocked || (game.shownWeapon !== 'kunai' && game.shownWeapon !== 'handgun')) return null;
+  if (!game.usingPad || !controls.isLocked || !isAssistWeaponActive()) return null;
+  const range = game.shownWeapon === 'bow'
+    ? THREE.MathUtils.lerp(ARROW_SPEED_MIN, ARROW_SPEED_MAX, bowState.draw ** 2) * ARROW_FLY_MAX * (bowState.shot === 'volley' ? BOW_VOLLEY_SPEED : 1)
+    : game.shownWeapon === 'spear' ? SPEAR_THROW_RANGE : THROW_RANGE;
   let best: typeof assistTarget | null = null;
   let bestScore = 1;
   assistInv.copy(camera.quaternion).invert();
@@ -30,7 +41,7 @@ export function findAssistTarget(): typeof assistTarget | null {
     const chest = assistNeck.copy(assistDir);
     assistDir.sub(camera.position);
     const dist = assistDir.length();
-    if (dist < 0.5 || dist > THROW_RANGE) continue;
+    if (dist < 0.5 || dist > range) continue;
     assistDir.divideScalar(dist);
     const size = Math.atan2(ASSIST_RADIUS, dist); // 範囲の見かけの大きさ (rad)
     // 照準（-Z）から見たずれ。yaw は右が +、pitch は上が +

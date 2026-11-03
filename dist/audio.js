@@ -307,6 +307,23 @@ export function setAudioPaused(paused) {
     else if (!paused && ctx.state === 'suspended')
         ctx.resume();
 }
+// 同じ音声ノードを次の試合でも使う場合、死亡やスローの状態を持ち越さない。
+export function resetMatchAudio() {
+    slowAmt = 0;
+    duckUntil = 0;
+    nextHeartbeat = 0;
+    if (!ctx)
+        return;
+    const t = ctx.currentTime;
+    for (const [param, value] of [
+        [worldGain.gain, 1], [slowFilter.frequency, 20000], [reverbReturn.gain, 0.5],
+        [windGain.gain, 0], [scrapeGain.gain, 0], [droneGain.gain, 0],
+    ]) {
+        param.cancelScheduledValues(t);
+        param.setValueAtTime(value, t);
+    }
+    stopStageRise();
+}
 // 毎フレーム呼ぶ。鳴り続ける音の量と、スローのこもり具合を動かす
 export function updateAudio(s) {
     if (!ctx)
@@ -603,6 +620,37 @@ export function playAxeGround(power = 1) {
     noise('lowpass', 900, 120, 0.3 * power, 0.25, { attack: 0.003 });
     tone(95, 38, 0.5 * power, 0.3, { attack: 0.004 });
 }
+// ---- 船（SHIP） ----
+// 大波の予告の汽笛: 低く太い 2 つの音を重ねて長く鳴らす。遠くの船から聞こえるように、残響を多めにする
+export function playShipHorn(volume = 1) {
+    if (!ctx)
+        return;
+    const lp = filter('lowpass', 900); // のこぎり波の角を丸めて、ラッパのような太い音にする
+    lp.connect(panOut(0));
+    for (const [f, g] of [[73, 0.2], [110, 0.14], [146, 0.05]]) {
+        tone(f, f * 0.985, g * volume, 2.4, { type: 'sawtooth', attack: 0.35, out: lp });
+    }
+    noise('lowpass', 300, 200, 0.05 * volume, 2.2, { attack: 0.4, reverb: 0.4 });
+}
+// 船体のきしみ: 大きく傾いていくときの、鉄がたわむ低い「ギギィ」
+export function playHullCreak(volume = 1) {
+    if (!ctx)
+        return;
+    sample('gear', { gain: 0.22 * volume, rate: 0.28, lp: 900, cut: 0.9, reverb: 0.3 });
+    sample('plate', { gain: 0.1 * volume, rate: 0.3, lp: 700, delay: 0.25, cut: 0.6, reverb: 0.3 });
+    tone(52, 44, 0.12 * volume, 1.4, { type: 'triangle', attack: 0.5 });
+}
+// 積み荷が手すりにぶつかった「ガゴォン」。power は 0..1（速いほど大きい）、volume は遠いほど小さく
+export function playCargoSlam(power, volume = 1, pan = 0) {
+    if (!ctx)
+        return;
+    const out = panOut(pan);
+    const v = power * volume;
+    sample('thud_heavy', { gain: 0.7 * v, rate: 0.5, reverb: 0.3, pan });
+    sample('plate', { gain: 0.3 * v, rate: 0.4, lp: 1800, cut: 0.6, reverb: 0.3, pan });
+    noise('lowpass', 600, 90, 0.3 * v, 0.4, { attack: 0.004, out });
+    tone(70, 32, 0.5 * v, 0.45, { attack: 0.004, out });
+}
 // 近接の空振りが壁や床を叩いた（weapons/wallHit.ts）。肉に入る「ザシュッ」は入れず、硬い面に弾かれた乾いた音だけ。
 // 刃は短い金属の「キッ」、斧は重い「ガゴッ」、バットは中空の「カンッ」
 export function playWallHit(kind, power = 1) {
@@ -791,6 +839,97 @@ export function playRing(pitch = 1, volume = 1, decay = 0.35) {
     }
 }
 // 握り直したときの「チャキッ」: 高く短い金属音を 2 つ、わずかにずらして重ね、録音の小さな金属音を添える
+// ライフルの銃声: リボルバーの銃声をそのまま土台にして、頭に鋭い破裂音を、下に低く長い胴鳴りを 1 本ずつ足す。
+// 尾は広い所の響きへ逃がして、大きな銃に聞かせる。響きへ送るだけにして、鳴った瞬間の音には何も重ねない（重ねると輪郭がぼける）
+export function playRifleShot() {
+    if (!ctx)
+        return;
+    playGunshot(1.15);
+    const dry = { pan: 0, jitter: 0.015 };
+    sample('gun_crack', { ...dry, gain: 0.45, rate: 0.95, hp: 1500, cut: 0.08, hall: 0.5 });
+    thump(95, 30, 0.55, 0.4, 1.4, bus, 240);
+    sample('thud_heavy', { ...dry, gain: 0.3, rate: 0.5, lp: 600, delay: 0.02, cut: 0.3, hall: 1.0 });
+    duckUntil = ctx.currentTime + 1.1;
+}
+// ライフルのヘッドショット: 頭を撃ち抜いた高く澄んだ「キンッ」と、殻が割れる乾いた「パキッ」。
+// スローでこもらせず遠くからでも聞こえるよう parryBus へ出す。kill なら低い「ドッ」と短い余韻の鐘を重ねる
+export function playHeadshot(kill) {
+    if (!ctx)
+        return;
+    const t0 = ctx.currentTime;
+    const dry = { out: parryBus, pan: 0, jitter: 0.02 };
+    sample('clash', { ...dry, gain: 0.45, rate: 1.6, hp: 2500, cut: 0.12 });
+    sample('metal_tick', { ...dry, gain: 0.5, rate: 1.3, hp: 1500 });
+    sample('glass', { ...dry, gain: 0.4, rate: 1.1, hp: 1200, cut: 0.25 });
+    noise('highpass', 5000, 7000, 0.3, 0.02, { attack: 0.0005, out: parryBus });
+    for (const [freq, gain, decay] of [[3300, 0.05, 0.5], [3317, 0.035, 0.45], [4950, 0.02, 0.3]]) {
+        const osc = ctx.createOscillator();
+        osc.frequency.value = freq;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(gain * (kill ? 1 : 0.6), t0 + 0.003);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+        osc.connect(g).connect(parryBus);
+        osc.start(t0);
+        osc.stop(t0 + decay + 0.05);
+    }
+    if (!kill)
+        return;
+    sample('punch_heavy', { ...dry, gain: 0.7, rate: 0.7, lp: 1500, delay: 0.01 });
+    sample('glass', { ...dry, gain: 0.35, rate: 0.6, lp: 6000, delay: 0.02, cut: 0.4 });
+    sample('bell', { ...dry, gain: 0.16, rate: 1.4, lp: 6000, delay: 0.03 });
+    tone(130, 40, 0.6, 0.3, { attack: 0.003, out: parryBus, delay: 0.01 });
+}
+// ライフルのレバーを下げる（open）・戻す（close）
+export function playLever(phase) {
+    if (phase === 'open') {
+        sample('gun_latch', { gain: 0.55, rate: 0.75 });
+        sample('metal_small', { gain: 0.25, rate: 0.9, delay: 0.02 });
+    }
+    else {
+        sample('gun_latch', { gain: 0.6, rate: 0.95 });
+        sample('metal_tick', { gain: 0.4, rate: 0.75, delay: 0.015 });
+    }
+}
+// 装填の音は響かせない: 金属の録音は頭だけ残してすぐ切り、高い鳴りを削って、乾いた小さなクリックにする
+// ライフルを傾けて装填口を見せる: 服の擦れと、銃が手の中で向きを変える鈍い音
+export function playRifleTilt() {
+    sample('cloth', { gain: 0.24, rate: 1.05 });
+    sample('thud', { gain: 0.14, rate: 1.3, lp: 900, delay: 0.12, cut: 0.1 });
+}
+// 1 発を指でつまみ上げる: 指先が真鍮に触れるかすかな「チッ」
+export function playRifleRoundPick() {
+    sample('cloth', { gain: 0.08, rate: 1.6, cut: 0.1 });
+    noise('highpass', 3500, 3500, 0.025, 0.012, { attack: 0.001, delay: 0.03 });
+}
+// 弾の先が装填口の蓋を押し開ける小さな「カチ」と、真鍮が擦れて奥へ滑る「スッ」
+export function playRifleGate() {
+    sample('metal_tick', { gain: 0.16, rate: 1.5, lp: 4500, cut: 0.03 });
+    noise('bandpass', 3000, 1600, 0.04, 0.06, { attack: 0.004, q: 1.5 });
+}
+// 弾が管の奥へ入りきる: 蓋がばねで閉じる短い「パチッ」と、親指で押し込んだ鈍い「コッ」。
+// 込めるほど管のばねが詰まって、少し高く鳴る（full: 0〜1）
+export function playRifleLoad(full = 0) {
+    const r = 1 + 0.12 * full;
+    sample('metal_tick', { gain: 0.3, rate: 1.1 * r, lp: 3500, cut: 0.035 });
+    noise('bandpass', 2200 * r, 1400 * r, 0.08, 0.018, { attack: 0.001, q: 1.2 });
+    sample('thud', { gain: 0.26, rate: 1.6 * r, lp: 1400, cut: 0.07, delay: 0.004 });
+}
+// 込め終えて構えへ戻す: 服の擦れと、銃床を肩へ収める鈍い音
+export function playRifleShoulder() {
+    sample('cloth', { gain: 0.2, rate: 1.2 });
+    sample('thud', { gain: 0.16, rate: 1.1, lp: 800, delay: 0.1, cut: 0.1 });
+}
+// 弾が空のまま引き金を引いた
+export function playDryFire() {
+    sample('metal_tick', { gain: 0.35, rate: 1.4 });
+}
+// 倒してライフルの弾が増えた: 高く短い金属音を 2 つ重ねる
+export function playRifleGain() {
+    playRing(2.4, 0.35, 0.05);
+    setTimeout(() => playRing(3.1, 0.3, 0.05), 40);
+    sample('metal_small', { gain: 0.25, rate: 1.4 });
+}
 export function playGrip() {
     playRing(1.9, 0.5, 0.04);
     setTimeout(() => playRing(1.45, 0.7, 0.07), 25);
@@ -822,6 +961,10 @@ export function playEquip(weapon) {
     else if (weapon === 'handgun') {
         sample('gun_latch', { gain: 0.45, rate: 1.1, delay: 0.03 });
         sample('metal_tick', { gain: 0.3, rate: 0.9, delay: 0.09 });
+    }
+    else if (weapon === 'rifle') {
+        sample('gun_latch', { gain: 0.5, rate: 0.8, delay: 0.03 }); // レバーを起こして戻す
+        sample('metal_tick', { gain: 0.35, rate: 0.7, delay: 0.12 });
     }
     else if (weapon === 'bat' || weapon === 'spear') {
         sample('metal_tick', { gain: 0.25, rate: 0.6, lp: 3000, delay: 0.04 }); // バットと槍は鞘から抜かないので、握り直す小さな音だけ

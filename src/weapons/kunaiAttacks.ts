@@ -70,6 +70,22 @@ export function makeAttack(def: Omit<AttackDef, 'keys' | 'duration'> & { keys: K
   return { ...def, keys, duration: keys[keys.length - 1].t };
 }
 
+// 投げ: 耳の横へ切っ先を後ろに向けて引き、照準へ向けて手首ごと振り抜いて放す。
+// 放した後は手の下から次の 1 本を輪に掛けてくるりと回し、構えへ戻す（軌跡・当たりは使わない）
+export const THROW_RELEASE = 0.06; // クナイが手を離れる時間
+export const THROW_REDRAW = 0.11; // 次の 1 本が手に現れる時間
+export const KUNAI_THROW = makeAttack({
+  keys: [
+    { t: 0, ease: easeOutCubic },
+    { t: 0.035, pos: [0.07, 0.13, 0.1], tip: [0.25, 0.55, 0.8], roll: -20, ease: easeInQuad }, // 耳の横へ引く
+    { t: THROW_RELEASE, pos: [-0.03, 0.07, -0.17], tip: [-0.08, 0.2, -1], ease: easeOutCubic }, // 照準へ振り抜いて放す
+    { t: 0.09, pos: [-0.09, -0.06, -0.12], tip: [-0.35, -0.55, -0.75], ease: linear }, // 振り抜いた余り（手は空）
+    { t: THROW_REDRAW, pos: [0.03, -0.13, 0.05], tip: [-0.2, 0.9, 0.3], spin: 300, ease: easeOutBack }, // 手の下から次の 1 本
+    { t: 0.2, spin: 360 }, // 回しながら構えへ
+  ],
+  trails: [], impact: THROW_RELEASE, kick: [0, 0, 0], lunge: 0, cancel: 0.2, swishes: [],
+});
+
 // 1 段目: 右上から左へ薙ぐ
 export const SLASH_1 = makeAttack({
   keys: [

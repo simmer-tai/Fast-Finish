@@ -3,14 +3,22 @@ import * as sfx from '../audio.js';
 import { createBat } from '../weapons/bat.js';
 import { createBattleAxe } from '../weapons/battleAxe.js';
 import { createSpear } from '../weapons/spear.js';
+import { createRifle } from '../weapons/rifle.js';
 import { createBow } from '../weapons/bow.js';
 import { createChainSickle } from '../weapons/chainSickle.js';
 import { WEAPON_IDS, type WeaponId } from '../weapons/ids.js';
 import { createKunai } from '../weapons/kunai.js';
 import { createWeaponMats, type WeaponMats } from '../weapons/materials.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY } from '../core.js';
+import { GlowPass } from '../fx/glow.js';
+import { options } from './options.js';
 import { createRevolver } from '../weapons/revolver.js';
 import { applySkin, createSkinMats, dressModel, setSkin, skinOf, skinnedWeaponMats, skinsFor, skinTags, skinUnlocked, type Skin, type SkinMats, type SkinTag } from '../weapons/skins.js';
 import { createSword } from '../weapons/sword.js';
+import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js';
 
 // ---- スキンの選択画面 ----
 // 武器の選択画面の SKIN から開く。左に武器のモデルを大きく出してゆっくり回し（ドラッグで回す・ホイールで寄る）、
@@ -37,10 +45,20 @@ const TAG: Record<SkinTag, { ja: string; icon: string }> = {
   // モーション: 振りの弧
   motion: { ja: 'モーション', icon: '<path d="M4 17A9.5 9.5 0 0 1 19 6.5"/><path d="M13.5 5.5 19 6.5l-1 5.5"/><path d="M7 19.5a6 6 0 0 1 9-8.5"/>' },
 };
-function showTags(skin: Skin) {
-  tagsBox.innerHTML = skinTags(skin)
+export const skinTagsHtml = (skin: Skin) =>
+  skinTags(skin)
     .map((t) => `<span aria-label="${TAG[t].ja}"><svg viewBox="0 0 24 24" aria-hidden="true">${TAG[t].icon}</svg><b>${TAG[t].ja}</b></span>`)
     .join('');
+function showTags(skin: Skin) {
+  tagsBox.innerHTML = skinTagsHtml(skin);
+}
+
+// 解放したのにまだ選んでいないスキンには NEW を付ける（ui/newMarks.ts）
+const skinKey = (id: WeaponId, skin: Skin) => `skin:${id}:${skin.id}`;
+const newSkin = (id: WeaponId, skin: Skin) => isNew(skinKey(id, skin), skinUnlocked(skin));
+seedSeen(WEAPON_IDS.flatMap((id) => skinsFor(id).filter(skinUnlocked).map((s) => skinKey(id, s))));
+function touchSkin(i: number) {
+  if (skinUnlocked(skins[i]) && markSeen(skinKey(weapon, skins[i]))) tiles[i].classList.remove('is-new');
 }
 
 // タイルは開くたびに、その武器で選べるスキンの分だけ並べ直す（武器専用のスキンがある）
@@ -58,7 +76,9 @@ function makeTiles() {
     b.dataset.skin = skin.id;
     const locked = !skinUnlocked(skin);
     b.classList.toggle('locked', locked);
-    b.innerHTML = `<canvas width="${THUMB}" height="${THUMB}"></canvas>${locked ? PADLOCK : ''}<span class="lbl">${skin.name}</span>`;
+    b.classList.toggle('is-new', newSkin(weapon, skin));
+    b.innerHTML = `<canvas width="${THUMB}" height="${THUMB}"></canvas>${locked ? PADLOCK : ''}<span class="lbl">${skin.name}</span>${NEW_TAG}`;
+    b.addEventListener('pointerenter', () => touchSkin(tiles.indexOf(b)));
     return b;
   });
   tilesBox.replaceChildren(...tiles);
@@ -66,24 +86,38 @@ function makeTiles() {
 }
 
 // ---- 見せるための描画 ----
-// ゲームとは別の描画の土台を持つ（ゲームの画面は後処理を通すので、そのまま借りられない）。初めて開いたときに作る
+// ゲームとは別の描画の土台を持つ（ゲームの画面は後処理を通すので、そのまま借りられない）。初めて開いたときに作る。
+// ゲームで持ったときと同じ質感にするため、光はゲームと同じ強さと向きにし、明るさのオプションも同じく掛ける。
+// 光のにじみ（fx/glow.ts）は、ゲームより狭く薄く掛ける（にじみの幅は画面の画素で決まるので、
+// 武器を小さく映すこの画面でゲームと同じ幅にすると、刀身が光に埋もれる）。
+// 幅は絵の高さ GLOW_REF_HEIGHT 画素で GLOW_SPREAD 倍とし、絵の大きさと寄った分に合わせて広げる（タイルの小さな絵でも同じ見え方に）
 const FOV = 28;
+const GLOW_SPREAD = 0.35;
+const GLOW_REF_HEIGHT = 600;
+const GLOW_OPACITY = 0.6;
 const AUTO_SPIN = 0.55; // 触っていないときの回る速さ (rad/s)
 const IDLE_TIME = 1.6; // 手を離してから自分で回り出すまで (s)
 const PITCH = 0.22; // 見下ろす角度
 type Framed = { root: THREE.Group; half: THREE.Vector3; model: THREE.Object3D };
 let view: ReturnType<typeof createView> | null = null;
-function createView() {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+function createView(target = canvas) {
+  const renderer = new THREE.WebGLRenderer({ canvas: target, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.LinearToneMapping;
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8c8c8c, 1.6));
-  const key = new THREE.DirectionalLight(0xffffff, 2.4);
-  key.position.set(-1.5, 2.2, 2.5);
-  const rim = new THREE.DirectionalLight(0xffffff, 1.4);
-  rim.position.set(2, 0.6, -2.2);
-  scene.add(key, rim);
+  scene.add(new THREE.HemisphereLight(0xffffff, HEMI_GROUND, HEMI_WITH_SUN));
+  const sun = new THREE.DirectionalLight(0xffffff, SUN_INTENSITY);
+  sun.position.copy(SUN_DIR);
+  scene.add(sun);
   const camera = new THREE.PerspectiveCamera(FOV, 1, 0.01, 50);
+  // 透けたキャンバスに描くので、描き込み先も透明度を持たせる。なめらかな縁はマルチサンプルの描き込み先で出す
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+  composer.addPass(new RenderPass(scene, camera));
+  const glow = new GlowPass(scene, camera, 1); // 狭いにじみをなめらかに消すため、縮小せずに描く
+  glow.opacity = GLOW_OPACITY;
+  glow.behind = true; // 武器の上には重ねず、まわりの透けた所にだけにじませる
+  composer.addPass(glow);
+  composer.addPass(new OutputPass());
   // 階層: tilt（見下ろす角度） → spin（回す） → 武器ごとに寝かせたモデル
   const tilt = new THREE.Group();
   const spin = new THREE.Group();
@@ -91,7 +125,13 @@ function createView() {
   scene.add(tilt);
   const base = createWeaponMats(renderer);
   const mats = Object.fromEntries(WEAPON_IDS.map((id) => [id, createSkinMats(base, id)])) as Record<WeaponId, SkinMats>;
-  return { renderer, scene, camera, tilt, spin, base, mats, models: new Map<WeaponId, Framed>() };
+  return { renderer, composer, glow, scene, camera, tilt, spin, base, mats, models: new Map<WeaponId, Framed>() };
+}
+function setViewSize(v: NonNullable<typeof view>, w: number, h: number, pixelRatio = v.renderer.getPixelRatio()) {
+  v.renderer.setPixelRatio(pixelRatio);
+  v.renderer.setSize(w, h, false);
+  v.composer.setPixelRatio(pixelRatio);
+  v.composer.setSize(w, h);
 }
 
 const BUILD: Record<WeaponId, (m: WeaponMats, s: SkinMats) => THREE.Object3D> = {
@@ -103,6 +143,7 @@ const BUILD: Record<WeaponId, (m: WeaponMats, s: SkinMats) => THREE.Object3D> = 
   bow: (m, s) => createBow({ riser: s.metal, limb: s.trim, grip: s.wrap, string: m.lead }),
   bat: (_, s) => createBat({ metal: s.metal, grip: s.wrap }),
   spear: (_, s) => createSpear({ metal: s.metal, shaft: s.trim, wrap: s.wrap }),
+  rifle: (m, s) => createRifle({ metal: s.metal, stock: s.wrap, trim: s.trim, lens: m.bore }),
 };
 // いちばん長い向きを横に、次に長い向きを縦にして寝かせ、真ん中を原点に置く（武器ごとに組んだ向きが違うので揃える）
 function frameModel(model: THREE.Object3D): Framed {
@@ -151,16 +192,16 @@ let lastFrame = 0;
 export const skinOpen = () => overlay.classList.contains('pick-skin');
 
 // 見せる距離: 回しても横にはみ出さないよう、横は外接球で合わせる。縦は見下ろしたときの奥行きの分も足して合わせる
-function fitDistance(v: NonNullable<typeof view>, half: THREE.Vector3, aspect: number) {
+function fitDistance(half: THREE.Vector3, aspect: number, tiltX = pitch) {
   const tv = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
   const dh = (half.length() * 1.06) / (tv * aspect);
-  const dv = ((half.x * Math.abs(Math.sin(pitch)) + half.y) * 1.2) / tv;
+  const dv = ((half.x * Math.abs(Math.sin(tiltX)) + half.y) * 1.2) / tv;
   return Math.max(dh, dv);
 }
 function resize(v: NonNullable<typeof view>) {
   const w = Math.max(1, stage.clientWidth);
   const h = Math.max(1, stage.clientHeight);
-  v.renderer.setSize(w, h, false);
+  setViewSize(v, w, h);
   v.camera.aspect = w / h;
   v.camera.updateProjectionMatrix();
 }
@@ -168,9 +209,15 @@ function render(v: NonNullable<typeof view>) {
   const f = modelOf(v, weapon);
   v.tilt.rotation.x = pitch;
   v.spin.rotation.set(0, yaw, 0);
-  v.camera.position.set(0, 0, fitDistance(v, f.half, v.camera.aspect) / zoom);
+  v.camera.position.set(0, 0, fitDistance(f.half, v.camera.aspect) / zoom);
   v.camera.lookAt(0, 0, 0);
-  v.renderer.render(v.scene, v.camera);
+  renderPreview(v, zoom);
+}
+const bufferSize = new THREE.Vector2();
+function renderPreview(v: NonNullable<typeof view>, zoomed = 1) {
+  v.renderer.toneMappingExposure = options.brightness;
+  v.glow.spread = (GLOW_SPREAD * zoomed * v.renderer.getDrawingBufferSize(bufferSize).y) / GLOW_REF_HEIGHT;
+  v.composer.render();
 }
 function frame(now: number) {
   raf = requestAnimationFrame(frame);
@@ -189,8 +236,7 @@ function frame(now: number) {
 function drawThumbs(v: NonNullable<typeof view>) {
   const f = modelOf(v, weapon);
   const pr = v.renderer.getPixelRatio();
-  v.renderer.setPixelRatio(1);
-  v.renderer.setSize(THUMB, THUMB, false);
+  setViewSize(v, THUMB, THUMB, 1);
   v.camera.aspect = 1;
   v.camera.updateProjectionMatrix();
   v.tilt.rotation.set(0, 0, 0);
@@ -201,11 +247,12 @@ function drawThumbs(v: NonNullable<typeof view>) {
   v.camera.lookAt(0, 0, 0);
   for (const [i, skin] of skins.entries()) {
     wearSkin(v, skin);
-    v.renderer.render(v.scene, v.camera);
+    renderPreview(v);
     tileCtx[i].clearRect(0, 0, THUMB, THUMB);
     tileCtx[i].drawImage(v.renderer.domElement, 0, 0, THUMB, THUMB); // 描いた直後なら描画の中身を写せる
   }
   v.renderer.setPixelRatio(pr);
+  v.composer.setPixelRatio(pr);
   resize(v);
 }
 // スキンを着せる: 色を塗り替え、形の飾りがあれば付け替える
@@ -215,10 +262,55 @@ function wearSkin(v: NonNullable<typeof view>, skin: Skin) {
 }
 new ResizeObserver(() => view && skinOpen() && resize(view)).observe(stage);
 
+// ---- ほかの画面に出す見本 ----
+// ロードマップのご褒美の中身に、スキンを着せた武器を選択画面と同じ台で回して見せる（触っては回せない）。
+// 選択画面とは別の描画の土台を持ち（同時に描けるように）、絵を描くキャンバスは 1 枚を使い回して、出す所へ差し込む
+const spinCanvas = document.createElement('canvas');
+let spinView: ReturnType<typeof createView> | null = null;
+let spinRaf = 0;
+// 選択画面を開いたときと同じく、勢いよく回し始めて、ゆっくりした回転に落ち着かせる
+export function startSkinSpin(id: WeaponId, skin: Skin): HTMLCanvasElement {
+  const v = (spinView ??= createView(spinCanvas));
+  const f = modelOf(v, id);
+  v.spin.clear();
+  v.spin.add(f.root);
+  applySkin(v.mats[id], skin);
+  dressModel(f.model, skin, v.mats[id]);
+  let turn = -1.1;
+  let vel = 5;
+  let at = performance.now();
+  const tick = (now: number) => {
+    spinRaf = requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - at) / 1000);
+    at = now;
+    vel += (AUTO_SPIN - vel) * (1 - Math.exp(-dt * 2.2));
+    turn += vel * dt;
+    const w = spinCanvas.clientWidth;
+    const h = spinCanvas.clientHeight;
+    if (!w || !h) return; // まだ差し込まれていない
+    const size = v.renderer.getSize(new THREE.Vector2());
+    if (size.x !== w || size.y !== h) {
+      setViewSize(v, w, h);
+      v.camera.aspect = w / h;
+      v.camera.updateProjectionMatrix();
+    }
+    v.tilt.rotation.x = PITCH;
+    v.spin.rotation.set(0, turn, 0);
+    v.camera.position.set(0, 0, fitDistance(f.half, v.camera.aspect, PITCH));
+    v.camera.lookAt(0, 0, 0);
+    renderPreview(v);
+  };
+  cancelAnimationFrame(spinRaf);
+  spinRaf = requestAnimationFrame(tick);
+  return spinCanvas;
+}
+export const stopSkinSpin = () => cancelAnimationFrame(spinRaf);
+
 // ---- 選ぶ ----
 function showSkin(i: number, flash: boolean) {
   selIndex = i;
   const skin = skins[i];
+  touchSkin(i);
   tiles.forEach((b, j) => b.classList.toggle('active', j === i));
   skinName.textContent = skin.name;
   skinJa.textContent = skinUnlocked(skin) ? skin.ja : `LOCKED — ${skin.unlock}`;

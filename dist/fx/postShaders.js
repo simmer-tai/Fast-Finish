@@ -86,6 +86,11 @@ export const ImpactFxShader = {
         uRing: { value: 0 }, // スローに入った瞬間に中心から広がる歪みの輪の半径（画面の高さ基準）
         uRingAmt: { value: 0 },
         uAspect: { value: window.innerWidth / window.innerHeight },
+        // 紅線の締めの技: 画面を斬る線の効き (0〜1)・通り道（0〜1）・向き（画面の高さ基準の単位ベクトル）・線の色
+        uCut: { value: 0 },
+        uCutAt: { value: new THREE.Vector2(0.5, 0.5) },
+        uCutDir: { value: new THREE.Vector2(0.7071, 0.7071) },
+        uCutColor: { value: new THREE.Color() },
     },
     vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -96,6 +101,10 @@ export const ImpactFxShader = {
   `,
     fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
+    uniform float uCut;
+    uniform vec2 uCutAt;
+    uniform vec2 uCutDir;
+    uniform vec3 uCutColor;
     uniform float uDim;
     uniform float uMono;
     uniform float uInvert;
@@ -114,6 +123,13 @@ export const ImpactFxShader = {
       vec2 push = r > 1e-4 ? c / r * wave * 0.007 : vec2(0.0);
       push.x /= uAspect;
       vec2 uv = vUv - push;
+      // 紅線の締めの技: 斬った線を境に、両側の画を線に沿って逆向きにずらす
+      vec2 cp = vUv - uCutAt;
+      cp.x *= uAspect;
+      float cutD = dot(cp, vec2(-uCutDir.y, uCutDir.x)); // 線からの距離（画面の高さ基準）
+      vec2 slide = uCutDir * sign(cutD) * uCut * 0.004;
+      slide.x /= uAspect;
+      uv += slide;
       // 遅い間は、四隅ほど色の三原色をずらしてにじませる
       float edge = dot(c, c) * uSlow;
       vec2 ca = c / max(uAspect, 1.0) * edge * 0.005;
@@ -131,7 +147,76 @@ export const ImpactFxShader = {
       vec2 d = vUv - 0.5;
       m *= 1.0 - dot(d, d) * 1.6 * uMono; // 四隅を落として中心へ目を寄せる
       col.rgb = mix(col.rgb, vec3(m), uMono);
+      // 斬った線そのもの（暗転・白黒のあとに塗って、色を残す）
+      col.rgb = mix(col.rgb, uCutColor, (1.0 - smoothstep(0.0012, 0.0026, abs(cutD))) * uCut);
       gl_FragColor = col;
+    }
+  `,
+};
+// カメラの動きのブラー。深度から各画素の位置を戻し、前のフレームのカメラで映した位置との差の向きにぼかす。
+// 手元の武器（カメラのすぐ前）はぼかさず、ほかの画素にも混ぜない
+export const MotionBlurShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        tDepth: { value: null },
+        uInvViewProj: { value: new THREE.Matrix4() },
+        uPrevViewProj: { value: new THREE.Matrix4() },
+        uNear: { value: 0.05 },
+        uFar: { value: 500 },
+        uStrength: { value: 0 },
+        uMaxLen: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform sampler2D tDepth;
+    uniform mat4 uInvViewProj;
+    uniform mat4 uPrevViewProj;
+    uniform float uNear;
+    uniform float uFar;
+    uniform float uStrength;
+    uniform float uMaxLen;
+    varying vec2 vUv;
+
+    // カメラからの距離（手元の武器かどうかの判定に使う）
+    float viewDist(float d) {
+      float z = d * 2.0 - 1.0;
+      return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
+    }
+    // 手元の武器なら 0、それより奥なら 1
+    float sceneMask(float d) {
+      return smoothstep(1.0, 1.4, viewDist(d));
+    }
+
+    void main() {
+      vec4 base = texture2D(tDiffuse, vUv);
+      float d = texture2D(tDepth, vUv).x;
+      float m = sceneMask(d);
+      if (m <= 0.0) { gl_FragColor = base; return; }
+
+      vec4 world = uInvViewProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+      world /= world.w;
+      vec4 prev = uPrevViewProj * world;
+      vec2 prevUv = prev.xy / prev.w * 0.5 + 0.5;
+      vec2 vel = (vUv - prevUv) * uStrength * m;
+      float len = length(vel);
+      if (len > uMaxLen) vel *= uMaxLen / len;
+
+      vec4 col = base;
+      const int SAMPLES = 8;
+      for (int i = 0; i < SAMPLES; i++) {
+        vec2 uv = vUv + vel * (float(i) / float(SAMPLES - 1) - 0.5);
+        // 武器の画素は拾わず、真ん中の色で埋める（武器が後ろへにじまないように）
+        float sm = sceneMask(texture2D(tDepth, uv).x);
+        col += mix(base, texture2D(tDiffuse, uv), sm);
+      }
+      gl_FragColor = col / float(SAMPLES + 1);
     }
   `,
 };

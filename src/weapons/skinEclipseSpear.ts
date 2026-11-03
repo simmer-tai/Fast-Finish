@@ -1,141 +1,128 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow, type GlowSource } from '../fx/glow.js';
+import { loftRings } from '../geometry.js';
+import { addGlow, removeGlow } from '../fx/glow.js';
 import { SPEAR_BUTT_Y, SPEAR_TIP_Y } from './spear.js';
-import { plate, type Outline } from './skinTalon.js';
+import { MM } from './skinTalon.js';
 import type { SkinDecor } from './skins.js';
 
-// ECLIPSE: a swept, pierced spearhead with cyan edges and backward hooks.
-// 輪郭は mm。切っ先・石突き・両手の位置は元の槍に合わせる。
+// ---- 槍のスキン: 蝕 ----
+// 白く光る芯を、黒い装甲が覆い隠した槍。光は装甲の継ぎ目からだけ漏れる。長さと握る位置は元の槍のまま。
+//   穂先: 菱形の断面の黒い装甲を 4 つの節に分け、節の境を切っ先へ向いた「く」の字に断つ。
+//         装甲の中には一回り薄い白い芯が通り、継ぎ目の溝の底で光る。装甲の縁は厚み 0 まで絞って刃にする
+//   首: 柄の先の黒い六角の口金から、穂先へ細くすぼまる。口金と首の間に光の継ぎ目
+//   柄: 黒い柄に、握る 2 か所は暗い灰色の握り。握りの両端の金具との間にも光の継ぎ目
+//   石突き: 黒い六角の蓋と錐。間に光の継ぎ目
+// 刃・鍔・口金・巻き・石突きは隠して作り直し、柄は looks のマテリアルのまま。
+// 寸法は槍のモデルの座標を mm で書く（x は刃先の側が +、y は切っ先の側が +、原点は両手で握る間）
+
+const TIP = SPEAR_TIP_Y / MM;
+// 穂先の輪郭: [y, 半幅]。切っ先の手前で細く絞る
+const WIDTH: [y: number, w: number][] = [[570, 9], [625, 21], [700, 19], [880, 9], [945, 3], [TIP, 0]];
+// 鎬（真ん中）の厚みの半分: [y, t]
+const THICK: [y: number, t: number][] = [[570, 7], [700, 6.5], [900, 3.5], [TIP, 0]];
+// 装甲の節（縁の y で [下, 上]）。節の境は真ん中が縁より CHEVRON だけ切っ先の側へ出る
+const SEGMENTS: [y0: number, y1: number][] = [[570, 658], [662, 755], [759, 848], [852, 940]];
+const CHEVRON = 22;
+const CORE_T = 0.42; // 芯の厚み（装甲に対する割合）。継ぎ目の溝の深さになる
+const GRIP_R = 0.0146;
+const GRIP_LEN = 0.18; // 元の巻きと同じ長さ
+
+const lerpAt = (table: [number, number][], y: number) => {
+  for (let i = 1; i < table.length; i++) {
+    const [y1, v1] = table[i];
+    if (y <= y1) {
+      const [y0, v0] = table[i - 1];
+      return v0 + ((v1 - v0) * (y - y0)) / (y1 - y0);
+    }
+  }
+  return table[table.length - 1][1];
+};
+
+// 菱形の断面。縁は y、真ん中は y + lift の高さに置く（lift を付けると「く」の字の断面になる）
+const v = (x: number, y: number, z: number) => new THREE.Vector3(x * MM, y * MM, z * MM);
+function ring(y: number, lift: number, tScale = 1) {
+  const w = lerpAt(WIDTH, y);
+  const t = lerpAt(THICK, y + lift) * tScale;
+  return [v(-w, y, 0), v(0, y + lift, t), v(w, y, 0), v(0, y + lift, -t)];
+}
+
+// 節ごとに、縁の輪郭の折れ目にも断面を入れてロフトする。いちばん上の節は切っ先の 1 点で閉じる
+function armorGeometries() {
+  return SEGMENTS.map(([y0, y1], i) => {
+    const ys = [y0, ...WIDTH.map(([y]) => y).filter((y) => y > y0 && y < y1), y1];
+    const rings = ys.map((y) => ring(y, CHEVRON));
+    if (i === SEGMENTS.length - 1) rings.push([v(0, TIP, 0)]);
+    return loftRings(rings);
+  });
+}
+
+function coreGeometry() {
+  const rings = WIDTH.slice(0, -1).map(([y]) => ring(y, 0, CORE_T));
+  rings.push([v(0, TIP, 0)]);
+  return loftRings(rings);
+}
+
+function createMats(env: THREE.Texture | null) {
+  const std = (o: THREE.MeshStandardMaterialParameters) =>
+    new THREE.MeshStandardMaterial({ envMap: env, flatShading: true, ...o });
+  return {
+    armor: std({ color: 0x0b0c0e, metalness: 0.88, roughness: 0.2, envMapIntensity: 1.7 }),
+    core: std({ color: 0xffffff, emissive: 0xe6edf0, emissiveIntensity: 1.4, metalness: 0, roughness: 0.3 }),
+    grip: std({ color: 0x1e2125, metalness: 0.2, roughness: 0.75 }),
+    band: std({ color: 0x0b0c0e, metalness: 0.6, roughness: 0.4 }),
+  };
+}
+
 export const eclipseSpear: SkinDecor = {
   build(parts, mats) {
-    for (const name of ['blade', 'guard', 'collar', 'butt', 'spike']) parts[name].visible = false;
+    for (const name of ['blade', 'guard', 'collar', 'wrap0', 'wrap1', 'butt', 'spike']) if (parts[name]) parts[name].visible = false;
+    const m = createMats(mats.metal.envMap);
     const g = new THREE.Group();
-    const std = (params: THREE.MeshStandardMaterialParameters) =>
-      new THREE.MeshStandardMaterial({ envMap: mats.metal.envMap, flatShading: true, ...params });
-    const armor = std({ color: 0x0b141d, metalness: 0.82, roughness: 0.29, envMapIntensity: 1.35 });
-    const bevel = std({ color: 0x314753, metalness: 0.9, roughness: 0.24, envMapIntensity: 1.5 });
-    const black = std({ color: 0x03090f, metalness: 0.3, roughness: 0.6 });
-    const grip = std({ color: 0x10191e, metalness: 0.15, roughness: 0.8 });
-    const energy = std({ color: 0x08bcd9, emissive: 0x00c9ed, emissiveIntensity: 1.25, metalness: 0.25, roughness: 0.25 });
-    const core = std({ color: 0xa4f5ff, emissive: 0x34e6ff, emissiveIntensity: 1.6, roughness: 0.22 });
-    const glows: GlowSource[] = [];
-    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, y = 0) => {
+    const at = (geo: THREE.BufferGeometry, mat: THREE.Material, y: number) => {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = y;
       g.add(mesh);
       return mesh;
     };
-    const panel = (outline: Outline, depth: number, mat: THREE.Material) => add(plate(outline, depth, 0.0006), mat);
-    const ring = (y: number, radius: number, height: number, mat: THREE.Material) =>
-      add(new THREE.CylinderGeometry(radius, radius, height, 8), mat, y);
-    const glow = (mesh: THREE.Mesh, strength = 0.65) => {
-      const source = addGlow(mesh, 0x00d5ff);
-      source.strength = strength;
-      glows.push(source);
-      return mesh;
-    };
+    const hex = (y0: number, y1: number, r0: number, r1: number, mat: THREE.Material) =>
+      at(new THREE.CylinderGeometry(r1, r0, y1 - y0, 6), mat, (y0 + y1) / 2);
+    // 光の継ぎ目: 柄より少しだけ太い白い輪
+    const seam = (y: number, r: number) => at(new THREE.CylinderGeometry(r, r, 0.003, 12), m.core, y);
 
-    // 大きな主刃と後ろへ伸びる鉤を一体にし、根元に両面を貫く透かしを開ける。
-    const mm = 0.001;
-    const head = new THREE.Shape();
-    head.moveTo(-10 * mm, SPEAR_TIP_Y);
-    head.quadraticCurveTo(-25 * mm, 865 * mm, -53 * mm, 780 * mm);
-    head.quadraticCurveTo(-72 * mm, 713 * mm, -72 * mm, 644 * mm);
-    head.quadraticCurveTo(-72 * mm, 597 * mm, -61 * mm, 574 * mm);
-    head.lineTo(-91 * mm, 480 * mm);
-    head.quadraticCurveTo(-54 * mm, 505 * mm, -38 * mm, 556 * mm);
-    head.quadraticCurveTo(-25 * mm, 544 * mm, -10 * mm, 540 * mm);
-    head.lineTo(0, 510 * mm);
-    head.quadraticCurveTo(27 * mm, 513 * mm, 37 * mm, 550 * mm);
-    head.quadraticCurveTo(66 * mm, 529 * mm, 111 * mm, 487 * mm);
-    head.quadraticCurveTo(78 * mm, 559 * mm, 57 * mm, 615 * mm);
-    head.quadraticCurveTo(42 * mm, 646 * mm, 29 * mm, 658 * mm);
-    head.quadraticCurveTo(23 * mm, 733 * mm, 1 * mm, 815 * mm);
-    head.quadraticCurveTo(-5 * mm, 915 * mm, -10 * mm, SPEAR_TIP_Y);
-    const hole = new THREE.Path();
-    hole.moveTo(-39 * mm, 752 * mm);
-    hole.quadraticCurveTo(-54 * mm, 700 * mm, -51 * mm, 650 * mm);
-    hole.quadraticCurveTo(-49 * mm, 622 * mm, -35 * mm, 603 * mm);
-    hole.quadraticCurveTo(-20 * mm, 641 * mm, -22 * mm, 670 * mm);
-    hole.quadraticCurveTo(-23 * mm, 713 * mm, -39 * mm, 752 * mm);
-    head.holes.push(hole);
-    const eye = new THREE.Path();
-    eye.moveTo(-9 * mm, 628 * mm);
-    eye.quadraticCurveTo(2 * mm, 666 * mm, 7 * mm, 694 * mm);
-    eye.quadraticCurveTo(16 * mm, 653 * mm, 17 * mm, 630 * mm);
-    eye.quadraticCurveTo(13 * mm, 606 * mm, 5 * mm, 596 * mm);
-    eye.quadraticCurveTo(-3 * mm, 607 * mm, -9 * mm, 628 * mm);
-    head.holes.push(eye);
-    const headGeo = new THREE.ExtrudeGeometry(head, {
-      depth: 0.014, bevelEnabled: false, curveSegments: 12,
-    });
-    headGeo.translate(0, 0, -0.007);
-    add(headGeo, armor);
+    const core = new THREE.Mesh(coreGeometry(), m.core);
+    g.add(core, ...armorGeometries().map((geo) => new THREE.Mesh(geo, m.armor)));
+    const glow = addGlow(core, 0xe6edf0);
+    glow.strength = 0.35;
 
-    // 刃先のシアンから、外周の白い光へ細く絞る。
-    glow(panel([[-60, 603], [-67, 644], [-64, 701], [-47, 776], [-29, 847],
-      [-10, 977], [-17, 900], [-37, 822], [-49, 754], [-55, 689], [-53, 638]], 0.017, energy));
-    panel([[-67, 644], [-64, 701], [-47, 776], [-29, 847], [-10, 977],
-      [-33, 843], [-50, 775], [-68, 703], [-71, 644]], 0.0175, core);
-    // 内側の刃と二つの鉤。
-    glow(panel([[-37, 603], [-31, 618], [-22, 660], [-21, 689], [-16, 648],
-      [-20, 614], [-34, 583], [-46, 590]], 0.0175, energy));
-    glow(panel([[-90, 481], [-61, 574], [-52, 580], [-63, 550], [-76, 506]], 0.0175, energy), 0.48);
-    glow(panel([[38, 550], [110, 488], [77, 546], [59, 558], [76, 531], [48, 550]], 0.0175, energy), 0.5);
-    // 透かしの周りに鎬と心臓部を重ねる。
-    panel([[-16, 580], [-9, 628], [0, 650], [4, 627], [1, 603], [-5, 577]], 0.0185, bevel);
-    panel([[15, 585], [24, 609], [29, 644], [41, 627], [55, 594], [38, 606], [31, 576]], 0.018, bevel);
-    panel([[-20, 564], [-13, 589], [2, 605], [14, 588], [26, 562], [8, 550]], 0.021, black);
-    const signal = glow(panel([[-11, 572], [-3, 594], [5, 601], [15, 584], [11, 563], [0, 557]], 0.023, energy));
-    glow(panel([[-5, 574], [0, 590], [6, 579], [3, 568]], 0.024, core), 0.45);
-    // 根元の黒い爪が穂先を掴む。
-    panel([[-18, 482], [-35, 523], [-43, 562], [-26, 551], [-11, 525], [0, 514],
-      [14, 530], [21, 554], [37, 547], [27, 507], [12, 477]], 0.030, armor);
-    panel([[-15, 496], [-24, 526], [-7, 519], [0, 509], [11, 520], [22, 527],
-      [15, 495], [0, 483]], 0.034, bevel);
-    glow(panel([[-11, 498], [-6, 516], [0, 506], [6, 516], [11, 498], [0, 490]], 0.035, energy), 0.5);
+    // 首
+    hex(0.497, 0.524, 0.0155, 0.0158, m.armor);
+    seam(0.5255, 0.0142);
+    hex(0.527, 0.59, 0.0158, 0.0095, m.armor);
 
-
-    // 首元の露出した動力部を、三枚の黒い装甲で挟む。
-    ring(0.432, 0.017, 0.125, black);
-    glow(ring(0.438, 0.0176, 0.076, energy), 0.5);
-    for (const y of [396, 438, 480]) {
-      panel([[-18, y - 18], [-25, y + 8], [0, y + 18], [25, y + 8], [18, y - 18], [0, y - 5]], 0.039, armor);
-      panel([[-17, y + 4], [0, y + 13], [17, y + 4], [0, y + 8]], 0.0405, bevel);
-    }
-    // 斜めに巻いた黒い帯と細い金具。握りの位置は元のモデルを参照する。
+    // 握り
     for (const wrap of [parts.wrap0, parts.wrap1]) {
-      for (const side of [-1, 1]) ring(wrap.position.y + side * 0.094, 0.0165, 0.014, armor);
-      for (let i = -3; i <= 3; i++) {
-        const band = ring(wrap.position.y + i * 0.025, 0.015, 0.009, grip);
-        band.rotation.z = -0.32;
+      const y = wrap.position.y;
+      at(new THREE.CylinderGeometry(GRIP_R, GRIP_R, GRIP_LEN, 8), m.grip, y);
+      for (let k = -3; k <= 3; k++) at(new THREE.CylinderGeometry(GRIP_R + 0.0005, GRIP_R + 0.0005, 0.0025, 8), m.band, y + k * 0.024);
+      for (const s of [-1, 1]) {
+        hex(y + s * (GRIP_LEN / 2 + 0.003), y + s * (GRIP_LEN / 2 + 0.015), 0.0162, 0.0162, m.armor);
+        seam(y + s * (GRIP_LEN / 2 + 0.0015), GRIP_R + 0.0003);
       }
     }
-    for (const y of [0.339, -0.365, -0.58]) {
-      ring(y, 0.0155, 0.025, armor);
-      ring(y + 0.013, 0.0158, 0.003, bevel);
-    }
-    // 握りの間に細い配線を通し、槍を回したときにも青い光が見える。
-    for (const side of [-1, 1]) {
-      const wire = add(new THREE.BoxGeometry(0.003, 0.20, 0.002), energy, -0.005);
-      wire.position.z = side * 0.0127;
-    }
 
-    // 長い鏃形の石突き。柄にかぶせることで元の全長に収める。
-    const butt = SPEAR_BUTT_Y * 1000;
-    panel([[-12, -650], [-23, -696], [-35, -711], [-24, -742], [0, butt + 0.5],
-      [24, -742], [35, -711], [23, -696], [12, -650]], 0.014, armor);
-    panel([[-7, -677], [-15, -719], [0, butt + 8], [15, -719], [7, -677], [0, -701]], 0.0155, bevel);
-    glow(panel([[0, -703], [-5, -724], [0, butt + 19], [5, -724]], 0.017, energy));
-    ring(-0.653, 0.017, 0.021, armor);
-    glow(ring(-0.666, 0.015, 0.004, energy), 0.5);
+    // 石突き
+    const buttY = parts.butt.position.y;
+    hex(buttY - 0.002, buttY + 0.017, 0.015, 0.0162, m.armor);
+    seam(buttY - 0.0035, 0.0135);
+    const spikeTop = buttY - 0.005;
+    const spike = at(new THREE.ConeGeometry(0.0148, spikeTop - SPEAR_BUTT_Y, 6), m.armor, (spikeTop + SPEAR_BUTT_Y) / 2);
+    spike.rotation.x = Math.PI;
 
-    signal.onBeforeRender = () => {
-      const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.0024);
-      energy.emissiveIntensity = 1.15 + pulse * 0.25;
-      core.emissiveIntensity = 1.5 + pulse * 0.2;
+    core.onBeforeRender = () => {
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.002);
+      m.core.emissiveIntensity = 1.25 + pulse * 0.3;
     };
-    g.userData.undo = () => glows.forEach(removeGlow);
+    g.userData.undo = () => removeGlow(glow);
     return g;
   },
 };

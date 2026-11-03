@@ -2,14 +2,16 @@ import * as THREE from 'three';
 import { camera, controls, scene } from '../core.js';
 import { position, lookEuler, player, velocity } from '../player/state.js';
 import { game } from '../game/state.js';
+import { PLAYER_MAX_HP } from '../player/config.js';
+import { HP_LOW } from '../ui/hud.js';
 import { parryActive } from '../combat/parry.js';
 import { spearNetworkState } from '../weapons/spearCombat.js';
 import { sickleState } from '../weapons/sickleCombat.js';
 import { enemies } from '../enemy/state.js';
-import { captureBossSnapshot, isBossSnapshot, type BossSnapshot } from './bossSnapshot.js';
+import { captureBossSnapshot, decodeBossSnapshot, encodeBossSnapshot, type BossSnapshot } from './bossSnapshot.js';
 import type { BossLimb } from '../enemy/boss.js';
 import { captureMissileSnapshots, isMissileSnapshots, type MissileSnapshot } from '../enemy/bossMissiles.js';
-import { captureAdds, isAddSnapshots, type AddSnapshot } from './enemySnapshot.js';
+import { captureAdds, decodeAddSnapshots, type AddSnapshot } from './enemySnapshot.js';
 import { selectedLoadout } from '../ui/weaponPicker.js';
 import { WEAPON_IDS, type WeaponId } from '../weapons/ids.js';
 
@@ -27,12 +29,13 @@ interface PeerClient {
 }
 type PeerConstructor = new (id?: string) => PeerClient;
 type WeaponHold = { phase: 'none' | 'windup' | 'flying' | 'stuck' | 'returning'; tip: [number, number, number]; dir: [number, number, number]; held: [number, number][] };
-type Pose = { id: string; x: number; y: number; z: number; yaw: number; onGround: boolean; eyeHeight: number; alive: boolean; vx: number; vy: number; vz: number;
+type Pose = { id: string; x: number; y: number; z: number; yaw: number; onGround: boolean; eyeHeight: number; alive: boolean; hp: number; vx: number; vy: number; vz: number;
   lookX: number; lookY: number; lookZ: number; parry: boolean; bat: boolean; spear: WeaponHold; grapple: [number, number] | null };
 type Member = { id: string; ready: boolean; weapon: WeaponId | null };
-type Remote = { conn: Connection; ready: boolean; weapon: WeaponId | null; pose: Pose | null; poseTime: number; hitTokens: number; hitTokenTime: number };
-export type KunaiBossHit = { attack: string; part: string; at: [number, number, number]; scale?: number; force?: number; requestId?: number };
-export type HitConfirmation = { id: number; damage: number; result: 'hit' | 'break' | 'down' | 'kill' | 'blocked' };
+type Remote = { conn: Connection; ready: boolean; weapon: WeaponId | null; pose: Pose | null; poseTime: number; hitTokens: number; hitTokenTime: number; rifleHitTokens: number; rifleHitTokenTime: number };
+export type BossBonusState = { sliding: boolean; wallRunning: boolean; aerial: boolean; speed: number; deadEyeKills: number; cleave?: boolean };
+export type KunaiBossHit = { attack: string; part: string; at: [number, number, number]; scale?: number; force?: number; requestId?: number; bonusState?: BossBonusState; scoped?: boolean };
+export type HitConfirmation = { id: number; damage: number; result: 'hit' | 'break' | 'down' | 'kill' | 'blocked'; headshot?: boolean };
 export type AddHit = KunaiBossHit & { index: number; spawnId: number };
 export type BossShot = { id: number; from: [number, number, number]; dir: [number, number, number]; speed: number; damage: number; length: number; width: number; part: 'armR' | 'armL' | 'gunner'; sound: boolean };
 export type BossSlam = { x: number; z: number; radius: number; power: number; quake: number; range: number; speed: number };
@@ -88,9 +91,15 @@ const form = panel.querySelector<HTMLElement>('[data-join-form]')!;
 const codeInput = panel.querySelector<HTMLInputElement>('[data-code-input]')!;
 const roomInput = panel.querySelector<HTMLInputElement>('[data-room-code]')!;
 const members = panel.querySelector<HTMLElement>('[data-members]')!;
+const meCard = panel.querySelector<HTMLElement>('.mp-me')!;
+const stageChoices = [...panel.querySelectorAll<HTMLButtonElement>('[data-mp-stage]')];
+const difficultyChoices = [...panel.querySelectorAll<HTMLButtonElement>('[data-mp-difficulty]')];
 const readyButton = panel.querySelector<HTMLButtonElement>('[data-connect="ready"]')!;
 const startButton = panel.querySelector<HTMLButtonElement>('[data-action="multiplayer-start"]')!;
 const status = panel.querySelector<HTMLElement>('[data-status]')!;
+const team = document.querySelector<HTMLElement>('#hp .team')!;
+const mates = new Map<string, { row: HTMLElement; fill: HTMLElement; num: HTMLElement }>();
+let memberIds: string[] = [];
 
 function loadPeer(): Promise<PeerConstructor> {
   const existing = (window as unknown as { Peer?: PeerConstructor }).Peer;
@@ -114,35 +123,94 @@ function sendSnapshot(conn: Connection, value: unknown) {
   if (!conn.open || (conn.bufferSize ?? 0) > 0 || (conn.dataChannel?.bufferedAmount ?? 0) > 32768) return;
   conn.send(value);
 }
+// マルチプレイで遊べるステージ。敵の同期ができたステージだけを入れる。ほかは部屋の一覧で鍵にする
+export const MULTIPLAYER_STAGES: readonly string[] = ['ruins'];
+let lobbyStage = 'ruins';
+for (const b of stageChoices) if (!MULTIPLAYER_STAGES.includes(b.dataset.mpStage!)) b.setAttribute('aria-disabled', 'true');
+const isDifficulty = (v: unknown): v is typeof game.difficulty => v === 'easy' || v === 'normal' || v === 'hard';
+
+// 武器選択と同じ台（sw-plate）にアイコンを斜めに載せる
+function weaponPlate(weapon: WeaponId | null) {
+  const plate = document.createElement('span'); plate.className = 'sw-plate mp-player-weapon';
+  const ic = document.createElement('span'); ic.className = 'ic'; plate.append(ic);
+  const source = weapon && document.querySelector<SVGElement>(`#weapon .icon svg[data-w="${weapon}"]`);
+  if (source) { const icon = source.cloneNode(true) as SVGElement; icon.setAttribute('class', 'on'); ic.append(icon); }
+  plate.setAttribute('aria-label', weapon ? `武器: ${weapon}` : '武器未表示');
+  return plate;
+}
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = '') => Object.assign(document.createElement(tag), { className, textContent: text });
+const playerName = (i: number) => (i === 0 ? 'HOST' : `PLAYER ${i + 1}`);
+const playerState = (i: number, member: Member) => (i === 0 ? 'ホスト' : member.ready ? '準備 OK' : '準備中');
+// 自分は左上の大きなカードに（武器の台を押すと武器選択）、ほかの人は下の小さな 3 行に入れる。番号は部屋に入った順
 function renderMembers(list: Member[]) {
-  members.replaceChildren();
+  memberIds = list.map((m) => m.id);
+  const own = Math.max(0, list.findIndex((m) => m.id === ownId));
+  const me = list[own] ?? { id: ownId, ready, weapon: selectedLoadout() };
+  const row = me.weapon ? document.querySelector<HTMLElement>(`.sw-rows [data-weapon="${me.weapon}"]`) : null;
+  const info = el('span', 'mp-me-info');
+  const weaponName = el('span', 'sw-name');
+  weaponName.append(el('b', 'nm', row?.dataset.name ?? '—'), el('span', 'ja', row?.dataset.ja ?? ''));
+  info.append(el('span', 'mp-me-no', `0${own + 1} / YOU`), el('span', 'mp-me-name', playerName(own)), el('span', 'mp-me-state', playerState(own, me)), weaponName);
+  const pick = el('button', 'mp-me-weapon');
+  pick.type = 'button'; pick.dataset.action = 'multiplayer-weapon'; pick.setAttribute('aria-label', '武器を変える');
+  const go = el('span', 'mp-me-go', 'CHANGE');
+  const chev = el('span', 'chev'); chev.append(el('b', ''), el('b', '')); go.append(chev);
+  pick.append(weaponPlate(me.weapon), go);
+  meCard.replaceChildren(info, pick);
+
+  const rows: HTMLElement[] = [];
   for (let i = 0; i < 4; i++) {
+    if (i === own) continue;
     const member = list[i];
-    const li = document.createElement('li');
-    li.className = member ? 'mp-player' : 'mp-player empty';
-    const info = document.createElement('div'); info.className = 'mp-player-info';
-    const number = document.createElement('span'); number.className = 'mp-player-number'; number.textContent = `0${i + 1}`;
-    const name = document.createElement('strong'); name.className = 'mp-player-name';
-    name.textContent = member ? (i === 0 ? 'HOST' : `PLAYER ${i + 1}`) : 'WAITING';
-    const state = document.createElement('small'); state.className = 'mp-player-state';
-    state.textContent = member ? `${i === 0 ? 'ホスト' : member.ready ? '準備 OK' : '準備中'}${member.id === ownId ? ' / あなた' : ''}` : '参加者を待っています';
-    info.append(number, name, state);
-    const weapon = document.createElement('div'); weapon.className = 'mp-player-weapon';
-    if (member?.weapon) {
-      const source = document.querySelector<SVGElement>(`#weapon .icon svg[data-w="${member.weapon}"]`);
-      if (source) { const icon = source.cloneNode(true) as SVGElement; icon.removeAttribute('class'); weapon.append(icon); }
-      weapon.setAttribute('aria-label', `武器: ${member.weapon}`);
-    } else { weapon.textContent = '—'; weapon.setAttribute('aria-label', '武器未表示'); }
-    li.append(info, weapon);
-    members.appendChild(li);
+    const li = el('li', member ? 'mp-player' : 'mp-player empty');
+    li.append(el('span', 'mp-player-number', `0${i + 1}`), el('strong', 'mp-player-name', member ? playerName(i) : 'WAITING'),
+      el('small', 'mp-player-state', member ? playerState(i, member) : '参加者を待っています'), weaponPlate(member?.weapon ?? null));
+    rows.push(li);
+  }
+  members.replaceChildren(...rows);
+}
+// 部屋のステージが決まったとき・変わったときに本体へ知らせる（背景にそのステージを流す）。部屋を出たら null
+let onLobbyStage: ((stage: string | null) => void) | null = null;
+export function setLobbyStageListener(fn: (stage: string | null) => void) { onLobbyStage = fn; }
+// ホストが選んだステージと難易度に帯を敷く
+function renderSettings(stage: string, difficulty: typeof game.difficulty) {
+  for (const b of stageChoices) b.classList.toggle('active', b.dataset.mpStage === stage);
+  for (const b of difficultyChoices) b.classList.toggle('active', b.dataset.mpDifficulty === difficulty);
+  onLobbyStage?.(stage);
+}
+// 参加者はステージと難易度を変えられない（見るだけ）
+function lockSettings(locked: boolean) {
+  for (const b of [...stageChoices, ...difficultyChoices]) b.disabled = locked;
+}
+export function multiplayerRole() { return role; }
+export function multiplayerStage() { return lobbyStage; }
+// ホストがステージを選ぶ。遊べないステージなら false
+export function setLobbyStage(id: string): boolean {
+  if (role !== 'host' || started || !MULTIPLAYER_STAGES.includes(id)) return false;
+  lobbyStage = id; updateLobby();
+  return true;
+}
+// ホストが難易度（game.difficulty）を変えたあとに呼び、部屋の全員へ知らせる
+export function refreshLobby() { updateLobby(); }
+// 武器選択で武器を決めたあとに呼ぶ。参加者は準備 OK を取り消して、新しい武器をホストへ送る
+export function multiplayerLoadoutChanged() {
+  if (role === 'host') return updateLobby();
+  const host = [...remotes.values()][0];
+  if (role !== 'guest' || !host?.conn.open || started) return;
+  send(host.conn, { type: 'profile', weapon: selectedLoadout() });
+  if (ready) {
+    ready = false; readyButton.textContent = '準備 OK';
+    send(host.conn, { type: 'ready', ready: false });
+    status.textContent = '武器を変えたので、準備を取り消しました。準備ができたら「準備 OK」を押してください。';
   }
 }
 function updateLobby() {
   if (role !== 'host') return;
   const list = [{ id: 'host', ready: true, weapon: selectedLoadout() }, ...[...remotes.values()].filter((r) => r.conn.open).map((r) => ({ id: r.conn.peer, ready: r.ready, weapon: r.weapon }))];
   renderMembers(list);
+  renderSettings(lobbyStage, game.difficulty);
   startButton.disabled = started || list.length < 2 || list.some((m) => !m.ready);
-  broadcast({ type: 'lobby', members: list });
+  broadcast({ type: 'lobby', members: list, stage: lobbyStage, difficulty: game.difficulty });
 }
 function validPose(v: unknown): v is Pose {
   if (!v || typeof v !== 'object') return false;
@@ -150,6 +218,7 @@ function validPose(v: unknown): v is Pose {
   const ref = (r: unknown) => Array.isArray(r) && r.length === 2 && r.every((n) => Number.isSafeInteger(n) && n >= 0 && n < 1e9);
   const vec = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 10000);
   return typeof p.id === 'string' && typeof p.onGround === 'boolean' && typeof p.alive === 'boolean' && typeof p.parry === 'boolean' && typeof p.bat === 'boolean' && typeof p.eyeHeight === 'number' && Number.isFinite(p.eyeHeight)
+    && typeof p.hp === 'number' && Number.isFinite(p.hp) && p.hp >= 0 && p.hp <= 10000
     && !!p.spear && ['none', 'windup', 'flying', 'stuck', 'returning'].includes(p.spear.phase) && vec(p.spear.tip) && vec(p.spear.dir)
     && (p.spear.phase === 'none' || p.spear.phase === 'windup' || (Math.hypot(...p.spear.dir) >= 0.9 && Math.hypot(...p.spear.dir) <= 1.1))
     && Array.isArray(p.spear.held) && p.spear.held.length <= 32 && p.spear.held.every(ref) && (p.grapple === null || ref(p.grapple))
@@ -164,7 +233,7 @@ function localPose(): Pose {
   };
   const grapple = sickleState.grapple;
   return { id: ownId, x: position.x, y: position.y, z: position.z, yaw: lookEuler.y, onGround: player.onGround, eyeHeight: player.eyeHeight,
-    alive: game.playerHp > 0, vx: velocity.x, vy: velocity.y, vz: velocity.z, lookX: poseLook.x, lookY: poseLook.y, lookZ: poseLook.z,
+    alive: game.playerHp > 0, hp: Math.max(0, game.playerHp), vx: velocity.x, vy: velocity.y, vz: velocity.z, lookX: poseLook.x, lookY: poseLook.y, lookZ: poseLook.z,
     parry: controls.isLocked && parryActive(), bat: game.shownWeapon === 'bat',
     spear: { phase: spear.phase, tip: [spear.tip.x, spear.tip.y, spear.tip.z], dir: [spear.dir.x, spear.dir.y, spear.dir.z], held: spear.held.map(ref).filter((r): r is [number, number] => r !== null) },
     grapple: grapple?.enemy && grapple.aimed && grapple.phase !== 'back' ? ref(grapple.enemy) : null };
@@ -175,7 +244,33 @@ function removeAvatar(id: string) {
   a.root.traverse((obj) => { if (obj instanceof THREE.Mesh) { obj.geometry.dispose(); (obj.material as THREE.Material).dispose(); } });
   avatars.delete(id);
 }
+// 左下の自分の体力の上に、味方の体力を部屋に入った順で並べる
+function showTeam(poses: Pose[]) {
+  const present = new Set<string>();
+  for (const p of poses) {
+    if (p.id === ownId) continue;
+    present.add(p.id);
+    let m = mates.get(p.id);
+    if (!m) {
+      const row = el('div', 'mate'), bar = el('div', 'mate-bar'), fill = el('div', 'mate-fill'), num = el('span', '');
+      const index = memberIds.indexOf(p.id);
+      row.dataset.order = String(index < 0 ? 9 : index);
+      bar.append(fill); row.append(el('b', '', index < 0 ? 'PLAYER' : playerName(index)), bar, num);
+      const after = [...team.children].find((c) => Number((c as HTMLElement).dataset.order) > Number(row.dataset.order));
+      team.insertBefore(row, after ?? null);
+      m = { row, fill, num }; mates.set(p.id, m);
+    }
+    const hp = Math.min(PLAYER_MAX_HP, p.alive ? p.hp : 0);
+    m.fill.style.width = `${(hp / PLAYER_MAX_HP) * 100}%`;
+    m.num.textContent = p.alive ? String(Math.ceil(hp)) : 'DOWN';
+    m.row.classList.toggle('down', !p.alive);
+    m.row.classList.toggle('low', p.alive && hp <= HP_LOW);
+  }
+  for (const [id, m] of mates) if (!present.has(id)) { m.row.remove(); mates.delete(id); }
+  team.hidden = mates.size === 0;
+}
 function display(poses: Pose[]) {
+  showTeam(poses);
   const present = new Set<string>();
   for (const p of poses) {
     if (p.id === ownId) continue;
@@ -195,7 +290,7 @@ function display(poses: Pose[]) {
 }
 function attach(conn: Connection) {
   if (role === 'host' && (started || remotes.size >= 3 || remotes.has(conn.peer))) { conn.close(); return; }
-  const remote: Remote = { conn, ready: false, weapon: null, pose: null, poseTime: 0, hitTokens: 8, hitTokenTime: performance.now() }; remotes.set(conn.peer, remote);
+  const remote: Remote = { conn, ready: false, weapon: null, pose: null, poseTime: 0, hitTokens: 8, hitTokenTime: performance.now(), rifleHitTokens: 33, rifleHitTokenTime: performance.now() }; remotes.set(conn.peer, remote);
   const timeout = window.setTimeout(() => {
     if (!conn.open && remotes.get(conn.peer) === remote) {
       conn.close(); remotes.delete(conn.peer);
@@ -218,7 +313,7 @@ function attach(conn: Connection) {
   });
   conn.on('data', (value: unknown) => {
     if (!value || typeof value !== 'object') return;
-    const m = value as { type?: string; ready?: unknown; weapon?: unknown; pose?: unknown; poses?: unknown; members?: unknown; boss?: unknown; missiles?: unknown; adds?: unknown; hit?: unknown; confirmation?: HitConfirmation; shot?: BossShot; slam?: BossSlam; impact?: BossImpact; dir?: unknown; at?: unknown; part?: unknown; down?: unknown; damage?: unknown; id?: unknown; playerId?: unknown; difficulty?: unknown; partySize?: unknown; score?: unknown; time?: unknown };
+    const m = value as { type?: string; stage?: unknown; ready?: unknown; weapon?: unknown; pose?: unknown; poses?: unknown; members?: unknown; boss?: unknown; missiles?: unknown; adds?: unknown; hit?: unknown; confirmation?: HitConfirmation; shot?: BossShot; slam?: BossSlam; impact?: BossImpact; dir?: unknown; at?: unknown; part?: unknown; down?: unknown; damage?: unknown; id?: unknown; playerId?: unknown; difficulty?: unknown; partySize?: unknown; score?: unknown; time?: unknown };
     if (role === 'host') {
       if (m.type === 'profile' && !started && typeof m.weapon === 'string' && WEAPON_IDS.includes(m.weapon as WeaponId)) { remote.weapon = m.weapon as WeaponId; updateLobby(); }
       if (m.type === 'ready' && typeof m.ready === 'boolean' && (!started || matchFinished)) { remote.ready = m.ready; updateLobby(); }
@@ -233,18 +328,31 @@ function attach(conn: Connection) {
         // ３本投げは 35ms 間隔。通信のまとめ送りも許しつつ、異常な連続送信は抑える。
         remote.hitTokens = Math.min(8, remote.hitTokens + Math.max(0, now - remote.hitTokenTime) * 0.012);
         remote.hitTokenTime = now;
+        // 雑魚最大 32 体とボスへの命中を、ライフルの 1 発分として受けられる枠。
+        remote.rifleHitTokens = Math.min(33, remote.rifleHitTokens + Math.max(0, now - remote.rifleHitTokenTime) * 33 / 680);
+        remote.rifleHitTokenTime = now;
+        const rifleHit = hit.attack === 'rifle';
         if (typeof hit.attack === 'string' && hit.attack.length <= 20 && typeof hit.part === 'string' && hit.part.length <= 8
           && Number.isSafeInteger(hit.requestId) && hit.requestId! > 0
           && Array.isArray(hit.at) && hit.at.length === 3 && hit.at.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 10000)
           && (hit.scale === undefined || (typeof hit.scale === 'number' && Number.isFinite(hit.scale) && hit.scale >= 0 && hit.scale <= 4))
           && (hit.force === undefined || (typeof hit.force === 'number' && Number.isFinite(hit.force) && hit.force >= 0 && hit.force <= 600))
-          && remote.hitTokens >= 1 && (m.type !== 'add-hit' || (Number.isSafeInteger(hit.index) && hit.index >= 0 && hit.index < 32 && Number.isSafeInteger(hit.spawnId) && hit.spawnId > 0))) {
-          remote.hitTokens--;
+          && (hit.scoped === undefined || typeof hit.scoped === 'boolean')
+          && (hit.bonusState === undefined || (hit.bonusState !== null && typeof hit.bonusState === 'object'
+            && typeof hit.bonusState.sliding === 'boolean' && typeof hit.bonusState.wallRunning === 'boolean' && typeof hit.bonusState.aerial === 'boolean'
+            && (hit.bonusState.cleave === undefined || typeof hit.bonusState.cleave === 'boolean')
+            && typeof hit.bonusState.speed === 'number' && Number.isFinite(hit.bonusState.speed) && hit.bonusState.speed >= 0 && hit.bonusState.speed <= 1000
+            && Number.isSafeInteger(hit.bonusState.deadEyeKills) && hit.bonusState.deadEyeKills >= 0 && hit.bonusState.deadEyeKills <= 1000))
+          && (rifleHit ? remote.rifleHitTokens : remote.hitTokens) >= 1 && (m.type !== 'add-hit' || (Number.isSafeInteger(hit.index) && hit.index >= 0 && hit.index < 32 && Number.isSafeInteger(hit.spawnId) && hit.spawnId > 0))) {
+          if (rifleHit) remote.rifleHitTokens--; else remote.hitTokens--;
           if (m.type === 'add-hit') onAddHit?.(hit, remote.pose); else onKunaiBossHit?.(hit, remote.pose);
         }
       }
     } else if (role === 'guest') {
-      if (m.type === 'lobby' && Array.isArray(m.members) && m.members.length <= 4 && m.members.every((x: Member) => x && typeof x.id === 'string' && typeof x.ready === 'boolean' && (x.weapon === null || WEAPON_IDS.includes(x.weapon)))) renderMembers(m.members);
+      if (m.type === 'lobby' && Array.isArray(m.members) && m.members.length <= 4 && m.members.every((x: Member) => x && typeof x.id === 'string' && typeof x.ready === 'boolean' && (x.weapon === null || WEAPON_IDS.includes(x.weapon)))) {
+        renderMembers(m.members);
+        if (typeof m.stage === 'string' && MULTIPLAYER_STAGES.includes(m.stage) && isDifficulty(m.difficulty)) { lobbyStage = m.stage; renderSettings(m.stage, m.difficulty); }
+      }
       if (m.type === 'poses' && Array.isArray(m.poses) && m.poses.length <= 4 && m.poses.every(validPose)) {
         display(m.poses);
         if (hostBossSnapshot && m.boss && typeof m.boss === 'object') {
@@ -252,15 +360,19 @@ function attach(conn: Connection) {
           hostBossSnapshot = { ...hostBossSnapshot, warnings: details.warnings, pillars: details.pillars, throwable: details.throwable };
         }
         if (isMissileSnapshots(m.missiles)) hostMissiles = m.missiles;
-        if (isAddSnapshots(m.adds)) hostAdds = m.adds;
+        const adds = decodeAddSnapshots(m.adds);
+        if (adds) hostAdds = adds;
       }
-      if (m.type === 'start' && !started && ready && (m.difficulty === 'easy' || m.difficulty === 'normal' || m.difficulty === 'hard')
+      if (m.type === 'start' && !started && ready && isDifficulty(m.difficulty) && typeof m.stage === 'string' && MULTIPLAYER_STAGES.includes(m.stage)
         && typeof m.partySize === 'number' && Number.isInteger(m.partySize) && m.partySize >= 2 && m.partySize <= 4) {
-        game.difficulty = m.difficulty; partySize = m.partySize; started = true; startGuest?.();
+        game.difficulty = m.difficulty; lobbyStage = m.stage; partySize = m.partySize; started = true; startGuest?.();
       }
       if (m.type === 'boss-pose') {
         if (m.boss === null) hostBossSnapshot = null;
-        else if (isBossSnapshot(m.boss)) hostBossSnapshot = { ...m.boss, warnings: hostBossSnapshot?.warnings, pillars: hostBossSnapshot?.pillars, throwable: hostBossSnapshot?.throwable };
+        else {
+          const decoded = decodeBossSnapshot(m.boss);
+          if (decoded) hostBossSnapshot = { ...decoded, warnings: hostBossSnapshot?.warnings, pillars: hostBossSnapshot?.pillars, throwable: hostBossSnapshot?.throwable };
+        }
       }
       if (m.type === 'boss-break' && started && typeof m.part === 'string' && ['armR', 'armL', 'legR', 'legL'].includes(m.part)
         && typeof m.down === 'boolean' && [m.at, m.dir].every((v) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 10000))) onBossBreak?.(m as BossBreak);
@@ -270,7 +382,8 @@ function attach(conn: Connection) {
       if (m.type === 'add-kill' && started) onAddKill?.();
       if (m.type === 'hit-confirm' && started && m.confirmation && Number.isSafeInteger(m.confirmation.id) && m.confirmation.id > 0
         && typeof m.confirmation.damage === 'number' && Number.isFinite(m.confirmation.damage) && m.confirmation.damage >= 0 && m.confirmation.damage <= 10000
-        && ['hit', 'break', 'down', 'kill', 'blocked'].includes(m.confirmation.result)) onHitConfirmation?.(m.confirmation);
+        && ['hit', 'break', 'down', 'kill', 'blocked'].includes(m.confirmation.result)
+        && (m.confirmation.headshot === undefined || typeof m.confirmation.headshot === 'boolean')) onHitConfirmation?.(m.confirmation);
       const vector = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 10000);
       if (m.type === 'boss-shot' && started && m.shot && vector(m.shot.from) && vector(m.shot.dir)
         && Number.isSafeInteger(m.shot.id) && m.shot.id > 0
@@ -342,8 +455,12 @@ export function multiplayerPartyDown(): boolean {
 }
 export function broadcastPartyDefeat() { if (role === 'host' && started) { finishMatch(); broadcast({ type: 'party-defeat' }); } }
 export function broadcastBossShot(shot: BossShot) { if (role === 'host' && started) broadcast({ type: 'boss-shot', shot }); }
+const noRemotePlayers: ReadonlyArray<Pose> = [];
 export function remotePlayers(): ReadonlyArray<Pose> {
-  return role === 'host' && started ? [...remotes.values()].filter((r) => r.conn.open && r.pose?.alive && performance.now() - r.poseTime < 500).map((r) => r.pose!) : [];
+  if (role !== 'host' || !started) return noRemotePlayers;
+  const players: Pose[] = [], now = performance.now();
+  for (const r of remotes.values()) if (r.conn.open && r.pose?.alive && now - r.poseTime < 500) players.push(r.pose);
+  return players;
 }
 export function sendRemotePlayerShot(id: string, dir: [number, number, number], damage: number) {
   if (role === 'host' && started) { const remote = remotes.get(id); if (remote) send(remote.conn, { type: 'player-shot', dir, damage }); }
@@ -389,7 +506,7 @@ export function broadcastBossBreak(event: BossBreak): boolean {
 export function startMultiplayer(): boolean {
   if (role !== 'host' || startButton.disabled || started) return false;
   partySize = 1 + [...remotes.values()].filter((r) => r.conn.open).length;
-  matchFinished = false; started = true; broadcast({ type: 'start', difficulty: game.difficulty, partySize }); peer?.disconnect();
+  matchFinished = false; started = true; broadcast({ type: 'start', stage: lobbyStage, difficulty: game.difficulty, partySize }); peer?.disconnect();
   return true;
 }
 export function returnToMultiplayerLobby(): boolean {
@@ -397,6 +514,7 @@ export function returnToMultiplayerLobby(): boolean {
   started = false; partySize = 1; ready = false;
   hostBossSnapshot = null; hostMissiles = []; hostAdds = [];
   for (const id of avatars.keys()) removeAvatar(id);
+  showTeam([]);
   readyButton.textContent = '準備 OK';
   if (role === 'host') {
     matchFinished = false;
@@ -415,6 +533,7 @@ export function leaveMultiplayer() {
   generation++; busy = false;
   const old = peer; peer = null; remotes.clear(); old?.destroy();
   for (const id of avatars.keys()) removeAvatar(id);
+  showTeam([]);
   role = null; ready = false; started = false; matchFinished = false; partySize = 1; roomCode = ''; ownId = 'host';
   hostBossSnapshot = null;
   hostMissiles = [];
@@ -422,7 +541,8 @@ export function leaveMultiplayer() {
   delete panel.dataset.role;
   choose.hidden = false; flow.hidden = true; room.hidden = true; form.hidden = true;
   startButton.hidden = true; startButton.disabled = true; readyButton.hidden = true; readyButton.textContent = '準備 OK';
-  codeInput.value = ''; roomInput.value = ''; members.replaceChildren(); status.textContent = '接続待ち';
+  codeInput.value = ''; roomInput.value = ''; members.replaceChildren(); meCard.replaceChildren(); status.textContent = '接続待ち';
+  lobbyStage = 'ruins'; lockSettings(false); onLobbyStage?.(null);
 }
 panel.addEventListener('keydown', (e) => e.stopPropagation());
 panel.addEventListener('keyup', (e) => e.stopPropagation());
@@ -453,7 +573,7 @@ panel.addEventListener('click', async (event) => {
       client.on('connection', (conn: Connection) => attach(conn));
     } else if (mode === 'guest') {
       panel.dataset.role = 'guest';
-      choose.hidden = true; flow.hidden = false; form.hidden = false; role = 'guest';
+      choose.hidden = true; flow.hidden = false; form.hidden = false; role = 'guest'; lockSettings(true);
       panel.querySelector<HTMLElement>('[data-flow-title]')!.textContent = 'JOIN / 部屋に参加';
       status.textContent = '部屋コードを入力してください。'; codeInput.focus();
     } else if (action === 'join') {
@@ -486,18 +606,20 @@ export function updateMultiplayer(dt: number) {
   if (started && elapsed >= 0.05) {
     elapsed = 0;
     if (role === 'host') {
-      const poses = [localPose(), ...[...remotes.values()].filter((r) => r.conn.open && r.pose).map((r) => r.pose!)];
+      const poses = [localPose()];
+      for (const remote of remotes.values()) if (remote.conn.open && remote.pose) poses.push(remote.pose);
       display(poses);
-      const snapshot = captureBossSnapshot();
-      const boss = snapshot && (({ warnings, pillars, throwable, ...pose }) => pose)(snapshot);
       const details = detailElapsed >= 0.15;
       if (details) detailElapsed = 0;
+      const snapshot = captureBossSnapshot(details);
+      const boss = snapshot && (({ warnings, pillars, throwable, ...pose }) => pose)(snapshot);
+      const bossPose = { type: 'boss-pose', boss: boss && encodeBossSnapshot(boss) };
       const state = details ? { type: 'poses', poses, boss: snapshot && { warnings: snapshot.warnings, pillars: snapshot.pillars, throwable: snapshot.throwable }, missiles: captureMissileSnapshots(), adds: captureAdds() } : null;
       for (const remote of remotes.values()) {
-        sendSnapshot(remote.conn, { type: 'boss-pose', boss });
+        sendSnapshot(remote.conn, bossPose);
         if (state) sendSnapshot(remote.conn, state);
       }
-    } else if (role === 'guest') { const host = [...remotes.values()][0]; if (host) sendSnapshot(host.conn, { type: 'pose', pose: localPose() }); }
+    } else if (role === 'guest') { const host = remotes.values().next().value; if (host) sendSnapshot(host.conn, { type: 'pose', pose: localPose() }); }
   }
   for (const a of avatars.values()) {
     a.root.position.lerp(a.target, 1 - Math.exp(-12 * dt));

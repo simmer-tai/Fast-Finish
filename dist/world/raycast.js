@@ -113,13 +113,13 @@ function worldNormal(p, dir, out) {
     else
         out.set(0, 0, -Math.sign(dir.z) || 1);
 }
-export function castThrow(origin, dir, far) {
+export function castThrow(origin, dir, far, excludeEnemies) {
     let best = castWorld(origin, dir, far);
     let found = best < far;
     castHit.enemy = null;
     throwRaycaster.set(origin, dir);
     for (const e of enemies) {
-        if (!e.alive)
+        if (!e.alive || excludeEnemies?.has(e))
             continue;
         throwRaycaster.far = best;
         const hit = throwRaycaster.intersectObjects(e.parts, false)[0];

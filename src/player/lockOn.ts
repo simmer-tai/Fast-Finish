@@ -5,6 +5,7 @@ import { game } from '../game/state.js';
 import { castWorld } from '../world/raycast.js';
 import { enemyChest } from './aimAssist.js';
 import { isDown } from './down.js';
+import { spearThrow } from '../weapons/spearCombat.js';
 import { turnView } from './look.js';
 
 const RANGE = 14;
@@ -21,7 +22,8 @@ marker.style.cssText = 'position:fixed;z-index:10;width:24px;height:24px;border:
 document.body.appendChild(marker);
 
 export function isMeleeLockWeapon() {
-  return game.shownWeapon !== 'handgun' && game.shownWeapon !== 'bow';
+  return game.shownWeapon !== 'handgun' && game.shownWeapon !== 'bow'
+    && !(game.shownWeapon === 'spear' && spearThrow.phase === 'windup');
 }
 
 function visible(enemy: Enemy): boolean {

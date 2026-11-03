@@ -12,6 +12,7 @@ import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '.
 import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js';
 import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js';
 import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js';
+import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js';
 import { handCam } from './handCam.js';
 import { player, position, right, velocity, wallNormal } from '../player/state.js';
 import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js';
@@ -19,10 +20,12 @@ import { moveToward } from '../player/movement.js';
 import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js';
 import { game, kick, kickVel } from '../game/state.js';
 import { rumble } from '../player/rumble.js';
+import { shipSway } from '../world/sea.js';
 // ---- カメラ演出 ----
 // 本体からも読み書きする値
 export const cameraFx = {
     trauma: 0, // 画面揺れの強さ (0〜1)
+    realDecay: false, // 揺れをスローに関わらず実時間で収める（ヘッドショットの深いスローで揺れが残り続けないように）
     shakeTime: 0,
     landDip: 0, // 着地で視点が沈む量（負の値）
     roll: 0,
@@ -149,6 +152,9 @@ export function onLand(impact) {
 export function landShakeAmount() {
     return landShakeT >= 1 ? 0 : landShake * (1 - landShakeT) ** 2;
 }
+// スコープの倍率は、画面の幅（視野の tan）を割って掛ける。前のフレームで掛けた倍率を外してから、普段の視野を寄せる
+let scopeMul = 1;
+const zoomFov = (fov, mul) => 2 * Math.atan(Math.tan((fov / 2) * DEG) / mul) / DEG;
 export function updateCamera(dt) {
     const hSpeed = Math.hypot(velocity.x, velocity.z);
     // 速いほど視野を広げる
@@ -158,7 +164,10 @@ export function updateCamera(dt) {
     const targetFov = BASE_FOV + speedT * MAX_FOV_BONUS + game.fovKick - swordState.focusZoom * FOCUS_ZOOM - swordState.swordChargeBlend * CHARGE_ZOOM
         - gunState.deadEyeBlend * DEADEYE_ZOOM - bowState.draw * BOW_ZOOM * (1 - 0.6 * bowState.sidePose) // 3 本射ちはあまり寄せない
         - cameraFx.inspectZoom;
-    camera.fov += (targetFov - camera.fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
+    let fov = zoomFov(camera.fov, 1 / scopeMul);
+    fov += (targetFov - fov) * Math.min(1, Math.max(dt, game.realDt) * 8);
+    scopeMul = 1 + (SCOPE_ZOOM - 1) * scopeView();
+    camera.fov = zoomFov(fov, scopeMul);
     camera.updateProjectionMatrix();
     // 着地の沈み込み（ばねで戻す）
     game.landDipVel += (-150 * cameraFx.landDip - 18 * game.landDipVel) * dt;
@@ -171,7 +180,7 @@ export function updateCamera(dt) {
     const wallRoll = player.wallRunning ? -(wallNormal.x * right.x + wallNormal.z * right.z) * WALLRUN_ROLL : 0;
     const targetRoll = -lateral * 0.025 + (player.sliding ? 0.07 : 0) + wallRoll;
     cameraFx.roll += (targetRoll - cameraFx.roll) * Math.min(1, dt * 8);
-    cameraFx.trauma = Math.max(0, cameraFx.trauma - dt * 1.5);
+    cameraFx.trauma = Math.max(0, cameraFx.trauma - (cameraFx.realDecay ? Math.max(dt, game.realDt) : dt) * 1.5);
     cameraFx.shakeTime += dt;
     landShakeT = Math.min(1, landShakeT + dt / LAND_SHAKE_TIME);
     const landJolt = landShakeAmount() * 0.06 * Math.sin(cameraFx.shakeTime * 91.7 + 3.3);
@@ -193,6 +202,8 @@ export function applyCameraOffset() {
     shakeEuler.y += handCam.y + cameraFx.inspect.y;
     shakeEuler.z += DOWN_ROLL * downFall() + cameraFx.inspect.z;
     camera.quaternion.multiply(shakeQuat.setFromEuler(shakeEuler));
+    // 船の揺れ（SHIP）: 視点のまわりではなく、世界の軸のまわりに傾ける
+    camera.quaternion.premultiply(shipSway.view);
 }
 // applyCameraOffset で足した揺れと傾きを戻す
 export function restoreCameraOffset() {

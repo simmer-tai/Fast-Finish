@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rand } from '../random.js';
 import { camera } from '../core.js';
-import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnHologramChains } from './hitFx.js';
+import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves } from './hitFx.js';
 import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
 import { en, hitDir, hitPoint } from '../enemy/state.js';
 const TRUNK_SEGS = 10; // 幹の折れ目の数
@@ -201,6 +201,10 @@ export function hitWithArcs(skin, fx, swing, applyHit, at = hitPoint) {
     hitFxTint.sparks = null;
     if (skin.hologram)
         spawnHologramChains(at, hitDir, swing, fx, skin.hologram);
+    if (skin.cutLine)
+        spawnCutLine(at, swing, fx, skin.cutLine);
+    if (skin.leaves)
+        spawnLeaves(at, hitDir, swing, fx, skin.leaves);
     if (look)
         spawnArcs(at, hitDir, swing, fx, look, en.root);
 }

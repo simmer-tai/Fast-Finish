@@ -38,6 +38,7 @@ export const player = {
     mantleExitSpeed: 0,
     wallRunning: false,
     wallRunTime: 0,
+    wallJumps: 0, // 着地するまでに使った壁ジャンプの回数
     hasLastWall: false, // lastWallNormal が有効か
     eyeHeight: EYE_HEIGHT,
     groundRamp: null, // 今立っている坂

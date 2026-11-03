@@ -240,11 +240,12 @@ export function buildLift(): StageLayout {
     // 足場に乗せられないときだけ使う、リフトの上の出現位置
     enemySpawns: [{ x: -7, y: 0, z: -7 }, { x: 7, y: 0, z: -7 }, { x: -7, y: 0, z: 7 }, { x: 7, y: 0, z: 7 }],
     shaft: { period: PERIOD, speed: SPEED, inner: WALL, walls, tile, ledges },
-    // 近接が主役。優しい難易度ほど銃撃役を多くして、hard ではほとんどストライカーにする
+    // 近接が主役。優しい難易度ほど銃撃役を多くして、hard ではほとんどストライカーにする。
+    // 足場の上から撃ち下ろしてくる役は、normal から少しずつ二丁拳銃に替える（狙撃手は狭いシャフトでは長い照準線を見せられないので出さない）
     mix: {
       easy: { gunner: 0.7, striker: 0.3 },
-      normal: { gunner: 0.4, striker: 0.6 },
-      hard: { gunner: 0.2, striker: 0.8 },
+      normal: { gunner: 0.33, striker: 0.54, dual: 0.13 },
+      hard: { gunner: 0.1, striker: 0.7, dual: 0.2 },
     },
     view: { eye: { x: 10, y: 19, z: 15 }, target: { x: 0, y: 1, z: -4 } },
   };

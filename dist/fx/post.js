@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { camera, renderer, scene } from '../core.js';
 import { fxScene } from './hitFx.js';
 import { GlowPass } from './glow.js';
-import { ImpactFxShader, SpeedFxShader } from './postShaders.js';
+import { ImpactFxShader, MotionBlurShader, SpeedFxShader } from './postShaders.js';
 import { player, velocity } from '../player/state.js';
 import { SPRINT_SPEED } from '../player/config.js';
 // ---- ポストエフェクト ----（シェーダーは fx/postShaders.ts）
@@ -15,13 +15,51 @@ export const SPEED_FX_START = SPRINT_SPEED - 1;
 export const SPEED_FX_FULL = 30;
 export const MAX_RADIAL_BLUR = 0.07; // 画面端で中心方向へぼかす量
 export const MAX_VIGNETTE = 0.3;
+// カメラの動きのブラー: 1 フレームで動いた分のどれだけをぼかすか（シャッターの開いている割合）と、ぼかす長さの上限（画面の幅に対して）
+export const MOTION_BLUR_STRENGTH = 0.35;
+export const MOTION_BLUR_MAX = 0.02;
 // MSAA を保つため、マルチサンプルのレンダーターゲットで描く
-export const composerTarget = new THREE.WebGLRenderTarget(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: 4 });
+export const composerTarget = new THREE.WebGLRenderTarget(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio(), 
+// 深度はカメラの動きのブラーで、手元の武器を見分けるのに使う
+{ type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
 export const composer = new EffectComposer(renderer, composerTarget);
 composer.addPass(new RenderPass(scene, camera));
 // 光る物（スキンの刃先など）のにじみ。速さのブラーより前に重ね、ブラーでいっしょに流れるようにする
 export const glowPass = new GlowPass(scene, camera);
 composer.addPass(glowPass);
+// カメラの動きのブラー。景色を描いた直後（深度が残っている描き込み先）で行う。
+// カメラがほとんど動いていないフレームは、何もせずに次へ渡す
+class MotionBlurPass extends ShaderPass {
+    prevViewProj = new THREE.Matrix4();
+    viewProj = new THREE.Matrix4();
+    hasPrev = false;
+    constructor() {
+        super(MotionBlurShader);
+    }
+    render(r, writeBuffer, readBuffer, deltaTime, maskActive) {
+        this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        let moved = 0;
+        for (let i = 0; i < 16; i++)
+            moved += Math.abs(this.viewProj.elements[i] - this.prevViewProj.elements[i]);
+        const run = this.hasPrev && moved > 1e-4 && !!readBuffer.depthTexture;
+        if (run) {
+            const u = this.uniforms;
+            u.tDepth.value = readBuffer.depthTexture;
+            u.uInvViewProj.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
+            u.uPrevViewProj.value.copy(this.prevViewProj);
+            u.uNear.value = camera.near;
+            u.uFar.value = camera.far;
+            u.uStrength.value = MOTION_BLUR_STRENGTH;
+            u.uMaxLen.value = MOTION_BLUR_MAX;
+            super.render(r, writeBuffer, readBuffer, deltaTime, maskActive);
+        }
+        this.needsSwap = run;
+        this.prevViewProj.copy(this.viewProj);
+        this.hasPrev = true;
+    }
+}
+export const motionBlurPass = new MotionBlurPass();
+composer.addPass(motionBlurPass);
 export const speedFxPass = new ShaderPass(SpeedFxShader);
 composer.addPass(speedFxPass);
 export const impactFxPass = new ShaderPass(ImpactFxShader);

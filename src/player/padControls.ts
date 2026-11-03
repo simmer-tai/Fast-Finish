@@ -1,3 +1,4 @@
+import { kunaiState, releaseKunaiGrapple, toggleKunaiGrapple, recallKunai } from '../weapons/kunaiCombat.js';
 import * as THREE from 'three';
 import { PAD, pollPad } from '../gamepad.js';
 import { keys, padMove, pressed } from '../input.js';
@@ -7,17 +8,19 @@ import { type WeaponId } from '../weapons/ids.js';
 import { axeState } from '../weapons/axeCombat.js';
 import { swordState } from '../weapons/swordCombat.js';
 import { gunState } from '../weapons/handgunCombat.js';
+import { rifleState } from '../weapons/rifleCombat.js';
 import { sickleState } from '../weapons/sickleCombat.js';
 import { bowState } from '../weapons/bowCombat.js';
 import { spearThrow } from '../weapons/spearCombat.js';
 import { viewState } from '../weapons/viewModelMotion.js';
 import { options } from '../ui/options.js';
 import { overlay } from '../ui/overlay.js';
-import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget } from './aimAssist.js';
+import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget, isAssistWeaponActive } from './aimAssist.js';
 import { turnView, zoomLookScale } from './look.js';
 import { game } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
 import { assistMeleeAttack, clearLockOn, updateLockOn } from './lockOn.js';
+import { isDown } from './down.js';
 
 // ---- ゲームパッドの割り当て ----
 // ボタンはキーに置き換えて keys / pressed に入れ、キーボードと同じ処理を通す
@@ -31,6 +34,7 @@ export const padState = {
 export const PAD_KEYS: [number, string][] = [
   [PAD.A, 'Space'], // ジャンプ
   [PAD.B, 'KeyC'], // スライド
+  [PAD.R3, 'KeyC'], // スライド
   [PAD.L3, 'ShiftLeft'], // ダッシュ
 ];
 export const PAD_WEAPONS: [number, WeaponId][] = [
@@ -39,13 +43,14 @@ export const PAD_WEAPONS: [number, WeaponId][] = [
   [PAD.DOWN, 'sword'],
   [PAD.LEFT, 'sickle'],
 ];
-export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'bow', 'bat', 'spear']; // LB / RB で順に回す
+export const WEAPON_ORDER: WeaponId[] = ['kunai', 'handgun', 'sword', 'sickle', 'axe', 'bow', 'bat', 'spear', 'rifle']; // LB / RB で順に回す
 // タイトル / 一時停止の画面では、メニューのキー操作に置き換える
 export const PAD_MENU_KEYS: [number, string][] = [
   [PAD.B, 'Enter'],
   [PAD.START, 'Enter'],
   [PAD.A, 'Escape'],
   [PAD.Y, 'KeyQ'], // 一時停止からタイトルへ
+  [PAD.BACK, 'KeyK'], // retry / return to lobby
   [PAD.X, 'KeyO'], // オプション
   [PAD.UP, 'ArrowUp'],
   [PAD.DOWN, 'ArrowDown'],
@@ -55,7 +60,11 @@ export const PAD_MENU_KEYS: [number, string][] = [
   [PAD.RB, 'PageDown'],
 ];
 export const PAD_LOOK_SPEED = 4.2; // 右スティックを倒しきったときの視点の速さ (rad/s)
-export const PAD_LOOK_CURVE = 2.2; // 小さく倒したときに細かく狙えるよう、倒した量を累乗して使う
+export const PAD_LOOK_VERTICAL = 0.75; // 縦方向の視点速度（横に対する倍率）
+export const PAD_LOOK_CURVE = 1.6; // 小さく倒したときに細かく狙えるよう、倒した量を累乗して使う
+export const PAD_LOOK_ACCEL_DELAY = 0.15; // 端に倒してから加速が始まるまでの秒数
+export const PAD_LOOK_ACCEL_TIME = 0.3; // 最大倍率に達するまでの秒数
+export const PAD_LOOK_ACCEL_MAX = 1.8; // 端に倒し続けたときの最大倍率
 export const PAD_SPRINT = 0.9; // 左スティックをこれ以上倒すと走る
 
 export function sendPadKey(code: string) {
@@ -104,18 +113,25 @@ export function updatePadDebug(dt: number, stamp: number) {
   padGaps.length = frameGaps.length = 0;
 }
 
+let padThrowHeld = false;
+let padLookEdgeTime = 0;
+
 export function updatePad(dt: number) {
   const pad = pollPad();
   updatePadDebug(dt, pad.timestamp);
   // 離したことはどの画面でも反映する（押したまま一時停止して、そこで離すこともある）
-  for (const [b, code] of PAD_KEYS) if (pad.up[b]) keys.delete(code);
+  for (const [b, code] of PAD_KEYS) {
+    if (pad.up[b] && !PAD_KEYS.some(([other, key]) => key === code && pad.held[other])) keys.delete(code);
+  }
   if (pad.up[PAD.RT]) game.attackHeld = false;
-  if (pad.up[PAD.LT]) game.throwHeld = false;
+  if (pad.up[PAD.LT]) { game.throwHeld = false; padThrowHeld = false; }
+  if (pad.up[PAD.LT]) { kunaiState.grappleHeld = false; if (kunaiState.grapple) releaseKunaiGrapple(); }
   padMove.x = padMove.y = 0;
   padState.padSprint = false;
-  if (!pad.connected) { clearLockOn(); return; }
+  if (!pad.connected) { padLookEdgeTime = 0; if (padThrowHeld) game.throwHeld = padThrowHeld = false; clearLockOn(); return; }
 
   if (!controls.isLocked) {
+    padLookEdgeTime = 0;
     clearLockOn();
     if (overlay.classList.contains('hidden') || overlay.classList.contains('leaving')) return;
     for (const [b, code] of PAD_MENU_KEYS) if (pad.down[b]) return sendPadKey(code);
@@ -132,7 +148,7 @@ export function updatePad(dt: number) {
     return;
   }
   menuStickDirection = '';
-  if (pad.down[PAD.START]) return hooks.pauseGame();
+  if (pad.down[PAD.START]) { padLookEdgeTime = 0; return hooks.pauseGame(); }
 
   for (const [b, code] of PAD_KEYS) {
     if (!pad.down[b]) continue;
@@ -140,8 +156,15 @@ export function updatePad(dt: number) {
     pressed.add(code);
   }
   if (!game.unarmed && pad.down[PAD.RT]) game.attackPressed = game.attackHeld = true;
-  if (!game.unarmed && pad.down[PAD.LT]) game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
-  if (!game.unarmed && pad.down[PAD.X] && game.shownWeapon === 'handgun') gunState.reloadQueued = true;
+  if (!game.unarmed && pad.down[PAD.LT]) {
+    if (game.shownWeapon === 'kunai') { if (!kunaiState.grapple) { kunaiState.grappleHeld = true; toggleKunaiGrapple(); } }
+    else game.throwHeld = padThrowHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = gunState.deadEyePressed = bowState.aimPressed = spearThrow.aimPressed = true;
+  }
+  if (!game.unarmed && (pad.down[PAD.X] || pad.down[PAD.Y])) {
+    if (game.shownWeapon === 'kunai') recallKunai();
+    else if (game.shownWeapon === 'handgun') gunState.reloadQueued = true;
+    else if (game.shownWeapon === 'rifle') rifleState.reloadQueued = true;
+  }
   const cycle = game.weaponLocked ? 0 : (pad.down[PAD.RB] ? 1 : 0) - (pad.down[PAD.LB] ? 1 : 0);
   if (cycle) game.wantWeapon = WEAPON_ORDER[(WEAPON_ORDER.indexOf(game.wantWeapon) + cycle + WEAPON_ORDER.length) % WEAPON_ORDER.length];
   for (const [b, id] of PAD_WEAPONS) if (pad.down[b] && !game.weaponLocked) game.wantWeapon = id;
@@ -152,8 +175,10 @@ export function updatePad(dt: number) {
 
   const m = Math.hypot(pad.rx, pad.ry);
   if (m > 0 || padState.padSprint || pad.lx || pad.ly || pad.down.some(Boolean)) game.usingPad = true;
-  if (!game.unarmed && pad.down[PAD.RT]) assistMeleeAttack();
+  if (!game.unarmed && pad.down[PAD.RT] && game.shownWeapon !== 'kunai') assistMeleeAttack();
   const locking = updateLockOn(dt, m);
+  padLookEdgeTime = !locking && !isDown() && m >= 0.95 ? padLookEdgeTime + dt : 0;
+  const lookAccel = 1 + (PAD_LOOK_ACCEL_MAX - 1) * Math.min(1, Math.max(0, (padLookEdgeTime - PAD_LOOK_ACCEL_DELAY) / PAD_LOOK_ACCEL_TIME));
   const target = locking ? null : findAssistTarget();
   // 敵の近くでは視点を遅くし、スティックか体を動かしている間だけ照準を胸へ寄せる（止まっていると勝手には動かさない）
   let slow = 1;
@@ -167,17 +192,17 @@ export function updatePad(dt: number) {
   if (padAssistEl) {
     padAssistEl.textContent = !game.usingPad
       ? 'アシスト  切（マウス操作中）'
-      : game.shownWeapon !== 'kunai' && game.shownWeapon !== 'handgun'
-        ? 'アシスト  切（クナイ / 銃以外）'
+      : !isAssistWeaponActive()
+        ? 'アシスト  切（射撃・投げの構え以外）'
         : target
           ? `アシスト  ● 捕捉中  ずれ ${(target.angle / DEG).toFixed(1)}° / 範囲 ${(target.size / DEG).toFixed(1)}°  速さ ×${slow.toFixed(2)}${target.angle < target.size * ASSIST_SNAP ? '  弾補正' : ''}`
           : 'アシスト  ○ 範囲外';
   }
   if (m > 0) {
-    const k = (Math.pow(m, PAD_LOOK_CURVE) / m) * PAD_LOOK_SPEED * options.padSens * dt * zoomLookScale() * slow;
-    turnView(pad.rx * k, pad.ry * k);
+    const k = (Math.pow(m, PAD_LOOK_CURVE) / m) * PAD_LOOK_SPEED * options.padSens * dt * zoomLookScale() * slow * lookAccel;
+    turnView(pad.rx * k, pad.ry * k * PAD_LOOK_VERTICAL);
     // マウスと同じく、回した量の 1/4 だけ武器を遅らせる
     viewState.lookSwayX = THREE.MathUtils.clamp(viewState.lookSwayX + pad.rx * k * 0.25, -0.06, 0.06);
-    viewState.lookSwayY = THREE.MathUtils.clamp(viewState.lookSwayY + pad.ry * k * 0.25, -0.06, 0.06);
+    viewState.lookSwayY = THREE.MathUtils.clamp(viewState.lookSwayY + pad.ry * k * PAD_LOOK_VERTICAL * 0.25, -0.06, 0.06);
   }
 }

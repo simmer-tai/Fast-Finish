@@ -3,7 +3,8 @@ import * as sfx from '../audio.js';
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
 // 音量は 0〜1 で、音の出口に掛ける（audio.ts の setMasterVolume）。
-// 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。次に開いたときのために覚えておく
+// 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。
+// PLAYER CARD はタイトルの右にプレイヤーカードを出すかどうか（overlay の card-on）。次に開いたときのために覚えておく
 const OPTIONS_STORE = 'fast-finish.options';
 const RANGES = {
     mouseSens: { min: 0.1, max: 3, step: 0.1 },
@@ -19,7 +20,7 @@ const QUALITY_NOTES = {
     medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
     high: '高解像度（最大 2 倍）に、細かい影と 4x アンチエイリアス',
 };
-export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, volume: 1, quality: 'high' };
+export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, volume: 1, quality: 'high', showCard: true };
 try {
     const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
     for (const k of Object.keys(RANGES)) {
@@ -28,6 +29,8 @@ try {
     }
     if (QUALITIES.includes(saved.quality))
         options.quality = saved.quality;
+    if (typeof saved.showCard === 'boolean')
+        options.showCard = saved.showCard;
 }
 catch {
     // 読めなければ初期値のまま
@@ -48,6 +51,7 @@ const overlay = document.getElementById('overlay');
 const optionRows = [...overlay.querySelectorAll('.options .opt')];
 const qualityButtons = [...overlay.querySelectorAll('.options [data-quality]')];
 const qualityNote = overlay.querySelector('.options .note');
+const cardButtons = [...overlay.querySelectorAll('.options [data-card]')];
 let optionIndex = 0;
 export function renderOptions() {
     optionRows.forEach((row, i) => {
@@ -63,6 +67,9 @@ export function renderOptions() {
     for (const b of qualityButtons)
         b.classList.toggle('active', b.dataset.quality === options.quality);
     qualityNote.textContent = QUALITY_NOTES[options.quality];
+    for (const b of cardButtons)
+        b.classList.toggle('active', (b.dataset.card === 'on') === options.showCard);
+    overlay.classList.toggle('card-on', options.showCard);
 }
 // 変わったら true
 function setRange(key, v) {
@@ -88,11 +95,21 @@ function setQuality(q) {
     renderOptions();
     return true;
 }
+function setShowCard(on) {
+    if (on === options.showCard)
+        return false;
+    options.showCard = on;
+    saveOptions();
+    renderOptions();
+    return true;
+}
 function stepOption(row, dir) {
     const key = row.dataset.opt;
-    const changed = key === 'quality'
-        ? setQuality(QUALITIES[THREE.MathUtils.clamp(QUALITIES.indexOf(options.quality) + dir, 0, QUALITIES.length - 1)])
-        : setRange(key, options[key] + dir * RANGES[key].step);
+    const changed = key === 'card'
+        ? setShowCard(dir < 0)
+        : key === 'quality'
+            ? setQuality(QUALITIES[THREE.MathUtils.clamp(QUALITIES.indexOf(options.quality) + dir, 0, QUALITIES.length - 1)])
+            : setRange(key, options[key] + dir * RANGES[key].step);
     if (changed)
         sfx.playUiSelect();
     else
@@ -105,9 +122,12 @@ export function onOptionsClick(target) {
     optionIndex = optionRows.indexOf(row);
     const step = target.closest('[data-step]');
     const quality = target.closest('[data-quality]');
+    const card = target.closest('[data-card]');
     if (step)
         stepOption(row, Number(step.dataset.step));
     else if (quality && setQuality(quality.dataset.quality))
+        sfx.playUiSelect();
+    else if (card && setShowCard(card.dataset.card === 'on'))
         sfx.playUiSelect();
     renderOptions();
 }

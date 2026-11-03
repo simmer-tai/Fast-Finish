@@ -68,6 +68,13 @@ export function resetStrikerNav(levels) {
     for (const y of levels)
         navFor(y);
 }
+// Rebuild only affected levels when cargo moves; other floors keep their cached paths.
+export function refreshStrikerNav(levels) {
+    for (const y of levels) {
+        navs.delete(y);
+        navFor(y);
+    }
+}
 const DROP_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const DROP_STEPS = [1.2, 1.8, 2.5]; // 縁のマスの中心から、降りる先を探す距離 (m)
 function navFor(y) {
@@ -164,7 +171,8 @@ function countNav(n) {
         const c = navQueue[q];
         const i = c % n.nx;
         const d = n.dist[c] + 1;
-        for (const nb of [i > 0 ? c - 1 : -1, i < n.nx - 1 ? c + 1 : -1, c - n.nx, c + n.nx]) {
+        for (let dir = 0; dir < 4; dir++) {
+            const nb = dir === 0 ? (i > 0 ? c - 1 : -1) : dir === 1 ? (i < n.nx - 1 ? c + 1 : -1) : dir === 2 ? c - n.nx : c + n.nx;
             if (nb < 0 || nb >= n.open.length || !n.open[nb] || n.dist[nb] >= 0)
                 continue;
             n.dist[nb] = d;
@@ -222,7 +230,8 @@ function pickChaseTarget() {
     for (let s = 0; s < NAV_LOOK && n.dist[c] > 0; s++) {
         const i = c % n.nx;
         let next = -1;
-        for (const nb of [i > 0 ? c - 1 : -1, i < n.nx - 1 ? c + 1 : -1, c - n.nx, c + n.nx]) {
+        for (let dir = 0; dir < 4; dir++) {
+            const nb = dir === 0 ? (i > 0 ? c - 1 : -1) : dir === 1 ? (i < n.nx - 1 ? c + 1 : -1) : dir === 2 ? c - n.nx : c + n.nx;
             if (nb < 0 || nb >= n.dist.length || n.dist[nb] < 0 || n.dist[nb] >= n.dist[c])
                 continue;
             // 近道が並ぶときは、プレイヤーにまっすぐ近い方へ（乱数で選ぶとジグザグに走る）
@@ -252,6 +261,7 @@ function pickChaseTarget() {
 // ---- 飛び降りる ----
 // プレイヤーが下にいるときは、今の床を歩いて行ける縁のうち、歩く道のりと降りた先からプレイヤーまでの距離の和が一番小さい縁を選んで走る。
 // 縁に着いたら小さく跳ね上がって踏み切り、放物線を描いて下の床へ降りる（落ちる間は脚を縮め、着く前に伸ばす）
+let dropSteps = new Int32Array(0);
 let dropPrev = new Int32Array(0); // 道のりを辿るための、1 つ手前のマス（-2 = まだ着いていない）
 const dropQueue = [];
 const dropPath = [];
@@ -263,18 +273,20 @@ function pickDropTarget() {
     const start = navCell(n, p.x, p.z);
     if (start < 0 || !n.open[start])
         return false;
-    if (dropPrev.length !== n.open.length)
+    if (dropPrev.length !== n.open.length) {
         dropPrev = new Int32Array(n.open.length);
+        dropSteps = new Int32Array(n.open.length);
+    }
     dropPrev.fill(-2);
     dropPrev[start] = -1;
     dropQueue.length = 0;
     dropQueue.push(start);
-    const steps = new Map([[start, 0]]);
+    dropSteps[start] = 0;
     let best = -1;
     let bestCost = Infinity;
     for (let q = 0; q < dropQueue.length; q++) {
         const c = dropQueue[q];
-        const d = steps.get(c);
+        const d = dropSteps[c];
         const to = n.drops.get(c);
         if (to) {
             // 降りた先がプレイヤーより高ければ、もう一度降りることになるので遠回りとして数える
@@ -285,11 +297,12 @@ function pickDropTarget() {
             }
         }
         const i = c % n.nx;
-        for (const nb of [i > 0 ? c - 1 : -1, i < n.nx - 1 ? c + 1 : -1, c - n.nx, c + n.nx]) {
+        for (let dir = 0; dir < 4; dir++) {
+            const nb = dir === 0 ? (i > 0 ? c - 1 : -1) : dir === 1 ? (i < n.nx - 1 ? c + 1 : -1) : dir === 2 ? c - n.nx : c + n.nx;
             if (nb < 0 || nb >= n.open.length || !n.open[nb] || dropPrev[nb] !== -2)
                 continue;
             dropPrev[nb] = c;
-            steps.set(nb, d + 1);
+            dropSteps[nb] = d + 1;
             dropQueue.push(nb);
         }
     }

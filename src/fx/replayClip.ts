@@ -1,11 +1,11 @@
 // ---- リザルトで流すハイライト ----
 // プレイ中の画面を小さく縮めて、直近 PRE + POST 秒ぶんを GPU の中で回し続ける（読み戻しはしない）。
-// 倒したときの点数（倍率を掛けた後）がそれまでの最高以上なら、その POST 秒後まで録ってから、回している分を保存用へ写す。
+// Save the rolling frames after POST seconds when a kill reaches the best score.
 // 同点なら後のキルを選ぶ（最後の一撃が残りやすい）。
 // 縮めるのは暗転などを重ねた後、色の変換（OutputPass）の前。写すときに同じ変換を掛けるので、保存した画は画面と同じ色になる。
 // 結果の画面では、保存した分を 1 フレームに 1 コマずつ読み戻し（ゲームは止まっている）、ランクの枠の 2D キャンバスにスローでループさせる
 import * as THREE from 'three';
-import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { renderer } from '../core.js';
 import { composer } from './post.js';
@@ -23,7 +23,8 @@ const WIDTH = Math.round(HEIGHT * CLIP_ASPECT);
 const makeTargets = () =>
   Array.from({ length: FRAMES }, () => new THREE.WebGLRenderTarget(WIDTH, HEIGHT, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }));
 const live = makeTargets(); // 回し続ける分
-const kept = makeTargets(); // 保存した分（古い順に 0 から）
+const spare = makeTargets();
+const kept: THREE.WebGLRenderTarget[] = []; // 保存した分（古い順に 0 から）
 let liveHead = 0; // 次に書く場所
 let liveCount = 0;
 let keptCount = 0;
@@ -47,18 +48,9 @@ class CapturePass extends Pass {
 }
 composer.insertPass(new CapturePass(), composer.passes.length - 1);
 
-const copyQuad = new FullScreenQuad(
-  new THREE.ShaderMaterial({
-    uniforms: { map: { value: null } },
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, 1.0); }',
-    depthTest: false,
-    depthWrite: false,
-  }),
-);
-const copyMat = copyQuad.material as THREE.ShaderMaterial;
-
 export function resetReplay() {
+  for (const rt of kept) if (!live.includes(rt)) spare.push(rt);
+  kept.length = 0;
   liveHead = liveCount = keptCount = 0;
   keptPts = -Infinity;
   pending = null;
@@ -76,6 +68,8 @@ export function prepareReplayFrame(realDt: number, recording: boolean) {
   }
   if (since < 1 / FPS) return;
   since = since === Infinity ? 0 : since % (1 / FPS);
+  // Swap out a saved frame before overwriting it.
+  if (kept.includes(live[liveHead])) live[liveHead] = spare.pop()!;
   target = live[liveHead];
   liveHead = (liveHead + 1) % FRAMES;
   liveCount = Math.min(FRAMES, liveCount + 1);
@@ -90,19 +84,16 @@ export function noteReplayKill(pts: number) {
   if (pts >= keptPts) pending = { pts, left: POST };
 }
 
-// 回している分を古い順に保存用へ写す
+// Retain the live targets in chronological order.
 function keepLive() {
   if (!pending) return;
   keptPts = pending.pts;
   pending = null;
   const start = (liveHead - liveCount + FRAMES) % FRAMES;
-  const prev = renderer.getRenderTarget();
-  for (let i = 0; i < liveCount; i++) {
-    copyMat.uniforms.map.value = live[(start + i) % FRAMES].texture;
-    renderer.setRenderTarget(kept[i]);
-    copyQuad.render(renderer);
-  }
-  renderer.setRenderTarget(prev);
+  // Reuse old saved targets that are no longer in the live ring.
+  for (const rt of kept) if (!live.includes(rt)) spare.push(rt);
+  kept.length = 0;
+  for (let i = 0; i < liveCount; i++) kept.push(live[(start + i) % FRAMES]);
   keptCount = liveCount;
 }
 

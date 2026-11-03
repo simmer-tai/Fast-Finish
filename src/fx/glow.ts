@@ -52,21 +52,29 @@ const blurMaterial = () =>
     depthTest: false,
     depthWrite: false,
   });
-// 塗りは「色 × 濃さ」と「濃さ」で書いておくので、ぼかした後に割れば元の色に戻る
+// 塗りは「色 × 濃さ」と「濃さ」で書いておくので、ぼかした後に割れば元の色に戻る。
+// 重ねる色は濃さを掛けて書く（重ね方は GlowPass.behind で選ぶ）
 const compositeMaterial = () =>
   new THREE.ShaderMaterial({
-    uniforms: { tGlow: { value: null } },
+    uniforms: { tGlow: { value: null }, uOpacity: { value: 1 } },
     vertexShader: quadVertex,
     fragmentShader: /* glsl */ `
       uniform sampler2D tGlow;
+      uniform float uOpacity;
       varying vec2 vUv;
       void main() {
         vec4 g = texture2D(tGlow, vUv);
         if (g.a < 0.002) discard;
-        gl_FragColor = vec4(g.rgb / g.a, clamp(g.a * 1.6, 0.0, 0.85));
+        float a = clamp(g.a * 1.6, 0.0, 0.85) * uOpacity;
+        gl_FragColor = vec4(g.rgb / g.a * a, a);
       }
     `,
     transparent: true,
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.OneFactor,
+    blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
     depthTest: false,
     depthWrite: false,
   });
@@ -80,8 +88,15 @@ export class GlowPass extends Pass {
   private compositeMat = compositeMaterial();
   private quad = new FullScreenQuad();
   private clearColor = new THREE.Color();
+  // 広さと濃さの倍率。武器を小さく映す画面（スキン選択）では、狭く薄くして刀身が光に埋もれないようにする
+  spread = 1;
+  opacity = 1;
+  // true: 描いてある物の後ろ（透けている所）にだけにじませる。透けたキャンバスに描く画面（スキン選択）で使う。
+  // 上に重ねると、光る刃先のまわりの黒い面にも色が乗り、刃先から離れるほど暗くなる濃淡で、平らな刃が丸く見える
+  behind = false;
 
-  constructor(private scene: THREE.Scene, private camera: THREE.Camera) {
+  // scale: にじみを描く画面の縮小率。にじみを狭くする画面では、粗い画素の段差が光の縁に輪郭として出るので小さくする
+  constructor(private scene: THREE.Scene, private camera: THREE.Camera, private scale = SCALE) {
     super();
     this.needsSwap = false; // 今の画面の上に直接重ねる
   }
@@ -128,7 +143,7 @@ export class GlowPass extends Pass {
     const u = this.blurMat.uniforms;
     let src = this.mask.texture;
     for (let i = 0; i < PASSES; i++) {
-      const step = SPREAD * 2 ** i;
+      const step = SPREAD * this.spread * (SCALE / this.scale) * 2 ** i; // 縮小率を変えても、にじむ広さは変えない
       u.tMap.value = src;
       u.uStep.value.set(step / this.mask.width, 0);
       renderer.setRenderTarget(this.blurA);
@@ -143,6 +158,9 @@ export class GlowPass extends Pass {
     // 元の画面に重ねる
     this.quad.material = this.compositeMat;
     this.compositeMat.uniforms.tGlow.value = this.blurB.texture;
+    this.compositeMat.uniforms.uOpacity.value = this.opacity;
+    this.compositeMat.blendSrc = this.compositeMat.blendSrcAlpha = this.behind ? THREE.OneMinusDstAlphaFactor : THREE.OneFactor;
+    this.compositeMat.blendDst = this.compositeMat.blendDstAlpha = this.behind ? THREE.OneFactor : THREE.OneMinusSrcAlphaFactor;
     renderer.setRenderTarget(this.renderToScreen ? null : read);
     this.quad.render(renderer);
 
@@ -151,8 +169,8 @@ export class GlowPass extends Pass {
   }
 
   setSize(width: number, height: number) {
-    const w = Math.max(1, Math.round(width / SCALE));
-    const h = Math.max(1, Math.round(height / SCALE));
+    const w = Math.max(1, Math.round(width / this.scale));
+    const h = Math.max(1, Math.round(height / this.scale));
     this.mask.setSize(w, h);
     this.blurA.setSize(w, h);
     this.blurB.setSize(w, h);

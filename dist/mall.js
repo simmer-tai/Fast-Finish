@@ -360,8 +360,15 @@ export function buildMall() {
         // 入口の広間
         start: { x: 0, y: 0, z: 10 },
         enemySpawns: spawns,
-        lead: 'sniper', // 上の階の回廊や渡り廊下から、吹き抜け越しに撃ってくる
-        guest: 'striker', // 回廊の手すりを越えて、下の階へ飛び降りて追ってくる
+        // 主役は狙撃手。上の階の回廊や渡り廊下から、吹き抜け越しに撃ってくる。
+        // ストライカーは回廊の手すりを越えて、下の階へ飛び降りて追ってくる。ドローンは吹き抜けを飛び回って、階をまたいで回り込んでくる
+        // （ドローンがいちばん生きるステージなので easy から混ぜる）。normal からは同じ階で連射する二丁拳銃も混ぜ、
+        // 上と横の両方から撃たれるようにする
+        mix: {
+            easy: { gunner: 0.6, sniper: 0.2, striker: 0.1, drone: 0.1 },
+            normal: { gunner: 0.27, sniper: 0.27, striker: 0.13, dual: 0.13, drone: 0.2 },
+            hard: { gunner: 0.1, sniper: 0.25, striker: 0.2, dual: 0.2, drone: 0.25 },
+        },
         // 3 階の手前の回廊の左から、吹き抜けと渡り廊下、ジグザグのエスカレーターを見下ろす
         view: { eye: { x: -11, y: 17, z: 9 }, target: { x: 3, y: 4, z: -60 } },
     };

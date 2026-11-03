@@ -1,7 +1,8 @@
 import { BOSS_LIMBS, applyBossThrowable, applyBossWarnings, boss, captureBossThrowable, captureBossWarnings, isBossThrowable, isBossWarnings, updateRemoteBossCollision, type BossPhase, type BossThrowable, type BossWarnings } from '../enemy/boss.js';
 import type { MechRig } from '../enemy/mech.js';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { applyPillarSnapshots, capturePillars, isPillarSnapshots, type PillarSnapshot } from '../world/pillars.js';
+import { decodeTransform, encodeTransform } from './transformCodec.js';
 
 // 描画と当たり判定の同期に使うため、機体の各骨のローカル姿勢を送る。
 type Transform = [number, number, number, number, number, number, number];
@@ -20,14 +21,20 @@ export type BossSnapshot = {
   pillars?: PillarSnapshot[];
   throwable?: BossThrowable;
 };
+const boneCache = new WeakMap<MechRig, THREE.Object3D[]>();
 function bones(rig: MechRig): THREE.Object3D[] {
-  return [rig.root, rig.body, rig.torso, ...rig.guns, ...rig.legs.flatMap((leg) => [leg.thigh, leg.shin, leg.meta, leg.foot])];
+  let result = boneCache.get(rig);
+  if (!result) {
+    result = [rig.root, rig.body, rig.torso, ...rig.guns, ...rig.legs.flatMap((leg) => [leg.thigh, leg.shin, leg.meta, leg.foot])];
+    boneCache.set(rig, result);
+  }
+  return result;
 }
 function transform(object: THREE.Object3D): Transform {
   const p = object.position, q = object.quaternion;
   return [p.x, p.y, p.z, q.x, q.y, q.z, q.w];
 }
-export function captureBossSnapshot(): BossSnapshot | null {
+export function captureBossSnapshot(details = true): BossSnapshot | null {
   const rig = boss.rig;
   if (!rig) return null;
   return {
@@ -36,9 +43,7 @@ export function captureBossSnapshot(): BossSnapshot | null {
     coreHp: boss.coreHp, coreMax: boss.coreMax, limbMax: boss.limbMax,
     limbs: BOSS_LIMBS.map((part) => [boss.limbs[part].hp, boss.limbs[part].broken]),
     transforms: bones(rig).map(transform),
-    warnings: captureBossWarnings(),
-    pillars: capturePillars(),
-    throwable: captureBossThrowable(),
+    ...(details ? { warnings: captureBossWarnings(), pillars: capturePillars(), throwable: captureBossThrowable() } : {}),
   };
 }
 // ネットワークの入力をゲームの値として使う前に、形式と値の範囲を確認する。
@@ -51,10 +56,28 @@ export function isBossSnapshot(value: unknown): value is BossSnapshot {
     && s.transforms.some((t) => Array.isArray(t) && t.length === 7 && t.every(finite));
 }
 
+export function encodeBossSnapshot(s: BossSnapshot): object {
+  return { ...s, transforms: s.transforms.map(encodeTransform) };
+}
+export function decodeBossSnapshot(value: unknown): BossSnapshot | null {
+  if (!value || typeof value !== 'object') return null;
+  const s = value as BossSnapshot;
+  if (!Array.isArray(s.transforms) || s.transforms.length !== 13) return null;
+  const transforms = s.transforms.map(decodeTransform);
+  if (transforms.some((t) => !t)) return null;
+  const decoded = { ...s, transforms };
+  return isBossSnapshot(decoded) ? decoded : null;
+}
+
 // 参加者は AI を動かさず、受信した機体を追う。攻撃の生成は別途同期が必要。
+const target = new THREE.Quaternion();
+let appliedRig: MechRig | null = null;
+let appliedWarnings: BossWarnings | undefined;
+let appliedPillars: PillarSnapshot[] | undefined;
 export function applyBossSnapshot(s: BossSnapshot, dt: number) {
   const rig = boss.rig;
   if (!rig) return;
+  if (rig !== appliedRig) { appliedRig = rig; appliedWarnings = undefined; appliedPillars = undefined; }
   const blend = 1 - Math.exp(-14 * dt);
   bones(rig).forEach((object, i) => {
     const t = s.transforms[i];
@@ -62,7 +85,7 @@ export function applyBossSnapshot(s: BossSnapshot, dt: number) {
     object.position.x += (t[0] - object.position.x) * blend;
     object.position.y += (t[1] - object.position.y) * blend;
     object.position.z += (t[2] - object.position.z) * blend;
-    const target = object.quaternion.clone().set(t[3], t[4], t[5], t[6]);
+    target.set(t[3], t[4], t[5], t[6]);
     if (target.lengthSq() > 1e-8) object.quaternion.slerp(target.normalize(), blend);
   });
   rig.root.visible = s.visible;
@@ -79,8 +102,8 @@ export function applyBossSnapshot(s: BossSnapshot, dt: number) {
     const shade = s.limbs[i][1] ? 0.3 : 1;
     for (const material of rig.mats[part]) material.color.setScalar(shade);
   });
-  if (isBossWarnings(s.warnings)) applyBossWarnings(s.warnings);
-  if (isPillarSnapshots(s.pillars)) applyPillarSnapshots(s.pillars);
+  if (s.warnings !== appliedWarnings && isBossWarnings(s.warnings)) { applyBossWarnings(s.warnings); appliedWarnings = s.warnings; }
+  if (s.pillars !== appliedPillars && isPillarSnapshots(s.pillars)) { applyPillarSnapshots(s.pillars); appliedPillars = s.pillars; }
   if (isBossThrowable(s.throwable)) applyBossThrowable(s.throwable, dt);
   updateRemoteBossCollision();
   rig.root.updateMatrixWorld(true);

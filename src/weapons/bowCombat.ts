@@ -11,7 +11,7 @@ import { hitWithArcs } from '../fx/arcs.js';
 import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { en, enemies, hitDir, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow, castWorld } from '../world/raycast.js';
-import { enemyChest } from '../player/aimAssist.js';
+import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js';
 import { spawnSparks } from '../fx/hitFx.js';
 import { findBankShot } from './bowBankShot.js';
 import { player, position } from '../player/state.js';
@@ -45,6 +45,8 @@ export const bowState = {
   ricochetEmptyFlash: 0,
   ricochetHitting: false, // 跳弾矢の当たりを処理している最中（その当たりで倒しても跳弾矢は戻さない）
   volleyHitting: false, // 3 本射ちの矢の当たりを処理している最中
+  bouncedHitting: false,
+  volleyKills: null as { count: number } | null,
   equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 
@@ -196,6 +198,7 @@ interface Arrow {
   bounces: number; // 跳ねた回数
   ricochet: boolean; // 跳弾矢（どの角度でも跳ねる）。普通の矢は跳ねずに刺さる
   volley: boolean; // 3 本射ちの矢
+  volleyKills: { count: number } | null;
   bank: Enemy | null; // 跳弾の狙いの補助で覚えた敵。最初の面では必ず跳ね、跳ねたらこの敵へ向け直す
   seek: Enemy | null; // 跳ねた後に追いかけている敵
   stuck: number; // 刺さってから残しておく時間。0 なら飛んでいる
@@ -217,7 +220,7 @@ export const bowReady = () => game.shownWeapon === 'bow' && game.wantWeapon === 
 const launchFrom = new THREE.Vector3();
 const launchAim = new THREE.Vector3();
 const launchDir = new THREE.Vector3();
-function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gravity: number, dmg: number, ricochet: boolean, bank: Enemy | null, volley = false) {
+function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gravity: number, dmg: number, ricochet: boolean, bank: Enemy | null, volleyKills: { count: number } | null = null) {
   const mesh = arrowTemplate.clone();
   mesh.position.copy(from);
   mesh.quaternion.setFromUnitVectors(ARROW_AXIS, dir);
@@ -234,7 +237,8 @@ function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gra
     age: 0,
     bounces: 0,
     ricochet,
-    volley,
+    volley: volleyKills !== null,
+    volleyKills,
     bank,
     seek: null,
     stuck: 0,
@@ -257,11 +261,12 @@ function releaseArrow(draw: number, ricochet: boolean) {
   afterRelease(draw);
 }
 
-// 3 本射ち: 照準の先へ向けてから、画面の横に広げ、1 本ずつ横と縦に散らす（跳弾の印やパッドの吸い付きは効かせない）
+// 3 本射ち: 照準の先へ向けてから、画面の横に広げ、1 本ずつ横と縦に散らす
 const camRight = new THREE.Vector3();
 const camUp = new THREE.Vector3();
 const spreadQ = new THREE.Quaternion();
 function releaseVolley(draw: number) {
+  const volleyKills = { count: 0 };
   const k = draw * draw;
   const speed = THREE.MathUtils.lerp(ARROW_SPEED_MIN, ARROW_SPEED_MAX, k) * BOW_VOLLEY_SPEED;
   const gravity = THREE.MathUtils.lerp(ARROW_GRAVITY_MAX, ARROW_GRAVITY_MIN, k);
@@ -272,6 +277,8 @@ function releaseVolley(draw: number) {
   camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
   camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
   const jitter = () => (Math.random() * 2 - 1) * BOW_VOLLEY_JITTER;
+  const target = findAssistTarget();
+  const snapPoint = target && target.angle < target.size * ASSIST_SNAP ? target.point.clone() : null;
   for (const [i, nocked] of [nockedArrow, ...volleyArrows].entries()) {
     const side = i === 0 ? 0 : (nocked.userData.side as number);
     nocked.updateWorldMatrix(true, false);
@@ -279,7 +286,14 @@ function releaseVolley(draw: number) {
     launchDir.subVectors(launchAim, launchFrom).normalize();
     launchDir.applyQuaternion(spreadQ.setFromAxisAngle(camUp, -side * BOW_VOLLEY_SPREAD + jitter()));
     launchDir.applyQuaternion(spreadQ.setFromAxisAngle(camRight, jitter()));
-    launchArrow(launchFrom, launchDir, speed, gravity, dmg, false, null, true);
+    if (i === 0 && snapPoint) {
+      const horizontal = Math.hypot(launchDir.x, launchDir.z);
+      const dx = snapPoint.x - launchFrom.x;
+      const dz = snapPoint.z - launchFrom.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > 0) { launchDir.x = dx / distance * horizontal; launchDir.z = dz / distance * horizontal; }
+    }
+    launchArrow(launchFrom, launchDir, speed, gravity, dmg, false, null, volleyKills);
   }
   afterRelease(draw);
 }
@@ -345,10 +359,14 @@ function stickArrow(a: Arrow, at: THREE.Vector3, dir: THREE.Vector3, onEnemy: En
   hitDir.normalize();
   bowState.ricochetHitting = a.ricochet;
   bowState.volleyHitting = a.volley;
+  bowState.bouncedHitting = a.ricochet && a.bounces > 0;
+  bowState.volleyKills = a.volleyKills;
   // 稲妻を出すスキンは、当たりの光も稲妻と同じ色にする
   hitWithArcs(skinOf('bow'), ARROW_HIT.fx ?? 1, dir, () => hooks.applyHit(ARROW_HIT, at, 'bullet', undefined, false, a.dmg), at);
   skinFx.flare = 1;
   bowState.ricochetHitting = bowState.volleyHitting = false;
+  bowState.bouncedHitting = false;
+  bowState.volleyKills = null;
   if (!onEnemy.alive) a.stuck = 1e-3; // 砕けた敵に刺さった矢は一緒に消す
 }
 
@@ -511,13 +529,13 @@ export function updateBow(dt: number) {
       bowState.drawing = false; // 持ち替えや一時停止で引くのをやめる（射らない）
       endDrawSound();
     } else if (!held(bowState.shot)) {
-      bowState.drawing = false;
       if (bowState.draw < BOW_MIN_DRAW) endDrawSound(); // 浅すぎて射らずに戻す
       else if (bowState.shot === 'volley') releaseVolley(bowState.draw);
       else {
         if (bowState.shot === 'ricochet') bowState.ricochetStock--;
         releaseArrow(bowState.draw, bowState.shot === 'ricochet');
       }
+      bowState.drawing = false;
     } else {
       drawTime += dt;
     }

@@ -15,6 +15,7 @@ export interface GameHooks {
   // ボスの機体のほうが近ければボスを選ぶ（続く hitPointFromTip と applyHit がボスへ回る。bossTargeted で分かる）
   dummyInReach(reach: number, angle: number): boolean;
   bossInReach(reach: number, angle: number): boolean; // ボスの機体だけを調べる（敵を 1 体ずつ数える武器が、敵のあとに呼ぶ）
+  clearBossTarget(): void;
   bossTargeted(): boolean; // 直前の dummyInReach / bossInReach がボスを選んだか（applyHit を呼ぶまで）
   // 投げ物・弾・矢（と、ボスへの一閃）がボスの部位に当たったときの当たりの反応と演出。dir は飛んでいた向き、swing は刃の動いた向き
   hitBoss(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossPart, dir: THREE.Vector3, dmgScale?: number, swing?: THREE.Vector3): void;

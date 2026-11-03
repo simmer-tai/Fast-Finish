@@ -133,7 +133,7 @@ function buildHilt(m) {
 // 刃先を上へ向け、光る刃先の線越しに敵を見る。照準は刃のすぐ上に来る。
 // 突進が始まったら、寝かせた刀を頭上へ立ててから右肩の後ろへ引き絞り、元の一閃の振りかぶりへつなぐ
 // pos は柄の位置（手元の基準からのずれ）、tip は切っ先の向き、edge は刃先の向き
-function swordPose(pos, tip, edge) {
+export function swordPose(pos, tip, edge) {
     const t = new THREE.Vector3(...tip).normalize();
     const e = new THREE.Vector3(...edge);
     e.addScaledVector(t, -e.dot(t)).normalize();

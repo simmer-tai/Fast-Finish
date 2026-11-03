@@ -61,8 +61,6 @@ const BODY_HALF = 1.8; // 当たり判定の箱の半幅（向きによらず囲
 const BODY_TOP = 6.6;
 const TWIST_MAX = 0.6; // 胴体を脚に対してひねる限り (rad)
 const BOUNDS_MARGIN = 5; // ステージの端からこれだけ内側までしか歩かない
-const DOWN_TIME = 7; // しゃがみ込んでいる時間
-const RISE_TIME = 0.9; // 起き上がるのにかける時間
 const DOWN_HIP = -1.9; // しゃがみ込んだときに腰を下げる量（窓が跳べば届く高さまで下がる）
 const DEAD_HIP = -2.1;
 const DOWN_LEAN = 0.5; // しゃがみ込んだときに胴体を余分に前へ倒す (rad)
@@ -858,18 +856,6 @@ export function updateBoss(dt) {
     updateMissiles(dt);
     // ---- 段の移り変わり ----
     boss.phaseT += dt;
-    if (boss.phase === 'down' && boss.phaseT >= DOWN_TIME) {
-        // 部位を直して起き上がる
-        for (const k of BOSS_LIMBS)
-            boss.limbs[k] = { hp: boss.limbMax, broken: false };
-        setPhase('rise');
-        const snd = soundAt();
-        sfx.playBossPowerUp(RISE_TIME, snd.volume, snd.pan);
-    }
-    else if (boss.phase === 'rise' && boss.phaseT >= RISE_TIME) {
-        setPhase('walk');
-        boss.ult.pending = true; // 起き上がったら必殺技を出す
-    }
     if (boss.phase !== 'walk' && boss.stomp.leg >= 0)
         endStomp(true); // 踏む途中でしゃがみ込んだら、足を下ろす
     if (boss.phase !== 'walk' && boss.dash.stage >= 0)
@@ -3794,11 +3780,12 @@ export function damageBoss(part, amount) {
     }
     return result;
 }
+const allLimbsBroken = () => BOSS_LIMBS.every((k) => boss.limbs[k].broken);
 function damageResult(part, amount) {
     if (boss.phase === 'dead')
         return 'idle';
-    // しゃがみ込んでいる間は、本体（腰から上）に当てたときだけ通す（腕・脚は 4 つとも故障している）
-    if (boss.phase === 'down') {
+    // 腕・脚が 4 つとも故障している間は、本体（腰から上）に当てたときだけ通す
+    if (allLimbsBroken()) {
         if (part !== 'core')
             return 'idle';
         boss.coreHp -= amount;
@@ -3824,11 +3811,8 @@ function damageResult(part, amount) {
         return 'limb';
     limb.hp = 0;
     limb.broken = true;
-    if (BOSS_LIMBS.every((k) => boss.limbs[k].broken)) {
-        setPhase('down');
-        boss.speed = 0;
+    if (allLimbsBroken())
         return 'down';
-    }
     return 'break';
 }
 // ---- 当たりを調べる ----
@@ -3854,6 +3838,8 @@ export function raycastBoss(origin, dir, far) {
 const MELEE_RAY_EXTRA = 1.2; // 視線の先を調べる距離を、届く距離より延ばす分（機体は大きいので、表面までの距離で測る）
 const MELEE_POINT_RADIUS = 0.6; // 目印から表面までのおおよその距離
 const MELEE_HEIGHT = 2.6; // 足もとからこの高さまでの目印に届く
+const MELEE_CORE_HEIGHT = 5.4; // 立ち姿勢の目印は 3.85 + 1.4*cos(0.2) - 0.8*sin(0.2) ≈ 5.06。動きの余裕を含める
+const MELEE_CORE_RADIUS = 1.2; // 全四肢故障時は真下や胴体のすぐ近くからも本体に届く
 const markers = [];
 let markersOf = null;
 // 部位の目印: すね・かかとの骨・足・太ももの前、砲の先、胴体の窓（骨の座標でのずれ）。近接の当たりと、一閃のロックオンの的に使う
@@ -3880,11 +3866,11 @@ export function bossTargetCount() {
 }
 export const bossTargetAt = (i, out) => markers[i].obj.localToWorld(out.copy(markers[i].offset));
 export const bossTargetPart = (i) => partOf(markers[i].obj);
-// その部位に当てればダメージが通るか（しゃがみ込んでいる間は本体だけ、そうでなければ故障していない腕・脚だけ）
+// その部位に当てればダメージが通るか（全て故障したら本体だけ、そうでなければ故障していない腕・脚だけ）
 export function bossPartOpen(part) {
     if (!boss.rig || boss.phase === 'dead')
         return false;
-    if (boss.phase === 'down')
+    if (allLimbsBroken())
         return part === 'core';
     return part !== 'core' && !boss.limbs[part].broken;
 }
@@ -3905,14 +3891,17 @@ export function bossMeleeTarget(reach, angle, eye, look) {
     flatLook.set(look.x, 0, look.z).normalize();
     let best = null;
     let bestD = Infinity;
+    const coreOpen = allLimbsBroken();
     for (const m of markers) {
-        if (!hittable(partOf(m.obj)))
+        const part = partOf(m.obj);
+        if (!hittable(part))
             continue;
+        const openCore = coreOpen && part === 'core';
         m.obj.localToWorld(mark.copy(m.offset));
-        if (mark.y - position.y > MELEE_HEIGHT || mark.y < position.y - 1)
+        if (mark.y - position.y > (openCore ? MELEE_CORE_HEIGHT : MELEE_HEIGHT) || mark.y < position.y - 1)
             continue;
         toMark.set(mark.x - position.x, 0, mark.z - position.z);
-        const d = toMark.length() - MELEE_POINT_RADIUS;
+        const d = toMark.length() - (openCore ? MELEE_CORE_RADIUS : MELEE_POINT_RADIUS);
         if (d > reach || d >= bestD)
             continue;
         if (d > 0.3 && flatLook.lengthSq() > 0 && flatLook.angleTo(toMark.normalize()) > angle)

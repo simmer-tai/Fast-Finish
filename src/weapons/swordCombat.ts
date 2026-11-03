@@ -12,6 +12,8 @@ import {
 import { sword, swordRest, swordRestQuat, swordSpin } from './viewModels.js';
 import { onSkinChange, skinFx, skinOf } from './skins.js';
 import { hitWithArcs } from '../fx/arcs.js';
+import { spawnHologramShed } from '../fx/hitFx.js';
+import { rand } from '../random.js';
 import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js';
 import { en, enemies, hitDir, hitPoint, setEn, type Enemy } from '../enemy/state.js';
 import { castHit, castThrow } from '../world/raycast.js';
@@ -773,6 +775,38 @@ export function pushSwordTrail(p: SwordPose, time: number) {
   camera.worldToLocal(swordTrailTip.copy(SWORD_TRAIL_TIP).applyMatrix4(sword.matrixWorld));
   camera.worldToLocal(swordTrailBase.copy(SWORD_TRAIL_BASE).applyMatrix4(sword.matrixWorld));
   swordRibbon.push(swordTrailTip, swordTrailBase, time);
+  shedHologram(time);
+  const decor = skinOf('sword').decor;
+  if (decor?.swing) decor.swing(swingAt.copy(camera.matrixWorld).invert().multiply(sword.matrixWorld), time);
+}
+const swingAt = new THREE.Matrix4();
+
+// スキンが振りのホログラムを持つときは、軌跡を引いている間、刃の中ほどから先のあたりから剥がれ落とす
+const shedTip = new THREE.Vector3();
+const shedPrevTip = new THREE.Vector3();
+const shedBase = new THREE.Vector3();
+const shedAt = new THREE.Vector3();
+const shedVel = new THREE.Vector3();
+let shedPrevTime = -Infinity;
+let shedAcc = 0;
+function shedHologram(time: number) {
+  const look = skinOf('sword').hologram;
+  if (!look?.shed) return;
+  shedTip.copy(SWORD_TRAIL_TIP).applyMatrix4(sword.matrixWorld);
+  const dt = time - shedPrevTime;
+  shedPrevTime = time;
+  const tipVel = shedPrevTip.subVectors(shedTip, shedPrevTip).divideScalar(dt);
+  const joined = dt > 0 && dt <= TRAIL_STEP * 1.5; // 別の時間帯の軌跡とは速さを取らない
+  if (joined) {
+    shedBase.copy(SWORD_TRAIL_BASE).applyMatrix4(sword.matrixWorld);
+    for (shedAcc += look.shed * dt; shedAcc >= 1; shedAcc--) {
+      const k = rand(0.35, 1); // 根元 0 → 切っ先 1
+      shedAt.lerpVectors(shedBase, shedTip, k);
+      shedVel.copy(tipVel).multiplyScalar(k); // 根元を軸に回るので、速さは根元からの割合に比例
+      spawnHologramShed(shedAt, shedVel, look);
+    }
+  }
+  shedPrevTip.copy(shedTip);
 }
 
 // 剣の軌跡: クナイの軌跡と同じ見た目で、刃の根元から切っ先の少し先まで、刃全体の幅で残す

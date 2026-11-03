@@ -8,6 +8,8 @@ export interface KillBonus {
   label: string;
   add: number; // 倍率に足す量
   detail?: string; // 距離など、ラベルの横に小さく添える
+  mult?: number; // 足し算の後に掛ける倍率
+  kind?: 'stale' | 'rank';
 }
 
 const KILL_BASE = 100;
@@ -48,7 +50,8 @@ function restart(node: HTMLElement, cls: string) {
 function addRow(b: KillBonus) {
   const row = document.createElement('div');
   row.className = 'row';
-  for (const [cls, text] of [['lbl', b.label], ['det', b.detail ?? ''], ['add', `+${b.add.toFixed(1)}`]]) {
+  if (b.kind) row.classList.add(b.kind);
+  for (const [cls, text] of [['lbl', b.label], ['det', b.detail ?? ''], ['add', b.mult !== undefined ? `×${b.mult}` : `+${b.add.toFixed(1)}`]]) {
     const s = document.createElement('span');
     s.className = cls;
     s.textContent = text;
@@ -78,8 +81,9 @@ export function resetScore() {
 // base = 倍率を掛ける前の点数（ボスは本体を削った分。ふつうの敵は KILL_BASE）。返り値は倍率を掛けた点数
 export function showKillScore(bonuses: KillBonus[], base = KILL_BASE): number {
   bank();
-  const list = [...bonuses].sort((a, b) => a.add - b.add); // 大きい倍率ほど後に足して、盛り上がりを最後に置く
-  const final = base * (1 + list.reduce((s, b) => s + b.add, 0));
+  const list = [...bonuses].sort((a, b) => (a.mult !== undefined ? 1 : 0) - (b.mult !== undefined ? 1 : 0) || a.add - b.add); // 大きい倍率ほど後に足して、盛り上がりを最後に置く
+  const final = base * (1 + list.reduce((s, b) => s + (b.mult === undefined ? b.add : 0), 0))
+    * list.reduce((product, b) => product * (b.mult ?? 1), 1);
   pending = final;
 
   rowsEl.replaceChildren();
@@ -94,9 +98,10 @@ export function showKillScore(bonuses: KillBonus[], base = KILL_BASE): number {
   queue = list.map((b, i) => ({
     at: FIRST_STEP + i * STEP_GAP,
     run: () => {
-      mult += b.add;
+      if (b.mult !== undefined) mult *= b.mult;
+      else mult += b.add;
       addRow(b);
-      multText.textContent = `×${mult.toFixed(1)}`;
+      multText.textContent = `×${Number(mult.toFixed(2))}`;
       restart(multEl, 'punch');
       restart(ptsEl, 'bump');
       ptsTarget = base * mult;

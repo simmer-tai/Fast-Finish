@@ -47,12 +47,14 @@ export function updateEnemyAir(dt) {
 // 今いる所から to の床へ、少し跳ね上がってから重力で落ちて着く（ストライカーの飛び降り、リフトへの飛び乗り）。
 // 横へは着くまでの時間で一定に進む。浮いている間は脚を縮め、着く少し前から伸ばして床を迎える
 export const LEAP_HOP = 3.5; // 踏み切るときに跳ね上がる速さ (m/s)
-export function startLeap(to) {
+const leapHops = new WeakMap();
+export function startLeap(to, hop = LEAP_HOP) {
     const p = en.root.position;
     en.dropFrom.copy(p);
     en.dropTo.copy(to);
     en.dropT = 0;
-    en.dropDur = (LEAP_HOP + Math.sqrt(LEAP_HOP ** 2 + 2 * GRAVITY * Math.max(0, p.y - to.y))) / GRAVITY;
+    leapHops.set(en, hop);
+    en.dropDur = (hop + Math.sqrt(Math.max(0, hop ** 2 + 2 * GRAVITY * (p.y - to.y)))) / GRAVITY;
     en.vel.set(0, 0, 0);
     en.knockVel.set(0, 0, 0);
     en.airY = en.airVel = 0;
@@ -66,14 +68,17 @@ export function updateLeap(dt) {
     const u = en.dropT / en.dropDur;
     p.x = THREE.MathUtils.lerp(en.dropFrom.x, en.dropTo.x, u);
     p.z = THREE.MathUtils.lerp(en.dropFrom.z, en.dropTo.z, u);
-    const y = en.dropFrom.y + LEAP_HOP * en.dropT - 0.5 * GRAVITY * en.dropT ** 2;
-    en.baseY = Math.max(en.dropTo.y, y);
+    const hop = leapHops.get(en) ?? LEAP_HOP;
+    const y = en.dropFrom.y + hop * en.dropT - 0.5 * GRAVITY * en.dropT ** 2;
+    en.baseY = en.dropTo.y > en.dropFrom.y ? y : Math.max(en.dropTo.y, y);
     p.y = en.baseY + en.airY;
-    en.airPose = Math.min(1, en.dropT / 0.12) * THREE.MathUtils.clamp((en.baseY - en.dropTo.y) / 1.2, 0, 1);
+    // 降りるときは床まで 1.2 m を切ったら脚を伸ばす。上へ飛び乗るときは床より下にいる間も縮め、着く 0.15 秒前から伸ばす
+    const extend = en.dropTo.y > en.dropFrom.y ? (en.dropDur - en.dropT) / 0.15 : (en.baseY - en.dropTo.y) / 1.2;
+    en.airPose = Math.min(1, en.dropT / 0.12) * THREE.MathUtils.clamp(extend, 0, 1);
     if (u < 1)
         return false;
     // 着地: 速さに応じて膝を深く沈め、上体を前へ倒し込む
-    const impact = GRAVITY * en.dropDur - LEAP_HOP;
+    const impact = GRAVITY * en.dropDur - hop;
     en.baseY = en.dropTo.y;
     p.y = en.baseY + en.airY;
     en.pelvisSpring.v.y -= Math.min(3, impact * 0.18);
@@ -191,6 +196,8 @@ export const moveWant = new THREE.Vector3();
 export const moveInvQ = new THREE.Quaternion();
 // (x, z) に en が立てるか
 export function enemyCanStand(x, z) {
+    if (en.kind === 'drone')
+        return x >= playBounds.minX && x <= playBounds.maxX && z >= playBounds.minZ && z <= playBounds.maxZ && !enemyBlockedAt(x, z, en.root.position.y + 1);
     return enemyCanStandAt(x, z, en.baseY);
 }
 // 足もとの高さ y の床の (x, z) に、敵が立てるか
@@ -277,7 +284,7 @@ export function updateEnemyKnock(dt) {
                 return;
         }
         // 浮いている間は踏ん張れないので、ほとんど速さが落ちない
-        k.multiplyScalar(Math.exp(-(en.airY > 0 ? ENEMY_KNOCK_AIR_FRICTION : en.flung ? ENEMY_KNOCK_FLUNG_FRICTION : ENEMY_KNOCK_FRICTION) * dt));
+        k.multiplyScalar(Math.exp(-(en.kind === 'drone' ? ENEMY_KNOCK_FLUNG_FRICTION : en.airY > 0 ? ENEMY_KNOCK_AIR_FRICTION : en.flung ? ENEMY_KNOCK_FLUNG_FRICTION : ENEMY_KNOCK_FRICTION) * dt));
         if (k.lengthSq() < ENEMY_KNOCK_STOP ** 2) {
             k.set(0, 0, 0);
             en.flung = false;

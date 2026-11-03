@@ -103,13 +103,13 @@ function worldNormal(p: THREE.Vector3, dir: THREE.Vector3, out: THREE.Vector3) {
   else if (dy <= dz) out.set(0, -Math.sign(dir.y) || 1, 0);
   else out.set(0, 0, -Math.sign(dir.z) || 1);
 }
-export function castThrow(origin: THREE.Vector3, dir: THREE.Vector3, far: number): boolean {
+export function castThrow(origin: THREE.Vector3, dir: THREE.Vector3, far: number, excludeEnemies?: ReadonlySet<Enemy>): boolean {
   let best = castWorld(origin, dir, far);
   let found = best < far;
   castHit.enemy = null;
   throwRaycaster.set(origin, dir);
   for (const e of enemies) {
-    if (!e.alive) continue;
+    if (!e.alive || excludeEnemies?.has(e)) continue;
     throwRaycaster.far = best;
     const hit = throwRaycaster.intersectObjects(e.parts, false)[0];
     if (!hit) continue;

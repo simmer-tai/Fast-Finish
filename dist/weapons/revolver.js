@@ -25,6 +25,13 @@ export function createRound(mats, live) {
     r.userData.tip = tip;
     return r;
 }
+// グリップの横から見た輪郭（[z, y]。前側に指の溝）と厚み。グリップを作り直すスキン（唐草）も使う
+export const GRIP_OUTLINE = [
+    [0.022, -0.042], [0.028, -0.06], [0.025, -0.072], [0.034, -0.082], [0.03, -0.094],
+    [0.041, -0.104], [0.038, -0.117], [0.05, -0.132], [0.09, -0.134], [0.092, -0.115],
+    [0.082, -0.085], [0.068, -0.055], [0.058, -0.03], [0.04, -0.02],
+];
+export const GRIP_DEPTH = 0.022;
 // 銃口が -Z、上が +Y。原点はグリップの上端（握る手の位置）、銃身の軸は y = 0
 export function createRevolver(mats) {
     const gun = new THREE.Group();
@@ -139,14 +146,35 @@ export function createRevolver(mats) {
     box(0.016, 0.009, 0.06, 0, 0.0125, 0.002); // トップストラップ
     box(0.018, 0.014, 0.068, 0, -0.037, 0.004); // 下側
     box(0.02, 0.04, 0.012, 0, -0.012, -0.028); // 前側（銃身の付け根）
-    box(0.022, 0.058, 0.016, 0, -0.016, 0.031); // 後ろ側（リコイルシールド）
+    // 後ろ側: リコイルシールドからグリップの上端までを 1 枚の輪郭（[z, y]）でつなぐ。
+    // 上面は後ろへ下る斜面にして、その途中からハンマーを出す
+    const REAR_OUTLINE = [
+        [0.023, 0.017], [0.038, 0.017], [0.05, 0.002], [0.061, -0.014], [0.064, -0.03],
+        [0.052, -0.041], [0.023, -0.045],
+    ];
+    const rearShape = new THREE.Shape();
+    rearShape.moveTo(REAR_OUTLINE[0][0], REAR_OUTLINE[0][1]);
+    for (const [u, v] of REAR_OUTLINE.slice(1))
+        rearShape.lineTo(u, v);
+    const rearGeo = new THREE.ExtrudeGeometry(rearShape, { depth: 0.02, bevelEnabled: false });
+    rearGeo.translate(0, 0, -0.01);
+    rearGeo.rotateY(-Math.PI / 2);
+    gun.add(new THREE.Mesh(rearGeo, mats.gun));
     // リアサイト
     box(0.008, 0.006, 0.008, 0, 0.019, 0.032);
-    // ハンマー: 後ろ上へ反ったスパー
-    const hammer = box(0.006, 0.022, 0.008, 0, 0.012, 0.044);
-    hammer.rotation.x = -0.5;
-    const spur = box(0.008, 0.004, 0.012, 0, 0.022, 0.052);
-    spur.rotation.x = 0.25;
+    // ハンマー: 斜面の付け根を軸に後ろへ傾け、先端から後ろへスパーを伸ばす
+    const hammer = new THREE.Group();
+    hammer.position.set(0, 0.003, 0.042);
+    hammer.rotation.x = 0.45;
+    gun.add(hammer);
+    const hammerBody = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.022, 0.007), mats.gun);
+    hammerBody.position.y = 0.011;
+    const spur = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.004, 0.013), mats.gun);
+    spur.position.set(0, 0.021, 0.005);
+    spur.rotation.x = -0.6;
+    hammerBody.name = 'frameHammer';
+    spur.name = 'frameSpur';
+    hammer.add(hammerBody, spur);
     // トリガーガード: フレームの下の半円
     const guard = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.0032, 5, 10, Math.PI), mats.gun);
     guard.rotation.set(0, Math.PI / 2, Math.PI);
@@ -157,15 +185,10 @@ export function createRevolver(mats) {
     trigger.rotation.x = 0.35;
     // グリップ: 横から見た輪郭（前側に指の溝）を厚みに押し出し、頂点を少しずらしてゴツゴツさせる
     const shape = new THREE.Shape();
-    const outline = [
-        [0.022, -0.042], [0.028, -0.06], [0.025, -0.072], [0.034, -0.082], [0.03, -0.094],
-        [0.041, -0.104], [0.038, -0.117], [0.05, -0.132], [0.09, -0.134], [0.092, -0.115],
-        [0.082, -0.085], [0.068, -0.055], [0.058, -0.03], [0.04, -0.02],
-    ];
+    const outline = GRIP_OUTLINE;
     shape.moveTo(outline[0][0], outline[0][1]);
     for (const [u, v] of outline.slice(1))
         shape.lineTo(u, v);
-    const GRIP_DEPTH = 0.022;
     let gripGeo = new THREE.ExtrudeGeometry(shape, {
         depth: GRIP_DEPTH,
         bevelEnabled: true,

@@ -4,8 +4,11 @@
 // 途中で決定を押すと、残りを飛ばして最後の形にする。
 // 出しきって MASTERY_WAIT 秒たったら、左の記録と合計を武器の熟練度に入れ替え、稼いだ XP でゲージを伸ばす（ここは飛ばさない）。
 // 同時に、右のランクの枠をいちばん良かったキルの映像に入れ替える
+// 初めて達成した実績があれば、合計の下にそのバッジを並べる（熟練度に入れ替えても残す）
 import * as sfx from './audio.js';
 import { masteryOf } from './mastery.js';
+import { TIER_NAMES, type Feat } from './challenges.js';
+import { badgePlate } from './ui/cardHonors.js';
 
 export interface ResultData {
   stageNo: string;
@@ -20,6 +23,10 @@ export interface ResultData {
   newTime: boolean;
   newScore: boolean;
   mastery?: { name: string; ja: string; before: number; gained: number }; // 持ち込んだ武器の XP（このステージの前と、稼いだ分）
+  // cleared: ランクまで届いて達成したか（届かなければ need に求めたランクを入れる）。reward: 初めての達成で解放したスキンの名前
+  // bonus: この達成で解放した見出しの追加のご褒美（フレーム）の名前
+  mission?: { name: string; ja: string; cleared: boolean; rank: string; need: string; first: boolean; newTime: boolean; reward?: string; bonus?: string };
+  feats: Feat[]; // このプレイで初めて達成した実績。札を押した後に、もらえるバッジを 1 つずつ出す
   clip?: { aspect: number; play: (canvas: HTMLCanvasElement) => void }; // 録れたハイライト（fx/replayClip.ts）。熟練度に入れ替えるとき、ランクの枠を映像に入れ替える
 }
 
@@ -35,12 +42,12 @@ const fmtInt = (n: number) => Math.round(n).toLocaleString('en-US');
 const PAR_PER_KILL = 10; // 1 体あたりの基準秒数
 export const killPar = (kills: number) => PAR_PER_KILL * Math.max(1, kills);
 const TIME_MAX = 3; // 開始時の倍率
-function timeMultiplier(time: number, par: number) {
+function timeMultiplier(time: number, par: number, maxMultiplier = TIME_MAX) {
   const r = Math.min(1, time / par); // 基準タイムとの比
-  return TIME_MAX - (TIME_MAX - 1) * r;
+  return maxMultiplier - (maxMultiplier - 1) * r;
 }
-export function finalScore(killScore: number, time: number, par: number) {
-  return Math.round(killScore * timeMultiplier(time, par));
+export function finalScore(killScore: number, time: number, par: number, maxMultiplier = TIME_MAX) {
+  return Math.round(killScore * timeMultiplier(time, par, maxMultiplier));
 }
 
 // ランク: 最終スコアだけで決める。ステージごとに敵の数が違うので、しきい値は「1 体あたりの点数 × 倒した数」（目安。遊びながら詰める）
@@ -57,6 +64,8 @@ const RANKS = [
 // ヘッドショット率が 9 割を超えたら、スコアによらずこの段にする（冗談のランク）
 const CHEATER_RANK = ['Cheater?', 0, 'TOO ACCURATE'] as const;
 const CHEATER_HEADSHOT_RATE = 0.9;
+// スコアだけで決めたランクの文字（ミッションの判定にも使う。冗談のランクは入れない）
+export const scoreRank = (score: number, rankScale: number) => RANKS.find(([, per]) => score >= per * rankScale)![0];
 function rankOf(d: ResultData) {
   if (d.headshotRate !== null && d.headshotRate > CHEATER_HEADSHOT_RATE) return CHEATER_RANK;
   return RANKS.find(([, per]) => d.score >= per * d.rankScale)!;
@@ -68,13 +77,15 @@ const T_ROW = 0.55; // 1 行目
 const ROW_GAP = 0.62;
 const ROW_COUNT = 0.5; // 1 行を数え上げる時間
 const SCORE_COUNT = 1.3;
-// 合計から後は、出す行の数（ヘッドショット率の行があるか）でずらす
-const timesAfterRows = (n: number) => {
+const FEAT_GAP = 0.32; // 実績のバッジを 1 つずつ出す間隔
+// 合計から後は、出す行の数（ヘッドショット率の行があるか）でずらす。実績があれば、その数だけメニューを遅らせる
+const timesAfterRows = (n: number, feats: number) => {
   const score = T_ROW + ROW_GAP * n + 0.1;
   const slam = score + 0.2 + SCORE_COUNT + 0.18; // 数え終えてから一拍おいて確定
   const rank = slam + 0.7;
   const tags = rank + 0.55;
-  return { score, slam, rank, tags, menu: tags + 0.45 };
+  const feat = tags + 0.6;
+  return { score, slam, rank, tags, feat, menu: feats ? feat + 0.25 + FEAT_GAP * feats : tags + 0.45 };
 };
 const TICK_GAP = 0.045; // 数え上げの刻みの間隔
 const MASTERY_WAIT = 3; // 出しきってから熟練度に入れ替えるまで
@@ -129,6 +140,8 @@ const msUp = q('.rv-ms-up');
 const msBar = q('.rv-ms-bar');
 const msGain = q('.rv-ms-gain');
 const msNext = q('.rv-ms-next');
+const featsBox = q('.rv-feats');
+const featList = q('.rv-feat-list');
 // 熟練度の表示を XP の量に合わせる。上がったレベルを返す
 function setMastery(xp: number, gained: number) {
   const m = masteryOf(xp);
@@ -244,7 +257,7 @@ export function showResult(d: ResultData, done?: () => void) {
   addRow(T_ROW + ROW_GAP, rows.damage, d.damage, (v) => String(Math.round(v)));
   rows.headshot.hidden = d.headshotRate === null;
   if (d.headshotRate !== null) addRow(T_ROW + ROW_GAP * 2, rows.headshot, d.headshotRate * 100, (v) => `${Math.round(v)}%`);
-  const T = timesAfterRows(d.headshotRate === null ? 2 : 3);
+  const T = timesAfterRows(d.headshotRate === null ? 2 : 3, d.feats.length);
   steps.push({ at: T.score, run: () => show(score) });
   steps.push({
     at: T.score + 0.2,
@@ -299,6 +312,22 @@ export function showResult(d: ResultData, done?: () => void) {
       },
     }),
   );
+  featsBox.hidden = !d.feats.length;
+  featList.innerHTML = d.feats
+    .map((f) => `<div class="rv-feat">${badgePlate(f)}<b>${f.name}<small>${f.ja}<i>${TIER_NAMES[f.tier - 1]}</i></small></b></div>`)
+    .join('');
+  if (d.feats.length) {
+    steps.push({ at: T.feat, run: () => show(featsBox) });
+    [...featList.children].forEach((node, i) =>
+      steps.push({
+        at: T.feat + 0.25 + i * FEAT_GAP,
+        run: () => {
+          show(node as HTMLElement);
+          play(sfx.playResultStamp);
+        },
+      }),
+    );
+  }
   steps.push({
     at: T.menu,
     run: () => {
@@ -309,6 +338,25 @@ export function showResult(d: ResultData, done?: () => void) {
   });
   menuAt = T.menu;
   if (d.mastery) addMastery(d.mastery, T.menu + MASTERY_WAIT);
+  if (d.mission) {
+    const m = d.mission;
+    steps.push({ at: T.menu, run: () => show(wait) });
+    steps.push({ at: T.menu + MASTERY_WAIT, run: () => {
+      main.classList.add('swapped');
+      mastery.style.top = `${rowsBox.offsetTop}px`;
+      mastery.replaceChildren();
+      // 熟練度と同じ置き方で、ミッションの名前と、初めての達成か最短を縮めたかの札。
+      // ランクが足りなければ失敗にして、取ったランクと求めたランクを出す。初めての達成ならご褒美の札も足す
+      const head = `<div class="rv-ms-head"><span class="rv-ms-name">${m.name}</span><span class="rv-ms-ja">${m.ja}</span></div>`;
+      if (!m.cleared) mastery.innerHTML = `<small>MISSION FAILED</small>${head}<em class="rv-mi-tag">RANK ${m.rank} — NEED ${m.need}</em>`;
+      else {
+        const tag = m.first ? 'FIRST CLEAR' : m.newTime ? 'NEW BEST TIME' : 'CLEARED';
+        const reward = (m.reward ? ` <em class="rv-mi-tag new">${m.reward} UNLOCKED</em>` : '') + (m.bonus ? ` <em class="rv-mi-tag new">${m.bonus} UNLOCKED</em>` : '');
+        mastery.innerHTML = `<small>MISSION CLEAR</small>${head}<em class="rv-mi-tag${m.first || m.newTime ? ' new' : ''}">${tag}</em>${reward}`;
+      }
+      show(mastery);
+    } });
+  }
   const clip = d.clip;
   if (clip) {
     clipCanvas.style.aspectRatio = String(clip.aspect);

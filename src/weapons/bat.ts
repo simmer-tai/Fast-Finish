@@ -41,10 +41,15 @@ function lathe(points: [number, number][], mat: THREE.Material): THREE.Mesh {
 // +Y 方向が先端になるよう組み立てる（原点は握る位置）
 export function createBat(mats: BatMats): THREE.Group {
   const bat = new THREE.Group();
-  bat.add(lathe(BODY, mats.metal));
+  // 部位には名前を付けておく（形を作り直すスキンが隠せるように。skins.ts の dressModel）
+  const body = lathe(BODY, mats.metal);
+  body.name = 'body';
+  bat.add(body);
 
   // グリップテープ: 握りより一回り太い筒。端は斜めに落として巻き終わりに見せる
-  bat.add(lathe([[0.0125, TAPE_FROM - 0.002], [TAPE_R, TAPE_FROM + 0.004], [TAPE_R, TAPE_TO - 0.004], [0.0125, TAPE_TO + 0.002]], mats.grip));
+  const tape = lathe([[0.0125, TAPE_FROM - 0.002], [TAPE_R, TAPE_FROM + 0.004], [TAPE_R, TAPE_TO - 0.004], [0.0125, TAPE_TO + 0.002]], mats.grip);
+  tape.name = 'tape';
+  bat.add(tape);
   return bat;
 }
 

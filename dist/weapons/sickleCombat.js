@@ -232,8 +232,8 @@ export function castEnemyBody(origin, dir, far) {
         return Infinity;
     castRay.origin.copy(origin);
     castRay.direction.copy(dir);
-    castAxisA.set(en.root.position.x, en.root.position.y + 0.3, en.root.position.z);
-    castAxisB.set(en.root.position.x, en.root.position.y + DUMMY_HEIGHT - 0.1, en.root.position.z);
+    castAxisA.set(en.root.position.x, en.root.position.y + (en.kind === 'drone' ? 1.2 : 0.3), en.root.position.z);
+    castAxisB.set(en.root.position.x, en.root.position.y + (en.kind === 'drone' ? 1.8 : DUMMY_HEIGHT - 0.1), en.root.position.z);
     const d2 = castRay.distanceSqToSegment(castAxisA, castAxisB, castOnRay, castOnAxis);
     if (d2 > GRAPPLE_ENEMY_RADIUS ** 2)
         return Infinity;

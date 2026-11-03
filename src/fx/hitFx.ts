@@ -33,7 +33,8 @@ export const hitFxTint = { color: null as THREE.Color | null, slashWidth: 1, spa
 // スキンで強めた当たりの火花。count / life / size は元の火花の数・長さ・大きさ（飛ぶ速さも）の倍率。
 // embers: 元の火花の数に対する、ゆっくり飛んで長く残り、落ちていく火の粉の割合。tint: 白から変わっていく色
 export interface HitSparks { count: number; life: number; size: number; embers: number; tint: number }
-export interface HologramLook { color: number; core: number; count: number; size: number; life: number }
+// shed: 振っている間に刃から剥がれ落ちる数（1 秒あたり。剣だけ）
+export interface HologramLook { color: number; core: number; count: number; size: number; life: number; shed?: number }
 const hitSparkTint = new THREE.Color();
 const HIT_RAYS = 9; // fx = 1 のときの放射状の光線の数
 export const HEAVY_FX = 1.5; // fx がこれ以上の攻撃（締めの技）は長く・整った形で見せる
@@ -468,7 +469,7 @@ interface HoloChain {
   color: THREE.Color;
   core: THREE.Color;
 }
-const HOLO_MAX = 96;
+const HOLO_MAX = 192;
 const holoChains: HoloChain[] = [];
 const holoPool: HoloChain[] = [];
 const HOLO_POINTS = [
@@ -484,12 +485,13 @@ const holoGeos = HOLO_POINTS.map((points) => {
   geo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]);
   return geo;
 });
+// 線も足さずに重ねる（白い床や壁の前でも消えないように）
 const holoFillMat = new THREE.MeshBasicMaterial({
   transparent: true, opacity: 0.16, blending: THREE.NormalBlending,
   depthTest: false, depthWrite: false, side: THREE.DoubleSide,
 });
 const holoWireMat = new THREE.MeshBasicMaterial({
-  transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending,
+  transparent: true, opacity: 0.85, blending: THREE.NormalBlending,
   depthTest: false, depthWrite: false, side: THREE.DoubleSide, wireframe: true,
 });
 const holoFills = holoGeos.map((geo) => new THREE.InstancedMesh(geo, holoFillMat, HOLO_MAX));
@@ -501,30 +503,48 @@ for (const mesh of [...holoFills, ...holoWires]) {
   fxScene.add(mesh);
 }
 
+// 空きを取り出して並びに足す。向き・回転・色は決めておき、位置・速さ・大きさ・寿命は呼ぶ側が決める
+function nextHolo(look: HologramLook) {
+  if (holoChains.length >= HOLO_MAX) holoPool.push(holoChains.shift()!);
+  const h = holoPool.pop() ?? {
+    pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
+    spin: 0, scale: new THREE.Vector3(), age: 0, life: 0, variant: 0, color: new THREE.Color(), core: new THREE.Color(),
+  };
+  h.axis.randomDirection();
+  h.quat.setFromAxisAngle(h.axis, Math.random() * Math.PI * 2);
+  h.spin = rand(5, 11) * (Math.random() < 0.5 ? -1 : 1);
+  h.age = 0;
+  h.variant = Math.floor(Math.random() * holoGeos.length);
+  h.color.setHex(look.color);
+  h.core.setHex(look.core);
+  holoChains.push(h);
+  return h;
+}
+
+// 振っている刃から剥がれ落ちるホログラム。命中のものより小さく遅く、振りの向きへ少し流れてすぐ消える。
+// swing: 刃のその点の速さ（m/s）
+export function spawnHologramShed(at: THREE.Vector3, swing: THREE.Vector3, look: HologramLook) {
+  const h = nextHolo(look);
+  h.pos.copy(at);
+  h.vel.randomDirection().multiplyScalar(rand(0.2, 0.7)).addScaledVector(swing, 0.12);
+  const size = rand(0.3, 0.65) * look.size;
+  h.scale.set(size * rand(0.7, 1.5), size * rand(0.55, 1.2), size);
+  h.life = rand(0.35, 0.7) * look.life;
+}
+
 export function spawnHologramChains(at: THREE.Vector3, hitDir: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: HologramLook) {
   const count = Math.max(1, Math.round(look.count * Math.sqrt(fx)));
   for (let i = 0; i < count; i++) {
-    if (holoChains.length >= HOLO_MAX) holoPool.push(holoChains.shift()!);
-    const h = holoPool.pop() ?? {
-      pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
-      spin: 0, scale: new THREE.Vector3(), age: 0, life: 0, variant: 0, color: new THREE.Color(), core: new THREE.Color(),
-    };
+    const h = nextHolo(look);
     h.pos.copy(at).addScaledVector(hitDir, rand(-0.03, 0.04));
     h.vel.randomDirection().addScaledVector(hitDir, -0.35);
     if (swing) h.vel.addScaledVector(swing, 1.15);
     h.vel.y += rand(0.05, 0.35);
     h.vel.normalize().multiplyScalar(rand(1.8, 4.2) * Math.sqrt(fx));
-    h.axis.randomDirection();
-    h.quat.setFromAxisAngle(h.axis, Math.random() * Math.PI * 2);
-    h.spin = rand(5, 11) * (Math.random() < 0.5 ? -1 : 1);
     const size = rand(0.55, 1.35) * look.size * Math.sqrt(fx);
     h.scale.set(size * rand(0.7, 1.65), size * rand(0.55, 1.25), size);
     h.age = -rand(0, 0.045);
     h.life = rand(0.55, 1) * look.life;
-    h.variant = Math.floor(Math.random() * holoGeos.length);
-    h.color.setHex(look.color);
-    h.core.setHex(look.core);
-    holoChains.push(h);
   }
 }
 
@@ -555,8 +575,9 @@ function updateHologramChains(dt: number) {
     holoMatrix.compose(h.pos, h.quat, holoScale.copy(h.scale).multiplyScalar(appear * fade));
     holoFills[h.variant].setMatrixAt(index, holoMatrix);
     holoWires[h.variant].setMatrixAt(index, holoMatrix);
-    holoFills[h.variant].setColorAt(index, holoColor.copy(h.color).multiplyScalar(fade * scan));
-    holoWires[h.variant].setColorAt(index, holoColor.copy(h.core).multiplyScalar(fade * (0.8 + 0.2 * scan)));
+    // 重ねて描くので色は暗くせず（暗くすると白い背景の前で黒ずむ）、消えるのは縮むことだけにまかせる
+    holoFills[h.variant].setColorAt(index, holoColor.copy(h.color).multiplyScalar(scan));
+    holoWires[h.variant].setColorAt(index, holoColor.copy(h.core).multiplyScalar(0.8 + 0.2 * scan));
   }
   holoChains.length = alive;
   for (let variant = 0; variant < holoGeos.length; variant++) {
@@ -566,6 +587,280 @@ function updateHologramChains(dt: number) {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }
+}
+
+// -- 銀の葉（スキンの当たり） --
+// 当てたところから銀の葉を弾けさせる。すぐに空気に止められ、左右に揺れて回りながらゆっくり舞い落ちる。
+// 面がこちらを向いたときに白くきらめく。color: 葉の銀、count: 枚数、size: 葉の長さ (m)、life: 舞っている長さ (秒)
+export interface LeafLook { color: number; count: number; size: number; life: number }
+interface Leaf {
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  quat: THREE.Quaternion;
+  axis: THREE.Vector3;
+  spin: number;
+  sway: number; // 揺れの速さ
+  phase: number;
+  scale: number;
+  age: number;
+  life: number;
+  color: THREE.Color;
+}
+const LEAF_MAX = 128;
+const leaves: Leaf[] = [];
+const leafPool: Leaf[] = [];
+// 先の尖った葉。根元から先へ、両側を膨らませた形を扇に割る
+const leafGeo = (() => {
+  const pos: number[] = [0, -0.5, 0];
+  const index: number[] = [];
+  const N = 6;
+  for (let i = 1; i < N; i++) {
+    const y = -0.5 + i / N;
+    const w = 0.32 * Math.sin((i / N) * Math.PI) ** 0.8;
+    pos.push(-w, y, 0, w, y, 0);
+  }
+  pos.push(0, 0.5, 0);
+  const tip = pos.length / 3 - 1;
+  // 根元 → 1 段目
+  index.push(0, 2, 1);
+  for (let i = 0; i < N - 2; i++) {
+    const l = 1 + i * 2, r = l + 1;
+    index.push(l, r, r + 2, l, r + 2, l + 2);
+  }
+  index.push(tip - 2, tip - 1, tip);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(index);
+  return geo;
+})();
+const leafMesh = new THREE.InstancedMesh(
+  leafGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthTest: false, depthWrite: false }), LEAF_MAX,
+);
+leafMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+leafMesh.count = 0;
+leafMesh.frustumCulled = false;
+for (let i = 0; i < LEAF_MAX; i++) leafMesh.setColorAt(i, HIT_CORE); // instanceColor を作っておく
+fxScene.add(leafMesh);
+const leafSwing = new THREE.Vector3();
+
+export function spawnLeaves(at: THREE.Vector3, hitDir: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: LeafLook) {
+  const count = Math.max(1, Math.round(look.count * Math.sqrt(fx)));
+  for (let i = 0; i < count; i++) {
+    if (leaves.length >= LEAF_MAX) leafPool.push(leaves.shift()!);
+    const l = leafPool.pop() ?? {
+      pos: new THREE.Vector3(), vel: new THREE.Vector3(), quat: new THREE.Quaternion(), axis: new THREE.Vector3(),
+      spin: 0, sway: 0, phase: 0, scale: 0, age: 0, life: 0, color: new THREE.Color(),
+    };
+    l.pos.copy(at).addScaledVector(hitDir, rand(-0.03, 0.05));
+    // 攻撃の向きへ抜けつつ、上へ吹き上げる
+    l.vel.randomDirection().addScaledVector(hitDir, 0.5);
+    if (swing && swing.lengthSq() > 1e-8) l.vel.addScaledVector(leafSwing.copy(swing).normalize(), 0.8);
+    l.vel.y += 0.7;
+    l.vel.normalize().multiplyScalar(rand(2.5, 6) * Math.sqrt(fx));
+    l.axis.randomDirection();
+    l.quat.setFromAxisAngle(l.axis, Math.random() * Math.PI * 2);
+    l.axis.randomDirection();
+    l.spin = rand(3, 8) * (Math.random() < 0.5 ? -1 : 1);
+    l.sway = rand(4, 7);
+    l.phase = Math.random() * Math.PI * 2;
+    l.scale = rand(0.7, 1.3) * look.size;
+    l.age = -rand(0, 0.03);
+    l.life = rand(0.7, 1.2) * look.life;
+    l.color.setHex(look.color).multiplyScalar(rand(0.85, 1.1));
+    leaves.push(l);
+  }
+}
+
+const leafRot = new THREE.Quaternion();
+const leafMatrix = new THREE.Matrix4();
+const leafScale = new THREE.Vector3();
+const leafColor = new THREE.Color();
+const leafNormal = new THREE.Vector3();
+const toLeafCam = new THREE.Vector3();
+function updateLeaves(dt: number) {
+  // 速いうちは強く止め、落ちる速さは葉らしく遅いところで釣り合わせる
+  const drag = Math.max(0, 1 - 4.5 * dt);
+  let n = 0;
+  for (const l of leaves) {
+    l.age += dt;
+    if (l.age >= l.life) {
+      leafPool.push(l);
+      continue;
+    }
+    leaves[n] = l;
+    if (l.age < 0) {
+      leafMesh.setMatrixAt(n, leafMatrix.makeScale(0, 0, 0));
+      n++;
+      continue;
+    }
+    l.vel.multiplyScalar(drag);
+    l.vel.y -= 3 * dt;
+    // 左右に揺れながら落ちる
+    const s = Math.sin(l.age * l.sway + l.phase);
+    l.pos.addScaledVector(l.vel, dt);
+    l.pos.x += s * 0.35 * dt;
+    l.pos.z += Math.cos(l.age * l.sway * 0.8 + l.phase) * 0.35 * dt;
+    const floor = env.floorAt(l.pos.x, l.pos.z, l.pos.y + 0.05);
+    if (l.pos.y < floor) {
+      l.pos.y = floor;
+      l.vel.set(0, 0, 0);
+      l.spin *= 0.9;
+    }
+    l.quat.premultiply(leafRot.setFromAxisAngle(l.axis, (l.spin + s * 2) * dt));
+    // 出るときにふくらみ、最後の 3 割で縮んで消える。目の前の葉は大きく映りすぎるので縮める
+    const t = l.age / l.life;
+    const k = Math.min(1, l.age / 0.05, (1 - t) / 0.3);
+    const near = THREE.MathUtils.smoothstep(l.pos.distanceTo(env.camera.position), 0.4, 0.9);
+    const sc = l.scale * k * near;
+    leafMatrix.compose(l.pos, l.quat, leafScale.set(sc, sc, sc));
+    leafMesh.setMatrixAt(n, leafMatrix);
+    // 銀: 向きで明暗をつけ、面がこちらを向くと白くきらめく
+    toLeafCam.subVectors(env.camera.position, l.pos).normalize();
+    leafNormal.set(0, 0, 1).applyQuaternion(l.quat);
+    const facing = Math.abs(leafNormal.dot(toLeafCam));
+    leafColor.copy(l.color).multiplyScalar(0.45 + 0.6 * facing).lerp(HIT_CORE, 0.8 * facing ** 8);
+    leafMesh.setColorAt(n, leafColor);
+    n++;
+  }
+  leaves.length = n;
+  leafMesh.count = n;
+  leafMesh.instanceMatrix.needsUpdate = true;
+  if (leafMesh.instanceColor) leafMesh.instanceColor.needsUpdate = true;
+}
+
+// -- 紅線（スキンの当たり） --
+// 当てたところを通る、振りの向きのまっすぐな線を空中に引く。光らせずに塗った線として重ねる。
+// 真ん中から両端へ一気に伸び、白く出てすぐ紅に変わる。少し残ってから、真ん中から細くなって両端が最後に消える。
+// 締めの技（fx が HEAVY_FX 以上）では、ヒットストップの間だけ画面ごと同じ向きに斬ってずらす（screenCut。後処理は main.ts の updateHitFx）
+// len: 線の片側の長さ (m)、width: 太さの半分 (m)、life: 残る長さ (秒)
+export interface CutLineLook { body: number; edge: number; len: number; width: number; life: number }
+interface CutLine { matrix: THREE.Matrix4; age: number; life: number }
+const CUT_LINE_MAX = 24;
+const CUT_FLASH = 0.04; // 白く出ている長さ (秒)
+const cutLines: CutLine[] = [];
+const cutLinePool: CutLine[] = [];
+const cutLineGeo = new THREE.PlaneGeometry(2, 2);
+const cutLineT = new THREE.InstancedBufferAttribute(new Float32Array(CUT_LINE_MAX), 1);
+const cutLineFlash = new THREE.InstancedBufferAttribute(new Float32Array(CUT_LINE_MAX), 1);
+cutLineT.setUsage(THREE.DynamicDrawUsage);
+cutLineFlash.setUsage(THREE.DynamicDrawUsage);
+cutLineGeo.setAttribute('aT', cutLineT);
+cutLineGeo.setAttribute('aFlash', cutLineFlash);
+const cutLineMat = new THREE.ShaderMaterial({
+  transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+  uniforms: { uBody: { value: new THREE.Color() }, uEdge: { value: new THREE.Color() } },
+  vertexShader: /* glsl */ `
+    attribute float aT;
+    attribute float aFlash;
+    varying vec2 vP;
+    varying float vT;
+    varying float vFlash;
+    void main() {
+      vP = position.xy;
+      vT = aT;
+      vFlash = aFlash;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uBody;
+    uniform vec3 uEdge;
+    varying vec2 vP;
+    varying float vT;
+    varying float vFlash;
+    void main() {
+      float x = abs(vP.x);
+      // 真ん中から両端へ伸びる
+      float grow = 1.0 - pow(1.0 - min(1.0, vT * 9.0), 3.0);
+      // 消えるときは真ん中から細くなり、両端が最後に残る
+      float fade = smoothstep(0.45, 1.0, vT);
+      float w = 0.8 * (1.0 - fade * (2.0 - x)) * (1.0 - smoothstep(0.75, 1.0, x)) * (1.0 - smoothstep(grow - 0.03, grow, x));
+      if (w <= 0.0) discard;
+      float y = abs(vP.y);
+      float aa = fwidth(vP.y);
+      float a = 1.0 - smoothstep(w - aa, w + aa, y);
+      if (a <= 0.0) discard;
+      // 芯は紅、縁は暗い紅。出た瞬間は白
+      vec3 col = mix(uBody, uEdge, smoothstep(w * 0.45, w * 0.8, y));
+      gl_FragColor = vec4(mix(col, vec3(1.0), vFlash), a);
+    }
+  `,
+});
+const cutLineMesh = new THREE.InstancedMesh(cutLineGeo, cutLineMat, CUT_LINE_MAX);
+cutLineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+cutLineMesh.count = 0;
+cutLineMesh.frustumCulled = false;
+cutLineMesh.renderOrder = 2; // 光の線より手前に塗る
+fxScene.add(cutLineMesh);
+
+// 画面ごと斬る線。age: 出てからの時間、x / y: 画面上の通り道（0〜1）、angle: 画面上の向き（rad）
+export const screenCut = { age: Infinity, x: 0.5, y: 0.5, angle: Math.PI / 4, color: new THREE.Color() };
+const SCREEN_CUT_DEFAULT = Math.PI / 4; // 振りの向きがわからないときは「／」
+
+const cutDir = new THREE.Vector3();
+const cutSide = new THREE.Vector3();
+const cutNdc = new THREE.Vector3();
+export function spawnCutLine(at: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: CutLineLook) {
+  env.camera.updateMatrixWorld();
+  camRight.setFromMatrixColumn(env.camera.matrixWorld, 0);
+  camUp.setFromMatrixColumn(env.camera.matrixWorld, 1);
+  toCamera.subVectors(env.camera.position, at);
+  const dist = Math.max(toCamera.length(), 1e-3);
+  toCamera.divideScalar(dist);
+  const size = THREE.MathUtils.clamp(Math.sqrt(dist / HIT_FX_REF_DIST), HIT_FX_MIN_SCALE, HIT_FX_MAX_SCALE);
+  const heavy = fx >= HEAVY_FX;
+
+  // 刃が動いていた向きのうち画面に沿った成分。突きのように奥へ向かう振りでは、横一文字（締めの技は「／」）にする
+  let angle = heavy ? SCREEN_CUT_DEFAULT : rand(-8, 8) * DEG;
+  if (swing && swing.lengthSq() > 1e-8) {
+    cutDir.copy(swing).addScaledVector(toCamera, -swing.dot(toCamera));
+    if (cutDir.lengthSq() > SWING_MIN_SIDE ** 2 * swing.lengthSq()) angle = Math.atan2(cutDir.dot(camUp), cutDir.dot(camRight));
+  }
+  cutDir.copy(camRight).multiplyScalar(Math.cos(angle)).addScaledVector(camUp, Math.sin(angle));
+  cutSide.crossVectors(toCamera, cutDir).normalize();
+
+  if (cutLines.length >= CUT_LINE_MAX) cutLinePool.push(cutLines.shift()!);
+  const c = cutLinePool.pop() ?? { matrix: new THREE.Matrix4(), age: 0, life: 0 };
+  const k = Math.sqrt(fx) * size;
+  const half = look.len * k * (heavy ? 1.5 : rand(0.85, 1.1));
+  c.matrix.makeBasis(cutDir.multiplyScalar(half), cutSide.multiplyScalar(look.width * k), toCamera);
+  c.matrix.setPosition(at);
+  c.age = 0;
+  c.life = look.life * (heavy ? 1.5 : 1);
+  cutLines.push(c);
+  cutLineMat.uniforms.uBody.value.setHex(look.body);
+  cutLineMat.uniforms.uEdge.value.setHex(look.edge);
+
+  if (heavy) {
+    cutNdc.copy(at).project(env.camera);
+    screenCut.age = 0;
+    screenCut.x = cutNdc.x * 0.5 + 0.5;
+    screenCut.y = cutNdc.y * 0.5 + 0.5;
+    screenCut.angle = angle;
+    screenCut.color.setHex(look.body);
+  }
+}
+
+function updateCutLines(dt: number) {
+  screenCut.age += dt;
+  let n = 0;
+  for (const c of cutLines) {
+    c.age += dt;
+    if (c.age >= c.life) {
+      cutLinePool.push(c);
+      continue;
+    }
+    cutLines[n] = c;
+    cutLineMesh.setMatrixAt(n, c.matrix);
+    cutLineT.setX(n, c.age / c.life);
+    cutLineFlash.setX(n, 1 - THREE.MathUtils.smoothstep(c.age, CUT_FLASH * 0.5, CUT_FLASH));
+    n++;
+  }
+  cutLines.length = n;
+  cutLineMesh.count = n;
+  cutLineMesh.instanceMatrix.needsUpdate = true;
+  cutLineT.needsUpdate = true;
+  cutLineFlash.needsUpdate = true;
 }
 
 // -- 画面全体の暗転の時間変化 --
@@ -756,6 +1051,53 @@ export function spawnKillFx(root: THREE.Vector3, dir: THREE.Vector3) {
   impact.power = 2.5;
 }
 
+// ライフルのヘッドショット: 頭の所に鋭い閃光を置き、弾の抜けた向きへ細く長い光線と破片を噴き、
+// 弾の向きを軸に頭のまわりへ光の輪を広げる。kill なら倍に増やし、遅れて広がる輪をもう 1 つ足す
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const headSide = new THREE.Vector3();
+const headUp = new THREE.Vector3();
+export function spawnHeadshotFx(at: THREE.Vector3, dir: THREE.Vector3, kill: boolean) {
+  const k = kill ? 1 : 0.5;
+  fireBurst(flares, at, kill ? 3.2 : 1.8, 0.22, 2.6, rand(2, 2.6));
+  fireBurst(flares, at, 1.2, 0.08, 3, 1);
+  spawnSparks(at, dir, Math.round(60 * k), 1.6, 1.2);
+  spawnShards(at, dir, Math.round(30 * k), 1.8, 1.3);
+  for (let i = 0; i < 18 * k; i++) {
+    rayDir.randomDirection().multiplyScalar(0.18).add(dir).normalize();
+    addBeam(at, rayDir, {
+      color: HIT_TINT,
+      len: rand(4, 9),
+      width: rand(0.03, 0.08),
+      offset: rand(0.05, 0.2),
+      tail: 0.95,
+      reach: rand(2, 3),
+      life: rand(0.25, 0.45),
+      age: -Math.random() * 0.03,
+    });
+  }
+  headSide.crossVectors(dir, Math.abs(dir.y) > 0.9 ? X_AXIS : Y_AXIS).normalize();
+  headUp.crossVectors(headSide, dir);
+  for (let ring = 0; ring < (kill ? 2 : 1); ring++) {
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2 + ring * 0.13;
+      rayDir.copy(headSide).multiplyScalar(Math.cos(a)).addScaledVector(headUp, Math.sin(a));
+      addBeam(at, rayDir, {
+        color: HIT_TINT,
+        len: rand(0.9, 1.3) + ring * 0.8,
+        width: rand(0.03, 0.05),
+        offset: 0.15 + ring * 0.3,
+        tail: 1,
+        reach: 1 + ring * 0.5,
+        life: rand(0.3, 0.38),
+        age: -ring * 0.08,
+      });
+    }
+  }
+  impact.age = 0;
+  impact.power = Math.max(impact.power, 2 * k + 1);
+}
+
 // 最後の 1 体: とどめの演出に重ねて、天へ伸びる光の柱・時間差で広がる 3 重の輪・さらに大きな閃光を足す
 export function spawnFinaleFx(root: THREE.Vector3, dir: THREE.Vector3) {
   // 天へ伸びる柱: 束ねた太い光線を、わずかに散らして真上へ
@@ -820,6 +1162,8 @@ export function updateHitParticles(dt: number) {
   updateSparks(dt);
   updateShards(dt);
   updateHologramChains(dt);
+  updateLeaves(dt);
+  updateCutLines(dt);
 }
 // 光が 1 つでも出ているか。出ていなければ、光を重ねる描画ごと飛ばせる
 export const hitFxVisible = () => fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));

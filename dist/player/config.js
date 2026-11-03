@@ -37,16 +37,19 @@ export const MANTLE_TIME_BASE = 0.15; // よじ登りにかかる時間 = BASE +
 export const MANTLE_TIME_PER_METER = 0.12;
 export const MANTLE_KEEP = 0.6; // 登りきった後に残す、登る前の水平の勢いの割合
 // 壁走り
-export const WALLRUN_MIN_SPEED = 7; // 壁に沿う速さがこれ以上なら壁走りを始める
+export const WALLRUN_MIN_SPEED = 5; // 壁に沿う速さがこれ以上なら壁走りを始める
 export const WALLRUN_SPEED = 14; // 壁走り中はこの速さまで加速する（これより速ければ勢いを保つ）
 export const WALLRUN_ACCEL = 20;
 export const WALLRUN_GRAVITY = 3; // 壁走り中の重力（ゆっくり落ちる）
+export const WALLRUN_HOLD_TIME = 0.35; // 壁走りを始めてから重力をかけない時間
 export const WALLRUN_START_LIFT = 2; // 飛びついた瞬間の上向きの速さの上限（落下中なら落下を止める）
 export const WALLRUN_MAX_FALL = 3; // 壁走り中の落下速度の上限
-export const WALLRUN_MAX_TIME = 1.6;
+export const WALLRUN_MAX_TIME = 2.4; // 壁走りを続けられる時間の上限
 export const WALLRUN_MIN_HEIGHT = 1; // 壁の上端が足元からこれ以上高くないと走り始めない
+export const WALLJUMP_MAX = 3; // 着地するまでにできる壁ジャンプの回数
 export const WALLJUMP_UP = 6.5;
 export const WALLJUMP_OUT = 7; // 壁から離れる向きへ足す速さ
+export const WALLJUMP_BOOST = 2; // 壁ジャンプ時に水平方向へ足す速さ
 export const WALLRUN_ROLL = 0.12; // 壁と反対側へ頭を傾ける量 (rad)
 // カメラ
 export const BASE_FOV = 75;
