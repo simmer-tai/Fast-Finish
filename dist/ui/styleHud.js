@@ -1,4 +1,4 @@
-import { game, STYLE_MULT, STYLE_NAMES } from '../game/state.js?v=2f0a24b4';
+import { game, STYLE_MULT, STYLE_NAMES } from '../game/state.js?v=d61aec99';
 // ---- スタイルランク ----
 // 合計スコアの下に、今のランク（game.style）を札とゲージで出す。計算は main.ts（styleKillBonuses / decayStyle）。
 // 上がったら札を弾ませ、下がったら揺らす。S から上は赤を差す

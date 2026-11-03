@@ -1,4 +1,4 @@
-import { game } from '../game/state.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=d61aec99';
 // ---- 右下の武器表示と弾の数 ----
 export const ammoPips = [...document.querySelectorAll('#ammo i')];
 export const ammoHud = document.getElementById('ammo');

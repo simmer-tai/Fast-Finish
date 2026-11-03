@@ -1,5 +1,5 @@
-import * as sfx from '../audio.js?v=2f0a24b4';
-import { shipState } from '../world/shipState.js?v=2f0a24b4';
+import * as sfx from '../audio.js?v=d61aec99';
+import { shipState } from '../world/shipState.js?v=d61aec99';
 // ---- 大波の予告（SHIP） ----
 // 大波が来る WARN_SHOW 秒前から、画面の上の真ん中に「BIG WAVE」と、迫るほど伸びる帯を出す。
 // 帯の下には船の傾きを示す線（傾斜計）を置き、いまどちらの舷が下がっているかを見せる。

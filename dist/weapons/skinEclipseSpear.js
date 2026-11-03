@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=2f0a24b4';
-import { addGlow, removeGlow } from '../fx/glow.js?v=2f0a24b4';
-import { SPEAR_BUTT_Y, SPEAR_TIP_Y } from './spear.js?v=2f0a24b4';
-import { MM } from './skinTalon.js?v=2f0a24b4';
+import { loftRings } from '../geometry.js?v=d61aec99';
+import { addGlow, removeGlow } from '../fx/glow.js?v=d61aec99';
+import { SPEAR_BUTT_Y, SPEAR_TIP_Y } from './spear.js?v=d61aec99';
+import { MM } from './skinTalon.js?v=d61aec99';
 // ---- 槍のスキン: 蝕 ----
 // 白く光る芯を、黒い装甲が覆い隠した槍。光は装甲の継ぎ目からだけ漏れる。長さと握る位置は元の槍のまま。
 //   穂先: 菱形の断面の黒い装甲を 4 つの節に分け、節の境を切っ先へ向いた「く」の字に断つ。

@@ -1,5 +1,5 @@
-import { game } from '../game/state.js?v=2f0a24b4';
-import { KUNAI_AMMO, thrown } from '../weapons/kunaiCombat.js?v=2f0a24b4';
+import { game } from '../game/state.js?v=d61aec99';
+import { KUNAI_AMMO, thrown } from '../weapons/kunaiCombat.js?v=d61aec99';
 // ---- HUD: クナイの手持ち（照準の下） ----
 // 手持ちの本数だけ濃く塗る。投げた印は跳ねて薄くなり、戻った印は白く光って伸び、投げ切ると全体が震える
 const kunaiHud = document.getElementById('kunaiammo');

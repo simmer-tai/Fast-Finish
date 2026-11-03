@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SCOPE_VIEW_ON, rifleState } from '../weapons/rifleCombat.js?v=2f0a24b4';
+import { SCOPE_VIEW_ON, rifleState } from '../weapons/rifleCombat.js?v=d61aec99';
 // ---- スコープの絵 ----
 // ライフルを覗ききる直前から、丸く抜いた黒い枠と十字線を重ねる。出ている間は普段のクロスヘアを消す
 const scopeEl = document.getElementById('scope');

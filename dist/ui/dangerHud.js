@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { camera } from '../core.js?v=2f0a24b4';
+import { camera } from '../core.js?v=d61aec99';
 // ---- 危険の印 ----
 // いまの位置のままだと当たる罠（足もとのレーザー・落下物・蒸気）を、画面の縁に危険の印と、来る向きを指す矢印で知らせる。
 // 上から来る物（レーザー・落下物）は、どこを向いていても上の縁の真ん中に出して上を指す。

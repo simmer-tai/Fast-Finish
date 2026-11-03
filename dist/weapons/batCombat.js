@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2f0a24b4';
-import { playSwish } from '../audio.js?v=2f0a24b4';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=2f0a24b4';
-import { DEG, catmullRom } from '../math.js?v=2f0a24b4';
-import { camera, controls } from '../core.js?v=2f0a24b4';
-import { BAT_REST_QUAT, BAT_REST_TIP, BAT_TIP_Y, BAT_VIEW_MODEL_POS, batQuat } from './bat.js?v=2f0a24b4';
-import { batModel, batRest } from './viewModels.js?v=2f0a24b4';
-import { AXE_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js?v=2f0a24b4';
-import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js?v=2f0a24b4';
-import { knockEnemy } from '../enemy/motion.js?v=2f0a24b4';
-import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=2f0a24b4';
-import { hooks } from '../game/hooks.js?v=2f0a24b4';
-import { tryWallHit } from './wallHit.js?v=2f0a24b4';
+import * as sfx from '../audio.js?v=d61aec99';
+import { playSwish } from '../audio.js?v=d61aec99';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=d61aec99';
+import { DEG, catmullRom } from '../math.js?v=d61aec99';
+import { camera, controls } from '../core.js?v=d61aec99';
+import { BAT_REST_QUAT, BAT_REST_TIP, BAT_TIP_Y, BAT_VIEW_MODEL_POS, batQuat } from './bat.js?v=d61aec99';
+import { batModel, batRest } from './viewModels.js?v=d61aec99';
+import { AXE_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js?v=d61aec99';
+import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js?v=d61aec99';
+import { knockEnemy } from '../enemy/motion.js?v=d61aec99';
+import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=d61aec99';
+import { hooks } from '../game/hooks.js?v=d61aec99';
+import { tryWallHit } from './wallHit.js?v=d61aec99';
 function makeBatAttack(def) {
     const keys = def.keys.map((k) => ({
         t: k.t,

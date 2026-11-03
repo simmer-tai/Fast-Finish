@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow } from '../fx/glow.js?v=2f0a24b4';
-import { SPEAR_BLADE_BASE_Y, SPEAR_TIP_Y } from './spear.js?v=2f0a24b4';
-import { TALON_GLOW, bolt, createTalonMats, plate, talonBladeGeometries, tickTalonGlow } from './skinTalon.js?v=2f0a24b4';
+import { addGlow } from '../fx/glow.js?v=d61aec99';
+import { SPEAR_BLADE_BASE_Y, SPEAR_TIP_Y } from './spear.js?v=d61aec99';
+import { TALON_GLOW, bolt, createTalonMats, plate, talonBladeGeometries, tickTalonGlow } from './skinTalon.js?v=d61aec99';
 // ---- 槍のスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械の槍。長さと握る位置は元の槍のまま（振りの支点・切っ先と石突きの当たりが変わらないように）。
 //   刃: 剣の爪と同じ作りの反りのある黒い片刃を、元の穂先より少し幅広に。刃先の細い帯が赤く光り、外側へ光がにじむ

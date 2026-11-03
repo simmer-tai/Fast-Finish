@@ -405,8 +405,12 @@ function setPlaySelect(on: boolean) {
 // PLAY の上のタブ。ステージ選択（SINGLE PLAYER）・チャレンジ・マルチプレイの入口・ロッカー・ロードマップを行き来する。
 // 部屋を作る・参加する流れに入ったあとは、切り替えると抜けてしまうので受け付けない（タブも隠れている）
 const multiplayerFlow = overlay.querySelector<HTMLElement>('.multiplayer [data-flow]')!;
-const PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap'] as const;
-type PlayTab = (typeof PLAY_TABS)[number];
+const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap'] as const;
+type PlayTab = (typeof ALL_PLAY_TABS)[number];
+// マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ
+const localDev = location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const PLAY_TABS: readonly PlayTab[] = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi');
+if (!localDev) overlay.querySelector<HTMLElement>('.play-tabs [data-tab="multi"]')!.style.display = 'none';
 function currentPlayTab(): PlayTab | null {
   if (overlay.classList.contains('select-stage')) return 'single';
   if (overlay.classList.contains('select-challenge')) return 'challenge';
