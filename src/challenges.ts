@@ -43,7 +43,7 @@ export const MISSION_GROUPS: MissionGroup[] = [
     id: 'talon',
     name: 'TALON TRIAL',
     ja: '爪の試練',
-    desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
+    desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで、ランク SS 以上で倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
     bonus: { need: 3, frame: 'talon', name: 'TALON FRAME', ja: '爪のフレーム' },
   },
 ];
@@ -52,7 +52,7 @@ export const groupDone = (id: string) => MISSIONS.filter((m) => m.group === id &
 // そのフレームを追加のご褒美にしている見出し（無ければ、フレームはプレイヤーのレベルで解放する）
 export const bonusGroupOf = (frame: string) => MISSION_GROUPS.find((g) => g.bonus?.frame === frame);
 
-// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、回復なしで倒しきると、その武器の爪がもらえる
+// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、回復なしで、ランク SS 以上で倒しきると、その武器の爪がもらえる
 const TALON_WEAPONS: [WeaponId, string][] = [
   ['kunai', 'クナイ'],
   ['handgun', 'リボルバー'],
@@ -74,6 +74,7 @@ export const MISSIONS: Mission[] = [...TALON_WEAPONS.map(([weapon, ja]): Mission
   difficulty: 'hard',
   weapon,
   rule: { kind: 'noHeal' },
+  rank: 'SS',
   reward: { skin: 'talon', name: 'TALON', ja: '爪' },
 })), ...(localDev ? [PARKOUR_MISSION] : [])];
 

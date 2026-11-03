@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { MANTLE_FACING, MANTLE_KEEP, MANTLE_REACH, MANTLE_TIME_BASE, MANTLE_TIME_PER_METER, PLAYER_RADIUS, WALLRUN_MAX_TIME, WALLRUN_MIN_HEIGHT, WALLRUN_MIN_SPEED, WALLRUN_START_LIFT, } from './config.js?v=6b2d2aee';
-import { forward, lastWallNormal, mantleDir, mantleFrom, mantlePrev, mantleTo, player, position, velocity, wallNormal, wallProbe, wallTangent, wish, } from './state.js?v=6b2d2aee';
-import { keys, padMove } from '../input.js?v=6b2d2aee';
-import { easeInOutCubic, easeOutCubic } from '../ease.js?v=6b2d2aee';
-import { blocks, rampTop } from '../world/blocks.js?v=6b2d2aee';
+import { MANTLE_FACING, MANTLE_KEEP, MANTLE_REACH, MANTLE_TIME_BASE, MANTLE_TIME_PER_METER, PLAYER_RADIUS, WALLRUN_MAX_TIME, WALLRUN_MIN_HEIGHT, WALLRUN_MIN_SPEED, WALLRUN_START_LIFT, } from './config.js?v=9bd5fe3e';
+import { forward, lastWallNormal, mantleDir, mantleFrom, mantlePrev, mantleTo, player, position, velocity, wallNormal, wallProbe, wallTangent, wish, } from './state.js?v=9bd5fe3e';
+import { keys, padMove } from '../input.js?v=9bd5fe3e';
+import { easeInOutCubic, easeOutCubic } from '../ease.js?v=9bd5fe3e';
+import { blocks, rampTop } from '../world/blocks.js?v=9bd5fe3e';
 let hooks;
 export function initMovement(h) {
     hooks = h;

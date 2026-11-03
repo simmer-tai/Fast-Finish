@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { INSTANCE_NORMAL, addRiser, withRiseBuild } from './rise.js?v=6b2d2aee';
+import { INSTANCE_NORMAL, addRiser, withRiseBuild } from './rise.js?v=9bd5fe3e';
 // アリーナ内の箱の面に引くグリッドの目の大きさ (m)。太線は箱を置くグリッドに揃える
 export const ARENA_GRID_MINOR = 0.5;
 export const ARENA_GRID_MAJOR = 2;

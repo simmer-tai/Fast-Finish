@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DASH_CHARGES, EYE_HEIGHT } from './config.js?v=6b2d2aee';
+import { DASH_CHARGES, EYE_HEIGHT } from './config.js?v=9bd5fe3e';
 // ---- プレイヤーの状態 ----
 // position は足元の位置
 export const position = new THREE.Vector3(0, 0, 5);

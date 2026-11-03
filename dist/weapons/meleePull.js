@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { DEG } from '../math.js?v=6b2d2aee';
-import { camera } from '../core.js?v=6b2d2aee';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=6b2d2aee';
-import { RESPAWN_RISE_TIME, enemies } from '../enemy/state.js?v=6b2d2aee';
-import { position, velocity } from '../player/state.js?v=6b2d2aee';
+import { DEG } from '../math.js?v=9bd5fe3e';
+import { camera } from '../core.js?v=9bd5fe3e';
+import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=9bd5fe3e';
+import { RESPAWN_RISE_TIME, enemies } from '../enemy/state.js?v=9bd5fe3e';
+import { position, velocity } from '../player/state.js?v=9bd5fe3e';
 // ---- 吸い寄せ: 踏み込むとき、前にいる敵の方へ少しだけ引き寄せる（斧・剣） ----
 // 照準の近くにいる一番近い敵へ向けて、届く距離まで寄る。
 // 敵の方へまっすぐ寄るので、少し外れた向きで振っても当たりやすい

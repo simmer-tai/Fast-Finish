@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { groundReveal, riseOrigin } from './reveal.js?v=6b2d2aee';
-import { shipState } from './shipState.js?v=6b2d2aee';
+import { groundReveal, riseOrigin } from './reveal.js?v=9bd5fe3e';
+import { shipState } from './shipState.js?v=9bd5fe3e';
 // ---- 海（SHIP） ----
 // 地面の代わりに、うねる海面を視点のまわりにだけ敷く。色は灰色の濃淡で、波の山ほど明るく、谷ほど暗い。
 // 床と同じ細いグリッドを海面に引き、うねりで曲げて水と一緒に流す（船が進む速さを体感させる）。

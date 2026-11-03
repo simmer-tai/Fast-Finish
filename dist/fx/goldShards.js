@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { camera, scene } from '../core.js?v=6b2d2aee';
-import { floorAt } from '../world/blocks.js?v=6b2d2aee';
-import { weaponMats } from '../weapons/viewModels.js?v=6b2d2aee';
+import { camera, scene } from '../core.js?v=9bd5fe3e';
+import { floorAt } from '../world/blocks.js?v=9bd5fe3e';
+import { weaponMats } from '../weapons/viewModels.js?v=9bd5fe3e';
 // -- ライフルの命中で散る金色の破片 --
 // 頂点をゆがませた多面体を何種類か作り、1 個ずつ縦横の比も変えて形をばらつかせる。
 // 光と映り込みを受ける金属で描くので、ライト付きの本体のシーンに置く

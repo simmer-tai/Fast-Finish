@@ -1,4 +1,4 @@
-import { restartAnim } from './restartAnim.js?v=6b2d2aee';
+import { restartAnim } from './restartAnim.js?v=9bd5fe3e';
 // padKeys: パッドだけ押し方が違うとき
 const WEAPON_CONTROLS = {
     kunai: [

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { camera } from '../core.js?v=6b2d2aee';
-import { lookEuler } from './state.js?v=6b2d2aee';
-import { BASE_FOV } from './config.js?v=6b2d2aee';
-import { isDown } from './down.js?v=6b2d2aee';
-import { game } from '../game/state.js?v=6b2d2aee';
+import { camera } from '../core.js?v=9bd5fe3e';
+import { lookEuler } from './state.js?v=9bd5fe3e';
+import { BASE_FOV } from './config.js?v=9bd5fe3e';
+import { isDown } from './down.js?v=9bd5fe3e';
+import { game } from '../game/state.js?v=9bd5fe3e';
 // ---- 視点を回す ----
 // 視点を回す（ラジアン）。マウスとパッドの右スティックで共用する
 export function turnView(yaw, pitch) {

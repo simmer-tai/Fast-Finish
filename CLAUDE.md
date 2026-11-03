@@ -23,7 +23,7 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 
 - ロードマップ（`mastery.ts`・`ui/lvRoadmap.ts`）は遊んだ量。XP を貯めれば必ず進み、レベルごとにご褒美をもらう。
 - チャレンジ（`challenges.ts`・`ui/challengeTab.ts`）は腕前。ミッション（決まったステージ・難易度・武器に特別なルールを 1 つ足す）と実績（1 回のプレイの中での離れ業）。
-- ミッションでは XP を入れず、ステージの自己ベストも書き換えない。達成のご褒美はスキン（`Mission.reward`。`weapons/skins.ts` の `skinUnlocked` がミッションの記録を見て解放する）。一覧ではミッションを見出し（`MISSION_GROUPS`）でまとめ、押すと開く。見出しを選んでいる間は、詳細の代わりに概要（`MissionGroup.desc`）ともらえるスキンの一覧を出す。見出しには追加のご褒美（`MissionGroup.bonus`）も付けられ、中のミッションをどれか決まった数達成すると、プレイヤーカードのフレームが開く（TALON TRIAL は 3 つで TALON のフレーム。`ui/playerCard.ts` の `partOpen`）。今は TALON TRIAL だけ: LIFT・HARD を、爪のスキンがある武器で回復なしで倒しきると、その武器の TALON がもらえる。実績には数を貯めるもの（〇〇を 100 体など）を入れない（XP の役目と重なる）。
+- ミッションでは XP を入れず、ステージの自己ベストも書き換えない。達成のご褒美はスキン（`Mission.reward`。`weapons/skins.ts` の `skinUnlocked` がミッションの記録を見て解放する）。一覧ではミッションを見出し（`MISSION_GROUPS`）でまとめ、押すと開く。見出しを選んでいる間は、詳細の代わりに概要（`MissionGroup.desc`）ともらえるスキンの一覧を出す。見出しには追加のご褒美（`MissionGroup.bonus`）も付けられ、中のミッションをどれか決まった数達成すると、プレイヤーカードのフレームが開く（TALON TRIAL は 3 つで TALON のフレーム。`ui/playerCard.ts` の `partOpen`）。今は TALON TRIAL だけ: LIFT・HARD を、爪のスキンがある武器で回復なし・ランク SS 以上で倒しきると、その武器の TALON がもらえる。実績には数を貯めるもの（〇〇を 100 体など）を入れない（XP の役目と重なる）。
 - プレイヤーカードのバッジは実績でだけもらえる（実績 1 つにバッジ 1 つ。`ui/cardHonors.ts` の `BADGES` は `FEATS` から作る）。ロードマップのご褒美にはしない。
 
 ### 決まり

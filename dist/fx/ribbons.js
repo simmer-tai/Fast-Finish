@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from './glow.js?v=6b2d2aee';
+import { addGlow, removeGlow } from './glow.js?v=9bd5fe3e';
 // ---- 軌跡の帯 ----
 // 時刻つきの 2 点（tip, base）を順に並べて帯にする。古いものほど細くなり、根元側から削れて消える
 export const RIBBON_COLOR = new THREE.Color(0x2a2a2a);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow } from '../fx/glow.js?v=6b2d2aee';
-import { MM, TALON_GLOW, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=6b2d2aee';
-import { skinFx } from './skins.js?v=6b2d2aee';
+import { addGlow } from '../fx/glow.js?v=9bd5fe3e';
+import { MM, TALON_GLOW, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=9bd5fe3e';
+import { skinFx } from './skins.js?v=9bd5fe3e';
 // ---- スナイパーライフルのスキン: 爪 ----
 // リボルバーの「爪」と同じ黒い機械の銃。形は元のライフルのまま、色は skins.ts の looks で黒くし、飾りを足す。
 //   爪: 先台の先から、厚い爪が銃身と弾倉の筒を左右から挟む。上下二本の指で筒をつかむ形（横から見て前が開いた C）で、

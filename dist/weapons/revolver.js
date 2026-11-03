@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mulberry32 } from '../random.js?v=6b2d2aee';
+import { mulberry32 } from '../random.js?v=9bd5fe3e';
 // ---- 武器: ハンドガン（リボルバー） ----
 // 角の立ったローポリの見た目にする。金属部分は暗いグレー、グリップはざらついたゴム
 // シリンダーの中心から見た i 番目の薬室の位置

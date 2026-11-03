@@ -1,6 +1,6 @@
-import { trainBody } from '../station.js?v=6b2d2aee';
-import { PLAYER_RADIUS } from '../player/config.js?v=6b2d2aee';
-import { player, position, velocity } from '../player/state.js?v=6b2d2aee';
+import { trainBody } from '../station.js?v=9bd5fe3e';
+import { PLAYER_RADIUS } from '../player/config.js?v=9bd5fe3e';
+import { player, position, velocity } from '../player/state.js?v=9bd5fe3e';
 // 移動前後を電車に対する相対座標で調べ、速い移動でも車体を通り抜けない。
 export function collideTrain(start, oldOffsets, offsets) {
     let hit = false;

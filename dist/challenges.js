@@ -1,4 +1,4 @@
-import { localDev } from './localDev.js?v=6b2d2aee';
+import { localDev } from './localDev.js?v=9bd5fe3e';
 // パルクールはまだ公開しない。見出しとミッションを出すのはローカル開発時だけ（localDev.ts）
 export const MISSION_GROUPS = [
     ...(localDev ? [{ id: 'parkour', name: 'PARKOUR', ja: 'パルクール', desc: '敵のいないコースを走り、ゴールまでのタイムに挑戦する。' }] : []),
@@ -6,7 +6,7 @@ export const MISSION_GROUPS = [
         id: 'talon',
         name: 'TALON TRIAL',
         ja: '爪の試練',
-        desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
+        desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで、ランク SS 以上で倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
         bonus: { need: 3, frame: 'talon', name: 'TALON FRAME', ja: '爪のフレーム' },
     },
 ];
@@ -14,7 +14,7 @@ export const MISSION_GROUPS = [
 export const groupDone = (id) => MISSIONS.filter((m) => m.group === id && loadMission(m.id)).length;
 // そのフレームを追加のご褒美にしている見出し（無ければ、フレームはプレイヤーのレベルで解放する）
 export const bonusGroupOf = (frame) => MISSION_GROUPS.find((g) => g.bonus?.frame === frame);
-// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、回復なしで倒しきると、その武器の爪がもらえる
+// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、回復なしで、ランク SS 以上で倒しきると、その武器の爪がもらえる
 const TALON_WEAPONS = [
     ['kunai', 'クナイ'],
     ['handgun', 'リボルバー'],
@@ -36,6 +36,7 @@ export const MISSIONS = [...TALON_WEAPONS.map(([weapon, ja]) => ({
         difficulty: 'hard',
         weapon,
         rule: { kind: 'noHeal' },
+        rank: 'SS',
         reward: { skin: 'talon', name: 'TALON', ja: '爪' },
     })), ...(localDev ? [PARKOUR_MISSION] : [])];
 // ルールの説明（チャレンジの画面と、ミッションの始まり・失敗の画面に出す）

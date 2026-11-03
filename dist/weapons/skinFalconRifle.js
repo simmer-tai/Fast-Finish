@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js?v=6b2d2aee';
-import { skinFx } from './skins.js?v=6b2d2aee';
+import { addGlow, removeGlow } from '../fx/glow.js?v=9bd5fe3e';
+import { skinFx } from './skins.js?v=9bd5fe3e';
 // ---- スナイパーライフルのスキン: 隼 ----
 // 元の形を丸ごと隠し、細身の未来的な狙撃銃に作り直す。輪郭はモチーフのモデル（VASSORA）を横から測って写し、
 // 後ろの翼から銃口へ一方向に流れる稜線でまとめる。主役は翼、次に装填口の核、銃身の順に目が流れるよう、飾りの強さを揃える。

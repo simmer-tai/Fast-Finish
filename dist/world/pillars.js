@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { isMultiplayerGuest } from '../multiplayer/connectionTest.js?v=6b2d2aee';
-import { TERRAIN_GRID, blocks, boxGeo, boxMatrix, boxMatrixFor, gridMaterial } from './blocks.js?v=6b2d2aee';
-import { position } from '../player/state.js?v=6b2d2aee';
-import { PLAYER_RADIUS } from '../player/config.js?v=6b2d2aee';
-import { hooks } from '../game/hooks.js?v=6b2d2aee';
-import * as sfx from '../audio.js?v=6b2d2aee';
-import { UP } from '../math.js?v=6b2d2aee';
-import { spawnSparks } from '../fx/hitFx.js?v=6b2d2aee';
-import { spawnQuake } from '../fx/quake.js?v=6b2d2aee';
-import { spawnChunks } from '../fx/chunks.js?v=6b2d2aee';
-import { spawnCrack } from '../fx/floorMarks.js?v=6b2d2aee';
+import { isMultiplayerGuest } from '../multiplayer/connectionTest.js?v=9bd5fe3e';
+import { TERRAIN_GRID, blocks, boxGeo, boxMatrix, boxMatrixFor, gridMaterial } from './blocks.js?v=9bd5fe3e';
+import { position } from '../player/state.js?v=9bd5fe3e';
+import { PLAYER_RADIUS } from '../player/config.js?v=9bd5fe3e';
+import { hooks } from '../game/hooks.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=9bd5fe3e';
+import { UP } from '../math.js?v=9bd5fe3e';
+import { spawnSparks } from '../fx/hitFx.js?v=9bd5fe3e';
+import { spawnQuake } from '../fx/quake.js?v=9bd5fe3e';
+import { spawnChunks } from '../fx/chunks.js?v=9bd5fe3e';
+import { spawnCrack } from '../fx/floorMarks.js?v=9bd5fe3e';
 export const PILLAR_SINK = 0.6; // 床にめり込ませる深さ
 const SEGMENTS = 4;
 const RUBBLE_H = 0.9; // 崩れたあとに残る根元の高さ

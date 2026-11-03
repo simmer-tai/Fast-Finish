@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=6b2d2aee';
-import { DEG } from '../math.js?v=6b2d2aee';
-import { SWORD_STAND_QUAT, SWORD_TIP_Y } from './sword.js?v=6b2d2aee';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=9bd5fe3e';
+import { DEG } from '../math.js?v=9bd5fe3e';
+import { SWORD_STAND_QUAT, SWORD_TIP_Y } from './sword.js?v=9bd5fe3e';
 export const SWORD_TIP = SWORD_TIP_Y; // 原点（握る位置）から切っ先まで
 export const SWORD_REACH = 2.9; // クナイより長く届く
 export const SWORD_HIT_ANGLE = 70 * DEG; // 大きく薙ぐので横にも広く当たる

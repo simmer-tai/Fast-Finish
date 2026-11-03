@@ -1,9 +1,9 @@
-import * as sfx from '../audio.js?v=6b2d2aee';
-import { skinOf } from '../weapons/skins.js?v=6b2d2aee';
-import { loadXp, masteryOf } from '../mastery.js?v=6b2d2aee';
-import { options } from './options.js?v=6b2d2aee';
-import { closeSkin, onSkinClick, onSkinKey, openSkin, skinOpen } from './skinPicker.js?v=6b2d2aee';
-import { closeLv, lvOpen, onLvClick, onLvKey, onLvWheel, openLv, showNextReward } from './lvRoadmap.js?v=6b2d2aee';
+import * as sfx from '../audio.js?v=9bd5fe3e';
+import { skinOf } from '../weapons/skins.js?v=9bd5fe3e';
+import { loadXp, masteryOf } from '../mastery.js?v=9bd5fe3e';
+import { options } from './options.js?v=9bd5fe3e';
+import { closeSkin, onSkinClick, onSkinKey, openSkin, skinOpen } from './skinPicker.js?v=9bd5fe3e';
+import { closeLv, lvOpen, onLvClick, onLvKey, onLvWheel, openLv, showNextReward } from './lvRoadmap.js?v=9bd5fe3e';
 // ---- 武器の選択画面 ----
 const overlay = document.getElementById('overlay');
 // 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく

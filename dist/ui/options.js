@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=6b2d2aee';
+import * as sfx from '../audio.js?v=9bd5fe3e';
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
 // モーションブラーも倍率（1 = 元の強さ、0 で切る）で、カメラの動きのブラーの強さと長さに掛ける（fx/post.ts）。画質で切っている LOW 以下では効かない。

@@ -1,5 +1,5 @@
-import { game } from '../game/state.js?v=6b2d2aee';
-import { restartAnim } from './restartAnim.js?v=6b2d2aee';
+import { game } from '../game/state.js?v=9bd5fe3e';
+import { restartAnim } from './restartAnim.js?v=9bd5fe3e';
 // ---- 右下の武器表示と弾の数 ----
 export const ammoPips = [...document.querySelectorAll('#ammo i')];
 export const ammoHud = document.getElementById('ammo');

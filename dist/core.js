@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BASE_FOV, EYE_HEIGHT } from './player/config.js?v=6b2d2aee';
+import { BASE_FOV, EYE_HEIGHT } from './player/config.js?v=9bd5fe3e';
 // ---- 基本セットアップ ----
 // 画面のアンチエイリアスは後処理のマルチサンプル描画で行うので、キャンバス側では持たない
 export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });

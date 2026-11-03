@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { mulberry32 } from '../random.js?v=6b2d2aee';
-import { riseOrigin } from './reveal.js?v=6b2d2aee';
+import { mulberry32 } from '../random.js?v=9bd5fe3e';
+import { riseOrigin } from './reveal.js?v=9bd5fe3e';
 // ---- ステージのせり上がり ----
 // 訓練場に入ると、始めの位置から床のグリッドが円く広がり、グリッドが届いたところから箱が組み上がる。箱はそれぞれ
 //   1. 足もとに底面の枠（グリッドの線だけ）が浮かぶ

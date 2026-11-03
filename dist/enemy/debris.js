@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { env } from './env.js?v=6b2d2aee';
-import { en } from './state.js?v=6b2d2aee';
-import { floorAt } from '../world/blocks.js?v=6b2d2aee';
-import { rand } from '../random.js?v=6b2d2aee';
-import { options } from '../ui/options.js?v=6b2d2aee';
-import { player, position, velocity } from '../player/state.js?v=6b2d2aee';
+import { env } from './env.js?v=9bd5fe3e';
+import { en } from './state.js?v=9bd5fe3e';
+import { floorAt } from '../world/blocks.js?v=9bd5fe3e';
+import { rand } from '../random.js?v=9bd5fe3e';
+import { options } from '../ui/options.js?v=9bd5fe3e';
+import { player, position, velocity } from '../player/state.js?v=9bd5fe3e';
 // ---- 倒したときにバラバラになる体 ----
 // 骨ごと（頭・胸・腰・上腕・前腕・太もも・すね・足）と銃を 1 つの塊にして、倒した瞬間の姿勢のまま写し取って飛ばす。
 // 部品のジオメトリとマテリアルは本体と共有する（とどめの白い光りもそのまま乗る）。

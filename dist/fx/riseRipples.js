@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { scene } from '../core.js?v=6b2d2aee';
+import { scene } from '../core.js?v=9bd5fe3e';
 // ---- 組み上がりの波紋 ----
 // 高い柱が組み上がった瞬間に、その足もとの床から、柱の形（底面の四角）に沿った輪が外へ広がって薄れる。
 // 輪は 2 本で、後の 1 本は少し遅れて細く出る。時刻はせり上がりの時間 t で決めるので、止めて見ても同じ形になる
