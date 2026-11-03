@@ -6,6 +6,7 @@ import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 const RADIUS = 0.9; // 暗がりを探す範囲 (m)
 const INTENSITY = 1.4;
 const MAX_SCREEN_RADIUS = 0.12; // 近くの物で探す範囲が広がりすぎないよう、画面の高さに対する上限
+const ANGLE_BIAS = 0.1; // 面から約 6° までの持ち上がりは暗がりに数えない
 const VIEW_MODEL_DIST = 1.4; // これより手前は手元の武器（fx/postShaders.ts の MotionBlurShader と同じ）
 const quadVertex = /* glsl */ `
   varying vec2 vUv;
@@ -14,11 +15,14 @@ const quadVertex = /* glsl */ `
     gl_Position = vec4(position.xy, 0.0, 1.0);
   }
 `;
-// 深度からカメラ空間の位置に戻す
+// 深度からカメラ空間の位置に戻す。深度は画素の真ん中の値なので、位置も画素の真ん中で戻す
+// （半分の解像度で描くと uv が深度の画素の境目に来て、戻した点が床から浮き沈みし、平らな床まで暗くなる）
 const viewPosGlsl = /* glsl */ `
   uniform sampler2D tDepth;
   uniform mat4 uProjInv;
   vec3 viewPos(vec2 uv) {
+    vec2 size = vec2(textureSize(tDepth, 0));
+    uv = (floor(uv * size) + 0.5) / size;
     float d = texture2D(tDepth, uv).x;
     vec4 v = uProjInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     return v.xyz / v.w;
@@ -43,18 +47,21 @@ const aoMaterial = () => new THREE.ShaderMaterial({
       varying vec2 vUv;
       const int SAMPLES = 12;
       void main() {
-        float d = texture2D(tDepth, vUv).x;
+        // 半分の解像度の画素は深度の画素の境目にある。先に 1 つの画素の真ん中に決めておく
+        // （境目のまま隣を取ると、隣と同じ画素に寄って差が 0 になり、法線が壊れてノイズになる）
+        vec2 c = (floor(vUv / uDepthTexel) + 0.5) * uDepthTexel;
+        float d = texture2D(tDepth, c).x;
         if (d >= 1.0) { gl_FragColor = vec4(1.0); return; }
-        vec3 p = viewPos(vUv);
+        vec3 p = viewPos(c);
         float dist = -p.z;
         float keep = smoothstep(${VIEW_MODEL_DIST.toFixed(2)}, ${(VIEW_MODEL_DIST + 0.4).toFixed(2)}, dist) * (1.0 - smoothstep(uFogNear, uFogFar, dist));
         if (keep <= 0.0) { gl_FragColor = vec4(1.0); return; }
 
         // 法線: 左右・上下のうち、差の小さい側を使う（物の縁で奥の面を拾わないように）
-        vec3 pr = viewPos(vUv + vec2(uDepthTexel.x, 0.0)) - p;
-        vec3 pl = p - viewPos(vUv - vec2(uDepthTexel.x, 0.0));
-        vec3 pu = viewPos(vUv + vec2(0.0, uDepthTexel.y)) - p;
-        vec3 pd = p - viewPos(vUv - vec2(0.0, uDepthTexel.y));
+        vec3 pr = viewPos(c + vec2(uDepthTexel.x, 0.0)) - p;
+        vec3 pl = p - viewPos(c - vec2(uDepthTexel.x, 0.0));
+        vec3 pu = viewPos(c + vec2(0.0, uDepthTexel.y)) - p;
+        vec3 pd = p - viewPos(c - vec2(0.0, uDepthTexel.y));
         vec3 dx = dot(pr, pr) < dot(pl, pl) ? pr : pl;
         vec3 dy = dot(pu, pu) < dot(pd, pd) ? pu : pd;
         vec3 n = normalize(cross(dx, dy));
@@ -68,13 +75,14 @@ const aoMaterial = () => new THREE.ShaderMaterial({
         for (int i = 0; i < SAMPLES; i++) {
           float t = (float(i) + 0.5) / float(SAMPLES);
           float a = float(i) * 2.3999632 + rot;
-          vec2 uv = vUv + vec2(cos(a), sin(a)) * sqrt(t) * rad;
+          vec2 uv = c + vec2(cos(a), sin(a)) * sqrt(t) * rad;
           vec3 q = viewPos(uv);
           if (-q.z < ${VIEW_MODEL_DIST.toFixed(2)}) continue; // 手元の武器は景色を隠す物に数えない
           vec3 v = q - p;
           float vv = dot(v, v);
           float fall = max(0.0, 1.0 - vv / (${(RADIUS * RADIUS).toFixed(4)} * s * s)); // 探す範囲（上限で縮めた分も含む）の外ほど効かない
-          occ += max(0.0, dot(v, n) - 0.002 * dist) / (vv + 0.01) * fall;
+          // 面からわずかに持ち上がっただけの点は数えない（深度から作る法線の誤差で、平らな床が自分を隠さないように）
+          occ += max(0.0, dot(v, n) - ${ANGLE_BIAS.toFixed(2)} * sqrt(vv) - 0.002 * dist) / (vv + 0.01) * fall;
         }
         float ao = 1.0 - clamp(occ * ${(RADIUS * INTENSITY).toFixed(3)} / float(SAMPLES), 0.0, 1.0);
         gl_FragColor = vec4(vec3(mix(1.0, ao, keep)), 1.0);

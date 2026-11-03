@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { floorAt, gridMaterial } from '../world/blocks.js?v=9bd5fe3e';
-import { player, position, velocity } from '../player/state.js?v=9bd5fe3e';
-import { options } from '../ui/options.js?v=9bd5fe3e';
+import { floorAt, gridMaterial } from '../world/blocks.js?v=a8ad3029';
+import { player, position, velocity } from '../player/state.js?v=a8ad3029';
+import { options } from '../ui/options.js?v=a8ad3029';
 // ---- 破片 ----
 // 床や柱が砕けた欠片、ボスの装甲の破片。転がりながら跳ねて、床や箱の上に落ち着く。
 // life を省いた破片は、ステージを出るまで床に残る。画質ごとの数（CHUNK_LIMIT）を超えたら、古いものから縮んで消える。

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=9bd5fe3e';
-import { addGlow, removeGlow } from '../fx/glow.js?v=9bd5fe3e';
-import { JOINT_Y, sickleBladeFrames } from './chainSickle.js?v=9bd5fe3e';
-import { TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=9bd5fe3e';
+import { loftRings } from '../geometry.js?v=a8ad3029';
+import { addGlow, removeGlow } from '../fx/glow.js?v=a8ad3029';
+import { JOINT_Y, sickleBladeFrames } from './chainSickle.js?v=a8ad3029';
+import { TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=a8ad3029';
 // ---- 鎖鎌のスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械の鎌。刃の曲がり方と柄の形は元の鎖鎌のまま、色と飾りを替える。
 //   刃: 黒い地で、刃先の細い帯だけ赤く光り、外側へ光がにじむ。断面は元の刃と同じ（棟・鎬・刃先）

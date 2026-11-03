@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { enemies } from '../enemy/state.js?v=9bd5fe3e';
-import { raycastBoss } from '../enemy/boss.js?v=9bd5fe3e';
-import { blocks, rampUpDir, ramps } from './blocks.js?v=9bd5fe3e';
+import { enemies } from '../enemy/state.js?v=a8ad3029';
+import { raycastBoss } from '../enemy/boss.js?v=a8ad3029';
+import { blocks, rampUpDir, ramps } from './blocks.js?v=a8ad3029';
 // ---- 光線の当たり判定 ----
 // 投げた武器や照準の先が、壁・床・敵のどこに当たるか
 export const throwRaycaster = new THREE.Raycaster();
@@ -144,4 +144,45 @@ export function castThrow(origin, dir, far, excludeEnemies) {
     if (found && !castHit.enemy)
         worldNormal(castHit.point, dir, castHit.normal);
     return found;
+}
+// 弾道のすぐ周りも調べる。直撃を優先し、補助で当てる点まで壁がないことも確かめる。
+const forgivingSide = new THREE.Vector3();
+const forgivingUp = new THREE.Vector3();
+const forgivingOrigin = new THREE.Vector3();
+const forgivingToHit = new THREE.Vector3();
+const forgivingPoint = new THREE.Vector3();
+export function castForgiving(origin, dir, far, radius, excludeEnemies) {
+    const direct = castThrow(origin, dir, far, excludeEnemies);
+    if (direct && (castHit.enemy || castHit.boss))
+        return true;
+    const limit = direct ? origin.distanceTo(castHit.point) : far;
+    forgivingSide.set(dir.z, 0, -dir.x);
+    if (forgivingSide.lengthSq() < 1e-8)
+        forgivingSide.set(1, 0, 0);
+    forgivingSide.normalize();
+    forgivingUp.crossVectors(dir, forgivingSide).normalize();
+    let best = limit;
+    let enemy = null;
+    let part = null;
+    for (let i = 0; i < 8; i++) {
+        const angle = i * Math.PI / 4;
+        forgivingOrigin.copy(origin).addScaledVector(forgivingSide, Math.cos(angle) * radius).addScaledVector(forgivingUp, Math.sin(angle) * radius);
+        if (!castThrow(forgivingOrigin, dir, best, excludeEnemies) || !castHit.enemy)
+            continue;
+        forgivingToHit.subVectors(castHit.point, origin);
+        const distance = forgivingToHit.length();
+        if (distance === 0 || castWorld(origin, forgivingToHit.divideScalar(distance), distance) < distance - 0.001)
+            continue;
+        best = forgivingOrigin.distanceTo(castHit.point);
+        forgivingPoint.copy(castHit.point);
+        enemy = castHit.enemy;
+        part = castHit.part;
+    }
+    if (!enemy)
+        return castThrow(origin, dir, far, excludeEnemies);
+    castHit.point.copy(forgivingPoint);
+    castHit.enemy = enemy;
+    castHit.part = part;
+    castHit.boss = null;
+    return true;
 }

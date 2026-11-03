@@ -1,24 +1,24 @@
-import { snapshotState } from '../game/resetState.js?v=9bd5fe3e';
+import { snapshotState } from '../game/resetState.js?v=a8ad3029';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { camera, controls, scene } from '../core.js?v=9bd5fe3e';
-import { ARROW_LEN, createArrow, setBowDraw } from './bow.js?v=9bd5fe3e';
-import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js?v=9bd5fe3e';
-import { findThrowAim } from './kunaiCombat.js?v=9bd5fe3e';
-import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js?v=9bd5fe3e';
-import { addGlow } from '../fx/glow.js?v=9bd5fe3e';
-import { hitWithArcs } from '../fx/arcs.js?v=9bd5fe3e';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=9bd5fe3e';
-import { en, enemies, hitDir, setEn } from '../enemy/state.js?v=9bd5fe3e';
-import { castHit, castThrow, castWorld } from '../world/raycast.js?v=9bd5fe3e';
-import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js?v=9bd5fe3e';
-import { spawnSparks } from '../fx/hitFx.js?v=9bd5fe3e';
-import { findBankShot } from './bowBankShot.js?v=9bd5fe3e';
-import { player, position } from '../player/state.js?v=9bd5fe3e';
-import { DEG } from '../math.js?v=9bd5fe3e';
-import { easeOutCubic } from '../ease.js?v=9bd5fe3e';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=9bd5fe3e';
-import { hooks } from '../game/hooks.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { camera, controls, scene } from '../core.js?v=a8ad3029';
+import { ARROW_LEN, createArrow, setBowDraw } from './bow.js?v=a8ad3029';
+import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js?v=a8ad3029';
+import { findThrowAim } from './kunaiCombat.js?v=a8ad3029';
+import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js?v=a8ad3029';
+import { addGlow } from '../fx/glow.js?v=a8ad3029';
+import { hitWithArcs } from '../fx/arcs.js?v=a8ad3029';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=a8ad3029';
+import { en, enemies, hitDir, setEn } from '../enemy/state.js?v=a8ad3029';
+import { castForgiving, castHit, castThrow, castWorld } from '../world/raycast.js?v=a8ad3029';
+import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js?v=a8ad3029';
+import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
+import { findBankShot } from './bowBankShot.js?v=a8ad3029';
+import { player, position } from '../player/state.js?v=a8ad3029';
+import { DEG } from '../math.js?v=a8ad3029';
+import { easeOutCubic } from '../ease.js?v=a8ad3029';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=a8ad3029';
+import { hooks } from '../game/hooks.js?v=a8ad3029';
 export const BOW_RICOCHET_STOCK = 3; // 跳弾矢を持てる本数
 export const BOW_RICOCHET_EMPTY_FLASH = 0.35; // 残りが無いのに引こうとしたとき、印を震わせる時間
 export const bowState = {
@@ -446,7 +446,7 @@ function updateArrows(dt) {
         flyDir.copy(a.vel).normalize();
         // 鏃の先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
         tip.copy(a.mesh.position).addScaledVector(flyDir, ARROW_LEN);
-        if (castThrow(tip, flyDir, step)) {
+        if (castForgiving(tip, flyDir, step, 0.10)) {
             hitAt.copy(castHit.point);
             // ボスの機体には刺さらず（動く機体に残すと浮いて見える）、当てて消す
             if (castHit.boss) {

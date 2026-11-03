@@ -32,6 +32,9 @@ import { dressTalonRound, talonRevolver } from './skinTalonGun.js';
 import { dressTalonArrow, talonBow } from './skinTalonBow.js';
 import { talonRifle } from './skinTalonRifle.js';
 import { falconRifle } from './skinFalconRifle.js';
+import { falconRevolver } from './skinFalconRevolver.js';
+import { dressFalconArrow, falconBow } from './skinFalconBow.js';
+import { falconKunai } from './skinFalconKunai.js';
 import { huntingRifle } from './skinHuntingRifle.js';
 
 // ---- 武器のスキン ----
@@ -131,6 +134,18 @@ const HOLOLINE = {
   hitSparks: { count: 2.4, life: 1.35, size: 1.1, embers: 0.8, tint: 0x6fe8ff },
   // 破片は薄く透けるガラスにシアンの線
   hologram: { color: 0x7fdcf2, core: 0xc4f8ff, count: 24, size: 0.09, life: 0.6, shed: 90 },
+} satisfies Partial<Skin>;
+
+// 隼（FALCON）: 白い陶器・黒い鋼・金の銃。弾の筋は金に光り（縁は暗い金、芯は白）、命中点に金の光の筋と金粉
+const FALCON = {
+  id: 'falcon',
+  name: 'FALCON',
+  ja: '隼',
+  swatch: ['#111214', '#c9a25a', '#e6e8ea'],
+  unlock: '条件は未定',
+  trail: { body: 0xe0a83a, edge: 0x6a4a14, core: 0xfff4d8, glow: true },
+  spark: 0xf2d79a,
+  hitSparks: { count: 1.4, life: 1.2, size: 1, embers: 0.6, tint: 0xffc860 },
 } satisfies Partial<Skin>;
 
 // 色はそのまま形を作り直すスキン（遺物など）の共通の値。色見本は STANDARD と同じ
@@ -288,10 +303,7 @@ export const SKINS: Skin[] = [
     swish: 'talonGun', // スピンコックで回す音を低く暗くする
   },
   {
-    id: 'falcon',
-    name: 'FALCON',
-    ja: '隼',
-    swatch: ['#111214', '#c9a25a', '#e6e8ea'],
+    ...FALCON,
     // 銃の体は decor が白い陶器・黒い鋼・金で作り直す。ここで決めるのは残したスコープの色:
     // 筒は翼と同じ黒い鋼、台座と輪は背骨と同じ金
     looks: {
@@ -300,14 +312,43 @@ export const SKINS: Skin[] = [
       wrap: { color: 0xe6e8ea, metalness: 0, roughness: 0.4 },
     },
     weapons: ['rifle'],
-    unlock: '条件は未定',
     decor: falconRifle,
-    // 弾の筋は金に光らせる。縁は暗い金、芯は白
-    trail: { body: 0xe0a83a, edge: 0x6a4a14, core: 0xfff4d8, glow: true },
-    spark: 0xf2d79a,
-    hitSparks: { count: 1.4, life: 1.2, size: 1, embers: 0.6, tint: 0xffc860 },
     // 命中点に横一文字の金の光の筋を走らせ、金粉を漂わせる（倒した 1 発は筋を長く 2 本にし、金粉を増やす。rifleCombat.ts）
     gleam: { color: 0xe8a830, core: 0xfff3d6, len: 1.3, dust: 36, life: 1.4 },
+  },
+  {
+    ...FALCON,
+    // 銃の体は decor が作り直す。ここで決めるのは残したシリンダーの色: 翼と同じ艶黒に、溝は暗い金
+    looks: {
+      metal: { color: 0x111214, metalness: 0.85, roughness: 0.26, env: 1.5 },
+      trim: { color: 0x8a6a30, metalness: 1, roughness: 0.35, env: 1.2 },
+    },
+    weapons: ['handgun'],
+    decor: falconRevolver,
+    // 速く撃つので、光の筋はライフルより短く、金粉も少なくする
+    gleam: { color: 0xe8a830, core: 0xfff3d6, len: 0.8, dust: 14, life: 1 },
+  },
+  {
+    ...FALCON,
+    // 弓の体は decor が作り直す。ここで決めるのは残した筈と棚の色（金）。飛ぶ矢の筋は金に光る
+    looks: {
+      metal: { color: 0xc9a25a, metalness: 1, roughness: 0.3, env: 1.4 },
+      trim: { color: 0x111214, metalness: 0.85, roughness: 0.26, env: 1.5 },
+      wrap: { color: 0xe6e8ea, metalness: 0, roughness: 0.4 },
+    },
+    weapons: ['bow'],
+    decor: falconBow,
+    arrow: dressFalconArrow,
+    // 光の筋はライフルとリボルバーの間の長さ
+    gleam: { color: 0xe8a830, core: 0xfff3d6, len: 1, dust: 22, life: 1.2 },
+  },
+  {
+    ...FALCON,
+    looks: {}, // 元の部位はすべて decor が作り直す。軌跡と投げたクナイの筋は金に光る
+    weapons: ['kunai'],
+    decor: falconKunai,
+    // 速く何度も当てるので、光の筋はリボルバーと同じく短く、金粉も少なくする
+    gleam: { color: 0xe8a830, core: 0xfff3d6, len: 0.8, dust: 14, life: 1 },
   },
   {
     id: 'proto',
@@ -360,7 +401,7 @@ const params = new URLSearchParams(location.search);
 export const OWNER = (['localhost', '127.0.0.1'].includes(location.hostname) && !params.has('new')) || params.has('devmode');
 export const skinUnlocked = (s: Skin) => {
   if (OWNER || !s.unlock) return true;
-  if (s.id === 'falcon' && params.has('HGMR')) return true; // ?HGMR を付けると隼だけ使える（公開版でも効く）
+  if (s.id === 'falcon' && s.weapons?.[0] === 'rifle' && params.has('HGMR')) return true; // ?HGMR を付けるとライフルの隼だけ使える（公開版でも効く）
   const weapon = s.weapons?.[0];
   if (weapon === undefined) return false;
   if (MISSIONS.some((m) => m.weapon === weapon && m.reward?.skin === s.id && loadMission(m.id))) return true;

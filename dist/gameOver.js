@@ -1,8 +1,8 @@
 // ---- ゲームオーバー ----
 // 倒れた後の画面。見出しを落としてから記録を並べ、右に残っていた敵の数を大きく出す。
 // 動きは CSS が出した瞬間に始める（index.html の .over-view）。ここでは中身を入れて、見出しに合わせて音を鳴らすだけ
-import * as sfx from './audio.js?v=9bd5fe3e';
-import { fmtTime } from './result.js?v=9bd5fe3e';
+import * as sfx from './audio.js?v=a8ad3029';
+import { fmtTime } from './result.js?v=a8ad3029';
 const view = document.querySelector('#overlay .over-view');
 const q = (sel) => view.querySelector(sel);
 const T_SLAM = 0.32; // 見出しの帯が叩きつけられる時刻（CSS の go-slam と揃える）

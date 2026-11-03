@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=9bd5fe3e';
+import { loftRings } from '../geometry.js?v=a8ad3029';
 // ---- 武器: 剣 ----
 // 黒い直刀。鎬（しのぎ）のある六角断面の刃に、斜めに落とした切っ先。刃はクナイと同じ黒光りする質感にする
 const BLADE_LEN = 0.72;

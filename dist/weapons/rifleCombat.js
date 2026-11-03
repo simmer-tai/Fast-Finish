@@ -1,20 +1,20 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { camera, scene } from '../core.js?v=9bd5fe3e';
-import { DEG } from '../math.js?v=9bd5fe3e';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=9bd5fe3e';
-import { hooks } from '../game/hooks.js?v=9bd5fe3e';
-import { HEAVY_FX, spawnGleam, spawnGoldShards, spawnSparks } from '../fx/hitFx.js?v=9bd5fe3e';
-import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=9bd5fe3e';
-import { addGlow } from '../fx/glow.js?v=9bd5fe3e';
-import { isDown } from '../player/down.js?v=9bd5fe3e';
-import { player, position } from '../player/state.js?v=9bd5fe3e';
-import { castThrow, castHit } from '../world/raycast.js?v=9bd5fe3e';
-import { en, hitDir, setEn } from '../enemy/state.js?v=9bd5fe3e';
-import { makeFlashTexture } from './handgunCombat.js?v=9bd5fe3e';
-import { createRound } from './revolver.js?v=9bd5fe3e';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=9bd5fe3e';
-import { rifleModel, weaponMats } from './viewModels.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { camera, scene } from '../core.js?v=a8ad3029';
+import { DEG } from '../math.js?v=a8ad3029';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=a8ad3029';
+import { hooks } from '../game/hooks.js?v=a8ad3029';
+import { HEAVY_FX, spawnGleam, spawnGoldShards, spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=a8ad3029';
+import { addGlow } from '../fx/glow.js?v=a8ad3029';
+import { isDown } from '../player/down.js?v=a8ad3029';
+import { player, position } from '../player/state.js?v=a8ad3029';
+import { castForgiving, castHit } from '../world/raycast.js?v=a8ad3029';
+import { en, hitDir, setEn } from '../enemy/state.js?v=a8ad3029';
+import { makeFlashTexture } from './handgunCombat.js?v=a8ad3029';
+import { createRound } from './revolver.js?v=a8ad3029';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=a8ad3029';
+import { rifleModel, weaponMats } from './viewModels.js?v=a8ad3029';
 // ---- スナイパーライフル ----
 // 右クリック（パッドは LT）を押している間、スコープを目の前へ持ち上げて覗く。覗ききったらスコープの絵（ui/scopeOverlay.ts）に切り替え、
 // 視野を SCOPE_ZOOM 倍に絞る（fx/camera.ts）。視点の速さは視野に合わせて落ちる（player/look.ts）
@@ -290,7 +290,7 @@ function fireRifle(spun = false) {
     aim.copy(camera.position).addScaledVector(aimDir, RIFLE_RANGE);
     // 同じ始点から当たった敵を除いて調べると、重なった敵も取りこぼさない。
     while (true) {
-        if (!castThrow(camera.position, aimDir, RIFLE_RANGE, pierced)) {
+        if (!castForgiving(camera.position, aimDir, RIFLE_RANGE, 0.10, pierced)) {
             aim.copy(camera.position).addScaledVector(aimDir, RIFLE_RANGE);
             break;
         }

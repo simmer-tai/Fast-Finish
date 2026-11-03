@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=9bd5fe3e';
-import { addGlow, removeGlow } from '../fx/glow.js?v=9bd5fe3e';
-import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=9bd5fe3e';
+import { loftRings } from '../geometry.js?v=a8ad3029';
+import { addGlow, removeGlow } from '../fx/glow.js?v=a8ad3029';
+import { MM, TALON_GLOW, bolt, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=a8ad3029';
 // ---- クナイのスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械のクナイ。長さと輪の位置は元のクナイのまま（回す軸・切っ先の当たりが変わらないように）、形は作り直す。
 //   刃: 菱形の断面で、根元で張り出してから切っ先へまっすぐ絞る。両側の刃先の細い帯が赤く光り、外側へ光がにじむ

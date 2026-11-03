@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { rand } from '../random.js?v=9bd5fe3e';
-import { options } from '../ui/options.js?v=9bd5fe3e';
-import { spawnGold, updateGoldShards } from './goldShards.js?v=9bd5fe3e';
+import { rand } from '../random.js?v=a8ad3029';
+import { options } from '../ui/options.js?v=a8ad3029';
+import { spawnGold, updateGoldShards } from './goldShards.js?v=a8ad3029';
 let env;
 export function initHitFx(e) {
     env = e;

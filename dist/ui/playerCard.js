@@ -1,28 +1,38 @@
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { WEAPON_IDS } from '../weapons/ids.js?v=9bd5fe3e';
-import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '../mastery.js?v=9bd5fe3e';
-import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js?v=9bd5fe3e';
-import { OWNER } from '../weapons/skins.js?v=9bd5fe3e';
-import { BACKGROUNDS, FRAMES, FRAME_PARTS, baseClass } from './cardParts.js?v=9bd5fe3e';
-import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js?v=9bd5fe3e';
-import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked } from './cardHonors.js?v=9bd5fe3e';
-import { allBests } from '../records.js?v=9bd5fe3e';
-import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { WEAPON_IDS } from '../weapons/ids.js?v=a8ad3029';
+import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '../mastery.js?v=a8ad3029';
+import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js?v=a8ad3029';
+import { OWNER, SKINS, skinUnlocked } from '../weapons/skins.js?v=a8ad3029';
+import { BACKGROUNDS, FRAMES, FRAME_PARTS, baseClass } from './cardParts.js?v=a8ad3029';
+import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js?v=a8ad3029';
+import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked } from './cardHonors.js?v=a8ad3029';
+import { allBests } from '../records.js?v=a8ad3029';
+import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=a8ad3029';
 // ---- プレイヤーカード ----
 // 名前・称号・エンブレム・バッジ（3 つまで）・背景・フレーム・載せる記録（3 つ）を選んで、自分のカードを作る。
 // PLAY の上のタブ LOCKER で作り、タイトル画面の右に出す（出すかどうかはオプション）。
-// 武器のエンブレムは、その武器の熟練度が EMBLEM_LEVEL に届くと選べる。背景とフレームは、プレイヤーのレベルのご褒美（mastery.ts の PLAYER_REWARDS）で解放する。
+// 武器のエンブレムは、その武器の熟練度が EMBLEM_LEVEL に届くと選べる。TALON のエンブレムは、爪のスキンを TALON_EMBLEM_NEED 種類解放すると選べる。背景とフレームは、プレイヤーのレベルのご褒美（mastery.ts の PLAYER_REWARDS）で解放する。
 // 称号とバッジは、レベルか記録で解放する（ui/cardHonors.ts）。
 // どれもスキンと同じく、作者の手元と ?devmode では全部選べる。記録は全部選べる
 const CARD_STORE = 'fast-finish.card';
 const NAME_MAX = 12;
 const STAT_SLOTS = 3;
-const EMBLEMS = ['player', ...WEAPON_IDS];
-const emblemOpen = (e) => OWNER || e === 'player' || masteryOf(loadXp(e)).level >= EMBLEM_LEVEL;
+const EMBLEMS = ['player', ...WEAPON_IDS, 'talon'];
+const TALON_EMBLEM_NEED = 8;
+const talonSkins = () => SKINS.filter((s) => s.id === 'talon' && skinUnlocked(s)).length;
+const emblemOpen = (e) => OWNER || e === 'player' || (e === 'talon' ? talonSkins() >= TALON_EMBLEM_NEED : masteryOf(loadXp(e)).level >= EMBLEM_LEVEL);
+const emblemReq = (e) => (e === 'talon' ? `TALON ×${TALON_EMBLEM_NEED}` : `LV${EMBLEM_LEVEL}`);
+// TALON のエンブレム: 黒い機械の鉤爪が 3 本、右上から左下へ曲がって伸びる。爪の内側の縁が赤く光る（フレームの TALON と同じ赤）。24 四方で描く
+const TALON_CLAW = '<path class="tc-metal" d="M13 1.5L19.5 3.5L19 11.5L15.5 18.5L8.5 22.5L12 17L13.8 10.5Z"/><path class="tc-red" d="M14.4 10.8L12.7 17.1L10.4 20.4"/>';
+const TALON_MARK = `<g transform="translate(-7.5 2.2) scale(0.78)">${TALON_CLAW}</g><g transform="translate(-3.6 0.9) scale(0.9)">${TALON_CLAW}</g>${TALON_CLAW}` +
+    '<circle class="tc-bolt" cx="16.2" cy="4.4" r="0.9"/>';
 // チャレンジの追加のご褒美のフレームは、その見出しのミッションの達成数で開く（challenges.ts の MissionGroup.bonus）
+// 条件の決まっていないフレーム（cardParts.ts の Frame.pending）は閉じたまま
 function partOpen(kind, id) {
     if (OWNER)
         return true;
+    if (kind === 'frame' && FRAMES.find((f) => f.id === id)?.pending)
+        return false;
     const g = kind === 'frame' ? bonusGroupOf(id) : undefined;
     return g ? groupDone(g.id) >= g.bonus.need : playerMastery().level >= cardPartLevel(kind, id);
 }
@@ -86,7 +96,9 @@ const weaponIcon = (w) => {
 };
 const emblemHtml = (e) => e === 'player'
     ? `<span class="sw-plate pc-plate"><svg class="pc-mark" viewBox="0 0 24 24" aria-hidden="true">${PLAYER_MARK}</svg></span>`
-    : `<span class="sw-plate pc-plate"><span class="ic">${weaponIcon(e)}</span></span>`;
+    : e === 'talon'
+        ? `<span class="sw-plate pc-plate pc-plate-talon"><svg class="pc-mark pc-mark-talon" viewBox="0 0 24 24" aria-hidden="true">${TALON_MARK}</svg></span>`
+        : `<span class="sw-plate pc-plate"><span class="ic">${weaponIcon(e)}</span></span>`;
 // 名前から決まるカードの番号（飾り）
 const cardNo = (name) => {
     let h = 7;
@@ -144,13 +156,15 @@ const nameInput = locker.querySelector('[data-card-name]');
 const cats = [...locker.querySelectorAll('.lk-cats [data-cat]')];
 const panes = [...locker.querySelectorAll('.lk-pane')];
 const pane = (cat) => panes.find((p) => p.dataset.pane === cat);
-pane('emblem').innerHTML = EMBLEMS.map((e) => `<button type="button" class="lk-item lk-emblem" data-emblem="${e}">${emblemHtml(e)}${NEW_TAG}${e === 'player' ? '' : `${LOCK}<small class="lk-req">LV${EMBLEM_LEVEL}</small>`}</button>`).join('');
+pane('emblem').innerHTML = EMBLEMS.map((e) => `<button type="button" class="lk-item lk-emblem" data-emblem="${e}">${emblemHtml(e)}${NEW_TAG}${e === 'player' ? '' : `${LOCK}<small class="lk-req">${emblemReq(e)}</small>`}</button>`).join('');
 // 背景とフレームの見本は、もう片方に今選んでいるものを使って見せる（renderLocker で class を入れ替える）
 // まだ解放していないものは、エンブレムと同じく南京錠と要るレベルを添える
 // チャレンジでもらうフレームは、要るレベルの代わりに見出しの名前と数を添える
 const swatch = (data, name, req) => `<button type="button" class="lk-item lk-bg" ${data}><span class="pcard">${FRAME_PARTS}</span><small>${name}</small>${NEW_TAG}${req ? `${LOCK}<small class="lk-req">${req}</small>` : ''}</button>`;
 const lvReq = (lv) => (lv ? `LV${lv}` : '');
 const frameReq = (id) => {
+    if (FRAMES.find((f) => f.id === id)?.pending)
+        return 'TBA';
     const g = bonusGroupOf(id);
     return g ? `${g.name} ×${g.bonus.need}` : lvReq(cardPartLevel('frame', id));
 };

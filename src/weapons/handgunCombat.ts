@@ -15,7 +15,7 @@ import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
 import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { en, hitDir, setEn, type Enemy } from '../enemy/state.js';
 import { floorAt } from '../world/blocks.js';
-import { castHit, castThrow } from '../world/raycast.js';
+import { castForgiving, castHit, castThrow } from '../world/raycast.js';
 import { bossAlive, type BossLimb, type BossPart } from '../enemy/boss.js';
 import { lookEuler, player, position, velocity } from '../player/state.js';
 import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js';
@@ -177,7 +177,7 @@ export function findGunAim(out: THREE.Vector3): Enemy | null {
     return target.enemy;
   }
   camera.getWorldDirection(gunAimDir);
-  if (castThrow(camera.position, gunAimDir, BULLET_RANGE)) {
+  if (castForgiving(camera.position, gunAimDir, BULLET_RANGE, 0.10)) {
     out.copy(castHit.point);
     return castHit.enemy;
   }
@@ -798,7 +798,7 @@ export function updateBullets(dt: number) {
     } else if (b.traveled >= BULLET_RANGE) {
       b.tail -= step;
       b.pos.addScaledVector(b.dir, step);
-    } else if (castThrow(b.pos, b.dir, step)) {
+    } else if (castForgiving(b.pos, b.dir, step, 0.10)) {
       b.hit = true;
       const moved = b.pos.distanceTo(castHit.point);
       b.tail = Math.min(maxTail, b.tail + moved);

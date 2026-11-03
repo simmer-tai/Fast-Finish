@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { camera, renderer, scene } from '../core.js?v=9bd5fe3e';
-import { SICKLE_VIEW_MODEL_POS, createHeldSickle } from './chainSickle.js?v=9bd5fe3e';
-import { AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js?v=9bd5fe3e';
-import { BOW_VIEW_MODEL_POS, createHeldBow } from './bow.js?v=9bd5fe3e';
-import { BAT_VIEW_MODEL_POS, createHeldBat } from './bat.js?v=9bd5fe3e';
-import { SPEAR_VIEW_MODEL_POS, createHeldSpear } from './spear.js?v=9bd5fe3e';
-import { RIFLE_VIEW_MODEL_POS, createHeldRifle } from './rifle.js?v=9bd5fe3e';
-import { REST_TIP, createKunai } from './kunai.js?v=9bd5fe3e';
-import { createRevolver } from './revolver.js?v=9bd5fe3e';
-import { SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './sword.js?v=9bd5fe3e';
-import { createWeaponMats } from './materials.js?v=9bd5fe3e';
-import { WEAPON_IDS } from './ids.js?v=9bd5fe3e';
-import { applySkin, createSkinMats, dressModel, onSkinChange, skinOf, skinnedWeaponMats } from './skins.js?v=9bd5fe3e';
+import { camera, renderer, scene } from '../core.js?v=a8ad3029';
+import { SICKLE_VIEW_MODEL_POS, createHeldSickle } from './chainSickle.js?v=a8ad3029';
+import { AXE_VIEW_MODEL_POS, createHeldAxe } from './battleAxe.js?v=a8ad3029';
+import { BOW_VIEW_MODEL_POS, createHeldBow } from './bow.js?v=a8ad3029';
+import { BAT_VIEW_MODEL_POS, createHeldBat } from './bat.js?v=a8ad3029';
+import { SPEAR_VIEW_MODEL_POS, createHeldSpear } from './spear.js?v=a8ad3029';
+import { RIFLE_VIEW_MODEL_POS, createHeldRifle } from './rifle.js?v=a8ad3029';
+import { REST_TIP, createKunai } from './kunai.js?v=a8ad3029';
+import { createRevolver } from './revolver.js?v=a8ad3029';
+import { SWORD_STAND_QUAT, SWORD_VIEW_MODEL_POS, createSword } from './sword.js?v=a8ad3029';
+import { createWeaponMats } from './materials.js?v=a8ad3029';
+import { WEAPON_IDS } from './ids.js?v=a8ad3029';
+import { applySkin, createSkinMats, dressModel, onSkinChange, skinOf, skinnedWeaponMats } from './skins.js?v=a8ad3029';
 // ---- 武器の手元のモデル ----
 // 一人称視点で構えて見せるモデルをカメラの子にして組む。動き（揺れ・攻撃の構え）は main.ts で付ける
 // ---- 武器: クナイ ----（モデルとマテリアルは weapons/ 以下）

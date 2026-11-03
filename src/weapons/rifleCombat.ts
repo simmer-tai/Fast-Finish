@@ -9,7 +9,7 @@ import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
 import { addGlow } from '../fx/glow.js';
 import { isDown } from '../player/down.js';
 import { player, position } from '../player/state.js';
-import { castThrow, castHit } from '../world/raycast.js';
+import { castForgiving, castHit } from '../world/raycast.js';
 import { en, hitDir, setEn, type Enemy } from '../enemy/state.js';
 import type { BossPart } from '../enemy/boss.js';
 import type { HitDef } from './kunaiAttacks.js';
@@ -289,7 +289,7 @@ function fireRifle(spun = false) {
   aim.copy(camera.position).addScaledVector(aimDir, RIFLE_RANGE);
   // 同じ始点から当たった敵を除いて調べると、重なった敵も取りこぼさない。
   while (true) {
-    if (!castThrow(camera.position, aimDir, RIFLE_RANGE, pierced)) {
+    if (!castForgiving(camera.position, aimDir, RIFLE_RANGE, 0.10, pierced)) {
       aim.copy(camera.position).addScaledVector(aimDir, RIFLE_RANGE);
       break;
     }

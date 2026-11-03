@@ -1,7 +1,7 @@
-import { BOSS_LIMBS, applyBossThrowable, applyBossWarnings, boss, captureBossThrowable, captureBossWarnings, isBossThrowable, isBossWarnings, updateRemoteBossCollision } from '../enemy/boss.js?v=9bd5fe3e';
+import { BOSS_LIMBS, applyBossThrowable, applyBossWarnings, boss, captureBossThrowable, captureBossWarnings, isBossThrowable, isBossWarnings, updateRemoteBossCollision } from '../enemy/boss.js?v=a8ad3029';
 import * as THREE from 'three';
-import { applyPillarSnapshots, capturePillars, isPillarSnapshots } from '../world/pillars.js?v=9bd5fe3e';
-import { decodeTransform, encodeTransform } from './transformCodec.js?v=9bd5fe3e';
+import { applyPillarSnapshots, capturePillars, isPillarSnapshots } from '../world/pillars.js?v=a8ad3029';
+import { decodeTransform, encodeTransform } from './transformCodec.js?v=a8ad3029';
 const boneCache = new WeakMap();
 function bones(rig) {
     let result = boneCache.get(rig);

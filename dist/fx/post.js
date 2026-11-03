@@ -4,14 +4,14 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FXAAPass } from 'three/addons/postprocessing/FXAAPass.js';
-import { camera, renderer, scene } from '../core.js?v=9bd5fe3e';
-import { fxScene } from './hitFx.js?v=9bd5fe3e';
-import { GlowPass } from './glow.js?v=9bd5fe3e';
-import { AoPass } from './ao.js?v=9bd5fe3e';
-import { ImpactFxShader, MotionBlurShader, SharpenShader, SpeedFxShader } from './postShaders.js?v=9bd5fe3e';
-import { player, velocity } from '../player/state.js?v=9bd5fe3e';
-import { SPRINT_SPEED } from '../player/config.js?v=9bd5fe3e';
-import { options } from '../ui/options.js?v=9bd5fe3e';
+import { camera, renderer, scene } from '../core.js?v=a8ad3029';
+import { fxScene } from './hitFx.js?v=a8ad3029';
+import { GlowPass } from './glow.js?v=a8ad3029';
+import { AoPass } from './ao.js?v=a8ad3029';
+import { ImpactFxShader, MotionBlurShader, SharpenShader, SpeedFxShader } from './postShaders.js?v=a8ad3029';
+import { player, velocity } from '../player/state.js?v=a8ad3029';
+import { SPRINT_SPEED } from '../player/config.js?v=a8ad3029';
+import { options } from '../ui/options.js?v=a8ad3029';
 // ---- ポストエフェクト ----（シェーダーは fx/postShaders.ts）
 // 周辺ブラー・ビネット・集中線: これより速いと効果が出始め、SPEED_FX_FULL で最大になる
 export const SPEED_FX_START = SPRINT_SPEED - 1;

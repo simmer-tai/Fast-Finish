@@ -377,6 +377,15 @@
       #overlay .pcard .pc-plate { flex: none; width: 21cqw; --cut: 4cqw; --cell: 2.4cqw; }
       #overlay .pcard.dark .pc-plate { box-shadow: inset 0 0 0 1px rgba(242, 242, 242, 0.25); }
       #overlay .pc-plate .pc-mark { position: absolute; left: 22%; top: 20%; width: 56%; height: 60%; fill: #f2f2f2; filter: drop-shadow(0.03em 0.05em 0 rgba(0, 0, 0, 0.35)); }
+      /* TALON のエンブレム: 台を黒く沈め、縁に赤をにじませる。爪は黒い機械の板で、内側の縁だけ赤く光らせ、フレームの TALON と同じくたまに明滅させる */
+      #overlay .pc-plate.pc-plate-talon {
+        background: linear-gradient(rgba(255, 59, 48, 0.07) 1px, transparent 1px) 0 0 / var(--cell) var(--cell), linear-gradient(90deg, rgba(255, 59, 48, 0.07) 1px, transparent 1px) 0 0 / var(--cell) var(--cell), radial-gradient(80% 80% at 60% 40%, #2a1414, #0b0b0b 75%);
+      }
+      #overlay .pc-plate .pc-mark-talon { left: 16%; top: 16%; width: 68%; height: 68%; overflow: visible; filter: none; }
+      #overlay .pc-mark-talon .tc-metal { fill: #1b1b1b; stroke: #6a6a6a; stroke-width: 0.45; stroke-linejoin: round; }
+      #overlay .pc-mark-talon .tc-red { fill: none; stroke: #ff3b30; stroke-width: 0.7; stroke-linecap: round; filter: drop-shadow(0 0 0.5px #ff2a2a) drop-shadow(0 0 1.4px rgba(255, 40, 40, 0.7)); animation: tl-flicker 5.3s linear infinite; }
+      #overlay .pc-mark-talon .tc-bolt { fill: #8a8a8a; }
+      @media (prefers-reduced-motion: reduce) { #overlay .pc-mark-talon .tc-red { animation: none; } }
       #overlay .pcard .pc-id { min-width: 0; }
       #overlay .pcard .pc-name {
         display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 2cqw;
@@ -511,6 +520,37 @@
       @media (prefers-reduced-motion: reduce) { #overlay .pc-talon :is(.tl-red, .tl-zap > *) { animation: none; } }
       /* 上の爪の下に札の文字が入らないよう、少し下げる */
       #overlay .pcard.fr-talon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
+      /* FALCON: 隼のスキンの意匠（SVG は cardParts.ts の FALCON_FRAME）。背景の色によらず白い陶器の縁・黒い鋼の翼・金の羽根 */
+      #overlay .pcard .pc-falcon { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+      #overlay .pcard.fr-falcon .pc-falcon { display: block; }
+      #overlay .pcard.fr-falcon .pc-frame { display: none; }
+      #overlay .pc-falcon .fc-plate { fill: #e6e8ea; stroke: #9a9ea4; stroke-width: 0.3; }
+      #overlay .pc-falcon .fc-line { fill: none; stroke: #c9a25a; stroke-width: 0.35; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay .pc-falcon .fc-wing { fill: #111214; stroke: #34373c; stroke-width: 0.3; stroke-linejoin: round; }
+      #overlay .pc-falcon .fc-gloss { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.3; stroke-linecap: round; }
+      #overlay .pc-falcon .fc-shell { fill: #e6e8ea; stroke: #8f9399; stroke-width: 0.2; }
+      #overlay .pc-falcon .fc-gold { fill: #c9a25a; stroke: #7a5a22; stroke-width: 0.2; animation: fc-sheen 6.4s linear infinite; }
+      #overlay .pc-falcon .fc-ring { fill: #0c0d0e; stroke: #c9a25a; stroke-width: 0.6; }
+      #overlay .pc-falcon .fc-slot { fill: #c9a25a; }
+      #overlay .pc-falcon .fc-core { fill: #ffe2a0; filter: drop-shadow(0 0 0.5px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.9)); animation: fc-core 3.2s ease-in-out infinite; }
+      /* 金の線を走る光。向かい合う 2 本が、周期の初めの 3 割で半周ずつ進む */
+      #overlay .pc-falcon .fc-glint {
+        fill: none; stroke: #fff6dc; stroke-width: 0.7; stroke-linecap: round; stroke-dasharray: 3 47;
+        filter: drop-shadow(0 0 0.6px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.8)); animation: fc-glint 6.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      #overlay .pc-falcon .fc-dust { fill: #ffe2a0; opacity: 0; filter: drop-shadow(0 0 0.4px #e0a640); animation: fc-dust var(--d) var(--o) ease-out infinite; }
+      @keyframes fc-glint { 0% { stroke-dashoffset: 0; opacity: 0; } 3% { opacity: 1; } 27% { opacity: 1; } 30% { stroke-dashoffset: -50; opacity: 0; } 100% { stroke-dashoffset: -50; opacity: 0; } }
+      /* 光が角を出る瞬間に、金の羽根が明るく照る */
+      @keyframes fc-sheen { 0%, 100% { fill: #c9a25a; } 2% { fill: #f4dca0; } 8% { fill: #c9a25a; } }
+      @keyframes fc-core { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+      @keyframes fc-dust {
+        0%, 55% { opacity: 0; transform: none; }
+        60% { opacity: 1; transform: none; }
+        100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+      }
+      @media (prefers-reduced-motion: reduce) { #overlay .pc-falcon :is(.fc-gold, .fc-core, .fc-glint, .fc-dust) { animation: none; } #overlay .pc-falcon .fc-glint { display: none; } }
+      /* 上の翼の下に札の文字が入らないよう、少し下げる */
+      #overlay .pcard.fr-falcon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
       /* HAZARD: 上下に斜めの縞の帯 */
       #overlay .pcard.fr-hazard .pc-frame i {
         display: block; inset: 0;
@@ -3534,7 +3574,7 @@
       if (new URLSearchParams(location.search).has('new') && !window.__freshStorageReady) {
         throw new Error('Could not isolate storage for ?new');
       }
-      import('./dist/main.js?v=9bd5fe3e');
+      import('./dist/main.js?v=a8ad3029');
     </script>
   </body>
 </html>

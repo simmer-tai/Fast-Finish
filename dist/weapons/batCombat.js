@@ -1,18 +1,18 @@
-import { snapshotState } from '../game/resetState.js?v=9bd5fe3e';
+import { snapshotState } from '../game/resetState.js?v=a8ad3029';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { playSwish } from '../audio.js?v=9bd5fe3e';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=9bd5fe3e';
-import { DEG, catmullRom } from '../math.js?v=9bd5fe3e';
-import { camera, controls } from '../core.js?v=9bd5fe3e';
-import { BAT_REST_QUAT, BAT_REST_TIP, BAT_TIP_Y, BAT_VIEW_MODEL_POS, batQuat } from './bat.js?v=9bd5fe3e';
-import { batModel, batRest } from './viewModels.js?v=9bd5fe3e';
-import { AXE_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js?v=9bd5fe3e';
-import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js?v=9bd5fe3e';
-import { knockEnemy } from '../enemy/motion.js?v=9bd5fe3e';
-import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=9bd5fe3e';
-import { hooks } from '../game/hooks.js?v=9bd5fe3e';
-import { tryWallHit } from './wallHit.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { playSwish } from '../audio.js?v=a8ad3029';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=a8ad3029';
+import { DEG, catmullRom } from '../math.js?v=a8ad3029';
+import { camera, controls } from '../core.js?v=a8ad3029';
+import { BAT_REST_QUAT, BAT_REST_TIP, BAT_TIP_Y, BAT_VIEW_MODEL_POS, batQuat } from './bat.js?v=a8ad3029';
+import { batModel, batRest } from './viewModels.js?v=a8ad3029';
+import { AXE_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial } from '../fx/ribbons.js?v=a8ad3029';
+import { DEFAULT_KNOCK, en, hitDir, hitPoint } from '../enemy/state.js?v=a8ad3029';
+import { knockEnemy } from '../enemy/motion.js?v=a8ad3029';
+import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=a8ad3029';
+import { hooks } from '../game/hooks.js?v=a8ad3029';
+import { tryWallHit } from './wallHit.js?v=a8ad3029';
 function makeBatAttack(def) {
     const keys = def.keys.map((k) => ({
         t: k.t,

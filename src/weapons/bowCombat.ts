@@ -11,7 +11,7 @@ import { addGlow } from '../fx/glow.js';
 import { hitWithArcs } from '../fx/arcs.js';
 import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { en, enemies, hitDir, setEn, type Enemy } from '../enemy/state.js';
-import { castHit, castThrow, castWorld } from '../world/raycast.js';
+import { castForgiving, castHit, castThrow, castWorld } from '../world/raycast.js';
 import { ASSIST_SNAP, enemyChest, findAssistTarget } from '../player/aimAssist.js';
 import { spawnSparks } from '../fx/hitFx.js';
 import { findBankShot } from './bowBankShot.js';
@@ -461,7 +461,7 @@ function updateArrows(dt: number) {
     flyDir.copy(a.vel).normalize();
     // 鏃の先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
     tip.copy(a.mesh.position).addScaledVector(flyDir, ARROW_LEN);
-    if (castThrow(tip, flyDir, step)) {
+    if (castForgiving(tip, flyDir, step, 0.10)) {
       hitAt.copy(castHit.point);
       // ボスの機体には刺さらず（動く機体に残すと浮いて見える）、当てて消す
       if (castHit.boss) {

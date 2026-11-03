@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=9bd5fe3e';
+import { loftRings } from '../geometry.js?v=a8ad3029';
 const SHAFT_LEN = 1.3;
 const SHAFT_R = 0.0125;
 const COLLAR_LEN = 0.022; // 柄の先の六角の口金

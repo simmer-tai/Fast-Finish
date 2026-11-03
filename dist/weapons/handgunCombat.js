@@ -1,25 +1,25 @@
-import { snapshotState } from '../game/resetState.js?v=9bd5fe3e';
+import { snapshotState } from '../game/resetState.js?v=a8ad3029';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { playRing, playSwish } from '../audio.js?v=9bd5fe3e';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic } from '../ease.js?v=9bd5fe3e';
-import { DEG, catmullRom, wrapAngle } from '../math.js?v=9bd5fe3e';
-import { camera, controls, scene } from '../core.js?v=9bd5fe3e';
-import { createRound } from './revolver.js?v=9bd5fe3e';
-import { gunSpin, revolver, weaponMats } from './viewModels.js?v=9bd5fe3e';
-import { FOCUS_EMPTY_FLASH, lockTo, swordState } from './swordCombat.js?v=9bd5fe3e';
-import { spawnSparks } from '../fx/hitFx.js?v=9bd5fe3e';
-import { addGlow } from '../fx/glow.js?v=9bd5fe3e';
-import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=9bd5fe3e';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=9bd5fe3e';
-import { en, hitDir, setEn } from '../enemy/state.js?v=9bd5fe3e';
-import { floorAt } from '../world/blocks.js?v=9bd5fe3e';
-import { castHit, castThrow } from '../world/raycast.js?v=9bd5fe3e';
-import { bossAlive } from '../enemy/boss.js?v=9bd5fe3e';
-import { lookEuler, player, position, velocity } from '../player/state.js?v=9bd5fe3e';
-import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=9bd5fe3e';
-import { DEADEYE_MAX, game, kickVel } from '../game/state.js?v=9bd5fe3e';
-import { hooks } from '../game/hooks.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { playRing, playSwish } from '../audio.js?v=a8ad3029';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic } from '../ease.js?v=a8ad3029';
+import { DEG, catmullRom, wrapAngle } from '../math.js?v=a8ad3029';
+import { camera, controls, scene } from '../core.js?v=a8ad3029';
+import { createRound } from './revolver.js?v=a8ad3029';
+import { gunSpin, revolver, weaponMats } from './viewModels.js?v=a8ad3029';
+import { FOCUS_EMPTY_FLASH, lockTo, swordState } from './swordCombat.js?v=a8ad3029';
+import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
+import { addGlow } from '../fx/glow.js?v=a8ad3029';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=a8ad3029';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=a8ad3029';
+import { en, hitDir, setEn } from '../enemy/state.js?v=a8ad3029';
+import { floorAt } from '../world/blocks.js?v=a8ad3029';
+import { castForgiving, castHit, castThrow } from '../world/raycast.js?v=a8ad3029';
+import { bossAlive } from '../enemy/boss.js?v=a8ad3029';
+import { lookEuler, player, position, velocity } from '../player/state.js?v=a8ad3029';
+import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=a8ad3029';
+import { DEADEYE_MAX, game, kickVel } from '../game/state.js?v=a8ad3029';
+import { hooks } from '../game/hooks.js?v=a8ad3029';
 // ---- ハンドガン ----
 // 射撃・装填・ガンスピン・デッドアイ・落ちた薬莢
 export const GUN_AMMO = 6; // 弾倉に入る弾の数
@@ -143,7 +143,7 @@ export function findGunAim(out) {
         return target.enemy;
     }
     camera.getWorldDirection(gunAimDir);
-    if (castThrow(camera.position, gunAimDir, BULLET_RANGE)) {
+    if (castForgiving(camera.position, gunAimDir, BULLET_RANGE, 0.10)) {
         out.copy(castHit.point);
         return castHit.enemy;
     }
@@ -754,7 +754,7 @@ export function updateBullets(dt) {
             b.tail -= step;
             b.pos.addScaledVector(b.dir, step);
         }
-        else if (castThrow(b.pos, b.dir, step)) {
+        else if (castForgiving(b.pos, b.dir, step, 0.10)) {
             b.hit = true;
             const moved = b.pos.distanceTo(castHit.point);
             b.tail = Math.min(maxTail, b.tail + moved);

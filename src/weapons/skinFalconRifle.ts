@@ -22,8 +22,8 @@ const BARREL_BACK = -0.363; // 銃身の付け根（機関部の先）
 const BARREL_R = 0.009;
 const LEVER_SWING = 0.95; // 元のレバーを下げきった角度（viewModelMotion.ts と同じ）。ボルトを引く量に読み替える
 
-type Outline = [number, number][]; // 横から見た輪郭 [z, y]
-type Taper = (z: number, y: number) => number; // 輪郭の点ごとの厚みの割合
+export type Outline = [number, number][]; // 横から見た輪郭 [z, y]
+export type Taper = (z: number, y: number) => number; // 輪郭の点ごとの厚みの割合
 
 // 機関部: 先は銃身と同じ高さ、上は少し先で膨らみ、後ろ下の角へ尖る
 const RECEIVER: Outline = [[BARREL_BACK, 0.025], [-0.24, 0.0363], [-0.08, 0.03], [-0.1517, -0.0089], [BARREL_BACK, 0.007]];
@@ -73,8 +73,8 @@ const FRONT_SIGHT: Outline = [[MUZZLE_Z, BORE_Y + BARREL_R - 0.001], [MUZZLE_Z, 
 const SLOT_FRONT = -0.279, SLOT_BACK = -0.186, SLOT_Y = 0.0156, SLOT_H = 0.0081;
 const PORT_Z = -0.1658, PORT_Y = 0.0144;
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const ramp = (v0: number, v1: number) => (v: number) => clamp01((v - v0) / (v1 - v0));
+export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+export const ramp = (v0: number, v1: number) => (v: number) => clamp01((v - v0) / (v1 - v0));
 // 機関部の厚み: 先は細く、後ろへ太る
 const RECEIVER_DEPTH = 0.025;
 const receiverTaper: Taper = (z) => 0.84 + 0.16 * ramp(BARREL_BACK, -0.24)(z);
@@ -85,7 +85,7 @@ const wingTaper: Taper = (z, y) => (0.8 + 0.2 * ramp(-0.151, -0.08)(z)) * (1 - 0
 const wingHalf = (z: number, y: number) => (WING_DEPTH / 2) * wingTaper(z, y);
 
 // 輪郭を左右に depth の厚みで押し出し、taper(z, y) の割合で厚みを絞る（角は面取りし、面ごとの陰影にする）
-function slab(outline: Outline, depth: number, mat: THREE.Material, taper?: Taper, bevel = 0.002): THREE.Mesh {
+export function slab(outline: Outline, depth: number, mat: THREE.Material, taper?: Taper, bevel = 0.002): THREE.Mesh {
   const shape = new THREE.Shape(outline.map(([z, y]) => new THREE.Vector2(z, y)));
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth: depth - bevel * 2, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 1,
@@ -100,7 +100,7 @@ function slab(outline: Outline, depth: number, mat: THREE.Material, taper?: Tape
   return new THREE.Mesh(geo, mat);
 }
 // 左右の面に貼る薄い板。面の位置 surface(z, y)（中心からの距離）に沿わせ、gap だけ浮かせる
-function sidePlates(outline: Outline, thick: number, mat: THREE.Material, surface: (z: number, y: number) => number, gap: number): THREE.Mesh[] {
+export function sidePlates(outline: Outline, thick: number, mat: THREE.Material, surface: (z: number, y: number) => number, gap: number): THREE.Mesh[] {
   return [1, -1].map((side) => {
     const m = slab(outline, thick, mat, undefined, 0.0005);
     const pos = m.geometry.attributes.position;
@@ -108,6 +108,27 @@ function sidePlates(outline: Outline, thick: number, mat: THREE.Material, surfac
     m.geometry.computeVertexNormals();
     return m;
   });
+}
+
+// 隼の配色: 白い陶器の外殻に、黒い鋼の翼。金の飾り、艶を消した黒、金色に光る核（リボルバーの隼も使う）
+// （映り込みは部位のものを使う。面ごとの陰影も部位に合わせる）
+export function createFalconMats(env: THREE.Texture | null, flat: boolean) {
+  const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ envMap: env, flatShading: flat, ...o });
+  const coat = (o: THREE.MeshPhysicalMaterialParameters) => new THREE.MeshPhysicalMaterial({ envMap: env, flatShading: flat, ...o });
+  return {
+    // 外殻: 艶のある白い陶器。上塗りで映り込みを薄く乗せる
+    shell: coat({ color: 0xe6e8ea, metalness: 0, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.8 }),
+    // 翼: 黒い鋼に厚い上塗り（ピアノの塗装のように、黒の上に鋭い映り込み）
+    wing: coat({ color: 0x111214, metalness: 0.8, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.5 }),
+    // 金: 鏡にせず、少し艶を落としたシャンパンゴールド
+    gold: std({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMapIntensity: 1.4 }),
+    // 艶を消した黒（光る外殻との対比）
+    dark: std({ color: 0x15171a, metalness: 0.55, roughness: 0.55, envMapIntensity: 0.8 }),
+    black: new THREE.MeshBasicMaterial({ color: 0x050505 }),
+    rim: std({ color: 0x0c0d0e, metalness: 0.8, roughness: 0.3, envMapIntensity: 1.2 }),
+    // 金の光: 装填口の芯と照星
+    deep: std({ color: 0xffe2a0, emissive: 0xe0a640, emissiveIntensity: 1.6, metalness: 0, roughness: 0.3 }),
+  };
 }
 
 export const falconRifle: SkinDecor = {
@@ -120,32 +141,17 @@ export const falconRifle: SkinDecor = {
     model.userData.roundGate = new THREE.Vector3(0.03, PORT_Y, PORT_Z + 0.04);
     model.userData.roundIn = new THREE.Vector3(0.004, PORT_Y, PORT_Z);
 
-    // 隼の配色: 白い陶器の外殻に、黒い鋼の翼。背骨と帯は金、銃身は艶を消した黒、装填口の核と照星は金色に光る
-    // （映り込みは部位のものを使う。面ごとの陰影も部位に合わせる）
+    // 機関部と握りは白い陶器、翼と小翼は黒い鋼。背骨・帯・ボルト・装填口の輪・握りの三角は金、銃身・溝・握りの差し色は艶を消した黒。
+    // 羽根は長い方を白い陶器、短い方を金にして、黒い翼の上で重なりを読ませる。装填口の核と照星は金色に光る
     const env = mats.metal.envMap;
-    const flat = mats.metal.flatShading;
-    const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ envMap: env, flatShading: flat, ...o });
-    const coat = (o: THREE.MeshPhysicalMaterialParameters) => new THREE.MeshPhysicalMaterial({ envMap: env, flatShading: flat, ...o });
-    // 外殻: 艶のある白い陶器。上塗りで映り込みを薄く乗せる
-    const shell = coat({ color: 0xe6e8ea, metalness: 0, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.8 });
-    // 翼と小翼: 黒い鋼に厚い上塗り（ピアノの塗装のように、黒の上に鋭い映り込み）
-    const wing = coat({ color: 0x111214, metalness: 0.8, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.5 });
+    const { shell, wing, gold, dark, black, rim, deep } = createFalconMats(env, mats.metal.flatShading);
     const barrelFin = wing;
-    // 羽根: 長い方は白い陶器、短い方は金にして、黒い翼の上で重なりを読ませる
-    const bladeLong = coat({ color: 0xe6e8ea, metalness: 0, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.8 });
-    const bladeShort = std({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMapIntensity: 1.4 });
-    // 金: 背骨・銃口の帯・ボルト・装填口の輪・握りの三角。鏡にせず、少し艶を落としたシャンパンゴールド
-    const gold = std({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMapIntensity: 1.4 });
+    const bladeLong = shell;
+    const bladeShort = gold;
     const spine = gold;
     const band = gold;
     const silver = gold;
-    // 銃身・溝・握りの差し色: 艶を消した黒（光る外殻との対比）
-    const dark = std({ color: 0x15171a, metalness: 0.55, roughness: 0.55, envMapIntensity: 0.8 });
-    const frame = std({ color: 0x18191b, metalness: 0.85, roughness: 0.3, envMapIntensity: 1.2 });
-    const black = new THREE.MeshBasicMaterial({ color: 0x050505 });
-    const rim = std({ color: 0x0c0d0e, metalness: 0.8, roughness: 0.3, envMapIntensity: 1.2 });
-    // 金の光: 装填口の芯と照星。ゆっくり脈打ち、当てた瞬間に強く光る
-    const deep = std({ color: 0xffe2a0, emissive: 0xe0a640, emissiveIntensity: 1.6, metalness: 0, roughness: 0.3 });
+    const frame = new THREE.MeshStandardMaterial({ envMap: env, flatShading: mats.metal.flatShading, color: 0x18191b, metalness: 0.85, roughness: 0.3, envMapIntensity: 1.2 });
     const g = new THREE.Group();
     const put = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number) => {
       o.position.set(x, y, z);

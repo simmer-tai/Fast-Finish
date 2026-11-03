@@ -2,7 +2,7 @@
 // XP はステージでその武器を使って倒したときの点数（倍率を掛けた後）を貯め、クリアしたときにまとめて足す。訓練場や、倒されて終わったステージでは入らない。
 // 次のレベルまでの XP は LV1→2 が XP_FIRST で、上がるごとに XP_GROWTH 倍にし、XP_CAP を上限にする（仮の値。遊んでみて調整する）
 // プレイヤーのレベルは、全部の武器の XP の合計で決める（貯め方は武器と同じ。別には保存しない）。上がり方は PLAYER_XP_FIRST と PLAYER_XP_GROWTH、上限は PLAYER_XP_CAP（仮の値）
-import { WEAPON_IDS } from './weapons/ids.js?v=9bd5fe3e';
+import { WEAPON_IDS } from './weapons/ids.js?v=a8ad3029';
 const XP_FIRST = 3000;
 const XP_GROWTH = 1.25;
 const XP_CAP = 20000;

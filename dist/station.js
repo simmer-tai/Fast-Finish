@@ -1,4 +1,4 @@
-import { game } from './game/state.js?v=9bd5fe3e';
+import { game } from './game/state.js?v=a8ad3029';
 const PLATFORM_H = 1; // ホームの高さ（線路から）。よじ登れる
 const PLATFORM_HALF = 12; // ホームの半幅
 const PLATFORM_NEAR = 10; // ホームの手前の端 (z)

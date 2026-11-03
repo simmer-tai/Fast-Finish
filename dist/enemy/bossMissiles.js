@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=9bd5fe3e';
-import { UP } from '../math.js?v=9bd5fe3e';
-import { camera, scene } from '../core.js?v=9bd5fe3e';
-import { spawnSparks } from '../fx/hitFx.js?v=9bd5fe3e';
-import { castWorld } from '../world/raycast.js?v=9bd5fe3e';
-import { playBounds } from '../world/arena.js?v=9bd5fe3e';
-import { player, position, velocity } from '../player/state.js?v=9bd5fe3e';
-import { game } from '../game/state.js?v=9bd5fe3e';
-import { hooks } from '../game/hooks.js?v=9bd5fe3e';
-import { bullets } from '../weapons/handgunCombat.js?v=9bd5fe3e';
-import { catchArrowNear } from '../weapons/bowCombat.js?v=9bd5fe3e';
-import { PARRY_ANGLE, PARRY_HIT_STOP, closestSegmentPoints, parryActive, parryState, remoteParryEffect } from '../combat/parry.js?v=9bd5fe3e';
-import { aimTarget } from './fire.js?v=9bd5fe3e';
-import { spawnScorch } from '../fx/floorMarks.js?v=9bd5fe3e';
-import { pushChunks } from '../fx/chunks.js?v=9bd5fe3e';
-import { boss, bossOpenPoint, bossTargetAim, raycastBoss } from './boss.js?v=9bd5fe3e';
-import { broadcastMissileBlast, broadcastMissileParry, remotePlayers, requestMissileShotDown, sendRemoteMissileHurt } from '../multiplayer/connectionTest.js?v=9bd5fe3e';
+import * as sfx from '../audio.js?v=a8ad3029';
+import { UP } from '../math.js?v=a8ad3029';
+import { camera, scene } from '../core.js?v=a8ad3029';
+import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
+import { castWorld } from '../world/raycast.js?v=a8ad3029';
+import { playBounds } from '../world/arena.js?v=a8ad3029';
+import { player, position, velocity } from '../player/state.js?v=a8ad3029';
+import { game } from '../game/state.js?v=a8ad3029';
+import { hooks } from '../game/hooks.js?v=a8ad3029';
+import { bullets } from '../weapons/handgunCombat.js?v=a8ad3029';
+import { catchArrowNear } from '../weapons/bowCombat.js?v=a8ad3029';
+import { PARRY_ANGLE, PARRY_HIT_STOP, closestSegmentPoints, parryActive, parryState, remoteParryEffect } from '../combat/parry.js?v=a8ad3029';
+import { aimTarget } from './fire.js?v=a8ad3029';
+import { spawnScorch } from '../fx/floorMarks.js?v=a8ad3029';
+import { pushChunks } from '../fx/chunks.js?v=a8ad3029';
+import { boss, bossOpenPoint, bossTargetAim, raycastBoss } from './boss.js?v=a8ad3029';
+import { broadcastMissileBlast, broadcastMissileParry, remotePlayers, requestMissileShotDown, sendRemoteMissileHurt } from '../multiplayer/connectionTest.js?v=a8ad3029';
 // ---- ボスのミサイル ----
 // 胴体の上から少し打ち上げ → 一定時間、プレイヤーの胸へ曲がりながら追ってくる → 追い終えたらまっすぐ飛ぶ（外れたら床や壁で爆発するか、ステージの外で消える）。
 // 当たるか、床や壁にぶつかると爆発し、近くにいれば巻き込まれる。

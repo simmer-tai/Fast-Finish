@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { scene } from '../core.js?v=9bd5fe3e';
-import { floorAt } from '../world/blocks.js?v=9bd5fe3e';
+import { scene } from '../core.js?v=a8ad3029';
+import { floorAt } from '../world/blocks.js?v=a8ad3029';
 // ---- 足元の丸い影 ----
 // 影を落とさない画質で、敵が床から浮いて見えないよう、足元の床にぼかした丸い影を置く（全部を 1 回で描く）。
 // 床から離れるほど薄く、大きくする
