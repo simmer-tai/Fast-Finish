@@ -1,13 +1,13 @@
-import * as sfx from '../audio.js?v=2fb05089';
-import { WEAPON_IDS } from '../weapons/ids.js?v=2fb05089';
-import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '../mastery.js?v=2fb05089';
-import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js?v=2fb05089';
-import { OWNER } from '../weapons/skins.js?v=2fb05089';
-import { BACKGROUNDS, FRAMES, FRAME_PARTS, baseClass } from './cardParts.js?v=2fb05089';
-import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js?v=2fb05089';
-import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked } from './cardHonors.js?v=2fb05089';
-import { allBests } from '../records.js?v=2fb05089';
-import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { WEAPON_IDS } from '../weapons/ids.js?v=6b2d2aee';
+import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '../mastery.js?v=6b2d2aee';
+import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js?v=6b2d2aee';
+import { OWNER } from '../weapons/skins.js?v=6b2d2aee';
+import { BACKGROUNDS, FRAMES, FRAME_PARTS, baseClass } from './cardParts.js?v=6b2d2aee';
+import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js?v=6b2d2aee';
+import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked } from './cardHonors.js?v=6b2d2aee';
+import { allBests } from '../records.js?v=6b2d2aee';
+import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=6b2d2aee';
 // ---- プレイヤーカード ----
 // 名前・称号・エンブレム・バッジ（3 つまで）・背景・フレーム・載せる記録（3 つ）を選んで、自分のカードを作る。
 // PLAY の上のタブ LOCKER で作り、タイトル画面の右に出す（出すかどうかはオプション）。

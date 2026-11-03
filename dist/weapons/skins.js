@@ -1,33 +1,34 @@
 import * as THREE from 'three';
-import { WEAPON_IDS } from './ids.js?v=2fb05089';
-import { loadXp, masteryOf } from '../mastery.js?v=2fb05089';
-import { MISSIONS, loadMission } from '../challenges.js?v=2fb05089';
-import { kintsugiSword } from './skinKintsugi.js?v=2fb05089';
-import { protoRevolver } from './skinProto.js?v=2fb05089';
-import { dressFiligreeRound, filigreeRevolver } from './skinFiligree.js?v=2fb05089';
-import { redlineSword } from './skinRedline.js?v=2fb05089';
-import { relicSword } from './skinRelic.js?v=2fb05089';
-import { willowKunai } from './skinWillowKunai.js?v=2fb05089';
-import { octagonRevolver } from './skinOctagonRevolver.js?v=2fb05089';
-import { harvestSickle } from './skinHarvestSickle.js?v=2fb05089';
-import { beardedAxe } from './skinBeardedAxe.js?v=2fb05089';
-import { longbow } from './skinLongbow.js?v=2fb05089';
-import { hexBat } from './skinHexBat.js?v=2fb05089';
-import { jumonjiSpear } from './skinJumonjiSpear.js?v=2fb05089';
-import { HOLO_FOCUS, ghostlineSword } from './skinGhostline.js?v=2fb05089';
-import { ghostlineSickle } from './skinGhostlineSickle.js?v=2fb05089';
-import { ghostlineAxe } from './skinGhostlineAxe.js?v=2fb05089';
-import { ghostlineSpear } from './skinGhostlineSpear.js?v=2fb05089';
-import { TALON_FOCUS, talonSword } from './skinTalon.js?v=2fb05089';
-import { talonAxe } from './skinTalonAxe.js?v=2fb05089';
-import { talonKunai } from './skinTalonKunai.js?v=2fb05089';
-import { talonSickle } from './skinTalonSickle.js?v=2fb05089';
-import { talonSpear } from './skinTalonSpear.js?v=2fb05089';
-import { eclipseSpear } from './skinEclipseSpear.js?v=2fb05089';
-import { dressTalonRound, talonRevolver } from './skinTalonGun.js?v=2fb05089';
-import { dressTalonArrow, talonBow } from './skinTalonBow.js?v=2fb05089';
-import { talonRifle } from './skinTalonRifle.js?v=2fb05089';
-import { falconRifle } from './skinFalconRifle.js?v=2fb05089';
+import { WEAPON_IDS } from './ids.js?v=6b2d2aee';
+import { loadXp, masteryOf } from '../mastery.js?v=6b2d2aee';
+import { MISSIONS, loadMission } from '../challenges.js?v=6b2d2aee';
+import { kintsugiSword } from './skinKintsugi.js?v=6b2d2aee';
+import { protoRevolver } from './skinProto.js?v=6b2d2aee';
+import { dressFiligreeRound, filigreeRevolver } from './skinFiligree.js?v=6b2d2aee';
+import { redlineSword } from './skinRedline.js?v=6b2d2aee';
+import { relicSword } from './skinRelic.js?v=6b2d2aee';
+import { willowKunai } from './skinWillowKunai.js?v=6b2d2aee';
+import { octagonRevolver } from './skinOctagonRevolver.js?v=6b2d2aee';
+import { harvestSickle } from './skinHarvestSickle.js?v=6b2d2aee';
+import { beardedAxe } from './skinBeardedAxe.js?v=6b2d2aee';
+import { longbow } from './skinLongbow.js?v=6b2d2aee';
+import { hexBat } from './skinHexBat.js?v=6b2d2aee';
+import { jumonjiSpear } from './skinJumonjiSpear.js?v=6b2d2aee';
+import { HOLO_FOCUS, ghostlineSword } from './skinGhostline.js?v=6b2d2aee';
+import { ghostlineSickle } from './skinGhostlineSickle.js?v=6b2d2aee';
+import { ghostlineAxe } from './skinGhostlineAxe.js?v=6b2d2aee';
+import { ghostlineSpear } from './skinGhostlineSpear.js?v=6b2d2aee';
+import { TALON_FOCUS, talonSword } from './skinTalon.js?v=6b2d2aee';
+import { talonAxe } from './skinTalonAxe.js?v=6b2d2aee';
+import { talonKunai } from './skinTalonKunai.js?v=6b2d2aee';
+import { talonSickle } from './skinTalonSickle.js?v=6b2d2aee';
+import { talonSpear } from './skinTalonSpear.js?v=6b2d2aee';
+import { eclipseSpear } from './skinEclipseSpear.js?v=6b2d2aee';
+import { dressTalonRound, talonRevolver } from './skinTalonGun.js?v=6b2d2aee';
+import { dressTalonArrow, talonBow } from './skinTalonBow.js?v=6b2d2aee';
+import { talonRifle } from './skinTalonRifle.js?v=6b2d2aee';
+import { falconRifle } from './skinFalconRifle.js?v=6b2d2aee';
+import { huntingRifle } from './skinHuntingRifle.js?v=6b2d2aee';
 // スキンの演出に渡す値。flare: 当てた瞬間に 1 にすると、飾りが光ってすぐに引く。focus: 一閃の構えの効き（0〜1）
 export const skinFx = { flare: 0, focus: 0 };
 // シリーズ: 同じ id のスキンを武器ごとに作り、共通の値をまとめて持たせる（形の飾りと振り音は武器ごと）
@@ -38,7 +39,7 @@ const TALON = {
     ja: '爪',
     swatch: ['#0b0c0e', '#8c1515', '#1a1d21'],
     looks: {},
-    unlock: 'チャレンジ「TALON TRIAL」: LIFT（HARD）をノーダメージで倒しきる', // その武器のミッションを達成すると解放（challenges.ts の MISSIONS）
+    unlock: 'チャレンジ「TALON TRIAL」: LIFT（HARD）を回復なしで倒しきる', // その武器のミッションを達成すると解放（challenges.ts の MISSIONS）
     // 光る刃先と同じ赤で、軌跡も光らせる。縁は一段暗く、芯は明るく
     trail: { body: 0xa81818, edge: 0x7a1010, core: 0xd02a2a, glow: true },
     // 刃先と同じ赤の稲妻。芯は白く光らせる
@@ -139,6 +140,7 @@ export const SKINS = [
     { ...SHAPE_ONLY, id: 'longbow', name: 'LONGBOW', ja: '長弓', weapons: ['bow'], decor: longbow },
     { ...SHAPE_ONLY, id: 'hexclub', name: 'HEXCLUB', ja: '六角棍', weapons: ['bat'], decor: hexBat },
     { ...SHAPE_ONLY, id: 'jumonji', name: 'JUMONJI', ja: '十文字', weapons: ['spear'], decor: jumonjiSpear },
+    { ...SHAPE_ONLY, id: 'hunting', name: 'HUNTING', ja: 'ハンティング', weapons: ['rifle'], decor: huntingRifle },
     {
         ...HOLOLINE,
         weapons: ['sword'],
@@ -220,16 +222,23 @@ export const SKINS = [
         id: 'falcon',
         name: 'FALCON',
         ja: '隼',
-        swatch: ['#2a2d31', '#878f99', '#5b636a'],
-        // 銃身・側面の刃・細枠は暗い灰色、機関部・翼・握りは青みの灰色、装填口の芯は一段暗い灰色（形は decor が作り直す）
+        swatch: ['#111214', '#c9a25a', '#e6e8ea'],
+        // 銃の体は decor が白い陶器・黒い鋼・金で作り直す。ここで決めるのは残したスコープの色:
+        // 筒は翼と同じ黒い鋼、台座と輪は背骨と同じ金
         looks: {
-            metal: { color: 0x2a2d31, metalness: 0.8, roughness: 0.3, env: 1.3 },
-            trim: { color: 0x878f99, metalness: 0.45, roughness: 0.42, env: 0.9 },
-            wrap: { color: 0x5b636a, metalness: 0.4, roughness: 0.5 },
+            metal: { color: 0x111214, metalness: 0.85, roughness: 0.26, env: 1.5 },
+            trim: { color: 0xc9a25a, metalness: 1, roughness: 0.3, env: 1.4 },
+            wrap: { color: 0xe6e8ea, metalness: 0, roughness: 0.4 },
         },
         weapons: ['rifle'],
         unlock: '条件は未定',
         decor: falconRifle,
+        // 弾の筋は金に光らせる。縁は暗い金、芯は白
+        trail: { body: 0xe0a83a, edge: 0x6a4a14, core: 0xfff4d8, glow: true },
+        spark: 0xf2d79a,
+        hitSparks: { count: 1.4, life: 1.2, size: 1, embers: 0.6, tint: 0xffc860 },
+        // 命中点に横一文字の金の光の筋を走らせ、金粉を漂わせる（倒した 1 発は筋を長く 2 本にし、金粉を増やす。rifleCombat.ts）
+        gleam: { color: 0xe8a830, core: 0xfff3d6, len: 1.3, dust: 36, life: 1.4 },
     },
     {
         id: 'proto',
@@ -269,7 +278,7 @@ export function skinTags(s) {
     const tags = [];
     if (Object.keys(s.looks).length || s.decor || s.round || s.arrow)
         tags.push('look');
-    if (s.trail || s.arc || s.hitSparks || s.hologram || s.cutLine || s.leaves || s.spark !== undefined)
+    if (s.trail || s.arc || s.hitSparks || s.hologram || s.cutLine || s.leaves || s.gleam || s.spark !== undefined)
         tags.push('hit');
     if (s.focus)
         tags.push('motion');
@@ -283,10 +292,12 @@ export const OWNER = (['localhost', '127.0.0.1'].includes(location.hostname) && 
 export const skinUnlocked = (s) => {
     if (OWNER || !s.unlock)
         return true;
+    if (s.id === 'falcon' && params.has('HGMR'))
+        return true; // ?HGMR を付けると隼だけ使える（公開版でも効く）
     const weapon = s.weapons?.[0];
     if (weapon === undefined)
         return false;
-    if (MISSIONS.some((m) => m.weapon === weapon && m.reward.skin === s.id && loadMission(m.id)))
+    if (MISSIONS.some((m) => m.weapon === weapon && m.reward?.skin === s.id && loadMission(m.id)))
         return true;
     return s.level !== undefined && masteryOf(loadXp(weapon)).level >= s.level;
 };

@@ -19,6 +19,7 @@ import { tryWallHit } from './wallHit.js';
 import { castHit, castThrow } from '../world/raycast.js';
 import { player, velocity } from '../player/state.js';
 import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js';
+import { restartAnim } from '../ui/restartAnim.js';
 
 // ---- 槍 ----
 // 両手で柄の中ほどを持ち、そこを支点にブンブン回しながら打つ。穂先と石突きが代わる代わる正面を通り、通るたびに当たる。
@@ -991,9 +992,7 @@ function updateGuardHud(dt: number) {
   guardHud.classList.toggle('empty', guardEmptyFlash > 0);
   guardFill.style.transform = `scaleX(${spearState.guardGauge.toFixed(3)})`;
   if (ready && !guardShownReady) {
-    guardHud.classList.remove('gain');
-    void guardHud.offsetWidth;
-    guardHud.classList.add('gain'); // また回せるようになった瞬間に光らせる
+    restartAnim(guardHud, 'gain'); // また回せるようになった瞬間に光らせる
   }
   guardShownReady = ready;
 }

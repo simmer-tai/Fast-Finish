@@ -8,7 +8,7 @@ import { options, type Quality } from '../ui/options.js';
 // life を省いた破片は、ステージを出るまで床に残る。画質ごとの数（CHUNK_LIMIT）を超えたら、古いものから縮んで消える。
 // 床に落ちている破片も、プレイヤーが歩いて蹴ったり、ボスの足や体・攻撃の風圧や衝撃波で跳ね飛ばされたりする
 const MAX_CHUNKS = 500;
-const CHUNK_LIMIT: Record<Quality, number> = { low: 150, medium: 300, high: MAX_CHUNKS };
+const CHUNK_LIMIT: Record<Quality, number> = { lowest: 60, low: 100, medium: 300, high: MAX_CHUNKS, ultra: MAX_CHUNKS };
 const GRAVITY = 22;
 const BOUNCE = 0.35; // 跳ね返るときに残す縦の速さの割合
 const SKID = 0.6; // 跳ね返るときに残す横の速さの割合

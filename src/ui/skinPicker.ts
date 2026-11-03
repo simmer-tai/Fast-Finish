@@ -313,7 +313,7 @@ function showSkin(i: number, flash: boolean) {
   touchSkin(i);
   tiles.forEach((b, j) => b.classList.toggle('active', j === i));
   skinName.textContent = skin.name;
-  skinJa.textContent = skinUnlocked(skin) ? skin.ja : `LOCKED — ${skin.unlock}`;
+  skinJa.textContent = skinUnlocked(skin) ? skin.ja : 'LOCKED';
   win.classList.toggle('sk-locked', !skinUnlocked(skin));
   skinSwatch.forEach((el, j) => (el.style.background = skin.swatch[j]));
   showTags(skin);

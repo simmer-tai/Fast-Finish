@@ -1,4 +1,5 @@
 import { game, STYLE_MULT, STYLE_NAMES } from '../game/state.js';
+import { restartAnim } from './restartAnim.js';
 
 // ---- スタイルランク ----
 // 合計スコアの下に、今のランク（game.style）を札とゲージで出す。計算は main.ts（styleKillBonuses / decayStyle）。
@@ -14,8 +15,7 @@ let shownRank = -1;
 // クラスを外して付け直し、CSS のアニメーションを最初からやり直す
 function restart(node: HTMLElement, cls: string) {
   node.classList.remove('up', 'down');
-  void node.offsetWidth;
-  node.classList.add(cls);
+  restartAnim(node, cls);
 }
 
 // visible = ステージの間だけ出す（訓練場とタイトルでは隠す）

@@ -213,7 +213,8 @@ export const shakeEuler = new THREE.Euler();
 export const shakeQuat = new THREE.Quaternion();
 export function applyCameraOffset() {
   savedQuat.copy(camera.quaternion);
-  const s = cameraFx.trauma * cameraFx.trauma;
+  // スコープの倍率で揺れも大きく見えるので、覗いている間は倍率で割り、見た目の揺れを覗いていないときと揃える
+  const s = cameraFx.trauma * cameraFx.trauma / scopeMul;
   const t = cameraFx.shakeTime;
   const ls = landShakeAmount();
   shakeEuler.set(

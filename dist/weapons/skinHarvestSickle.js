@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=2fb05089';
-import { SHAFT_TOP, sickleBladeFrames } from './chainSickle.js?v=2fb05089';
+import { loftRings } from '../geometry.js?v=6b2d2aee';
+import { SHAFT_TOP, sickleBladeFrames } from './chainSickle.js?v=6b2d2aee';
 // ---- 鎖鎌のスキン: 稲刈り ----
 // 古い農具の鎌の形。色は元の鎖鎌のまま、刃と口金を作り直す（柄・継ぎ目・握りは元のまま）。
 //   刃: 細い首から出て、いったん上へ弓なりに反ってから切っ先で柄の方へ落ちる、薄く長い三日月。

@@ -4,6 +4,7 @@ import { weaponHud } from './weaponHud.js';
 import { hudImpulse } from './hudSway.js';
 import { PLAYER_MAX_HP } from '../player/config.js';
 import { game } from '../game/state.js';
+import { restartAnim } from './restartAnim.js';
 
 // ---- HUD: ダッシュの残り回数（クロスヘア左右の円弧。左が 1 回目、右が 2 回目） ----
 export const dashGauges = [...document.querySelectorAll<SVGPathElement>('#crosshair .gauge')];
@@ -25,9 +26,7 @@ export function updateHookHud() {
     hookCells[i].classList.toggle('ready', i < sickleState.hookCharges);
     // 溜まりきった帯を光らせる（最初の表示では光らせない）
     if (hookShown >= 0 && i >= hookShown && i < sickleState.hookCharges) {
-      hookCells[i].classList.remove('gain');
-      void hookCells[i].offsetWidth; // 続けて溜まったときも頭から再生し直す
-      hookCells[i].classList.add('gain');
+      restartAnim(hookCells[i], 'gain'); // 続けて溜まったときも頭から再生し直す
     }
   }
   hookShown = sickleState.hookCharges;
@@ -52,9 +51,7 @@ export function updateBowHud() {
     stockPips[i].classList.toggle('ready', i < stock);
     // 戻った菱形を光らせる（最初の表示では光らせない）
     if (stockShown >= 0 && i >= stockShown && i < stock) {
-      stockPips[i].classList.remove('gain');
-      void stockPips[i].offsetWidth;
-      stockPips[i].classList.add('gain');
+      restartAnim(stockPips[i], 'gain');
     }
   }
   stockShown = stock;

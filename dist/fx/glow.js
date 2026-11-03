@@ -80,7 +80,7 @@ export class GlowPass extends Pass {
     // true: 描いてある物の後ろ（透けている所）にだけにじませる。透けたキャンバスに描く画面（スキン選択）で使う。
     // 上に重ねると、光る刃先のまわりの黒い面にも色が乗り、刃先から離れるほど暗くなる濃淡で、平らな刃が丸く見える
     behind = false;
-    // scale: にじみを描く画面の縮小率。にじみを狭くする画面では、粗い画素の段差が光の縁に輪郭として出るので小さくする
+    // scale: にじみを描く画面の縮小率（変えたら setSize を呼び直す）。にじみを狭くする画面では、粗い画素の段差が光の縁に輪郭として出るので小さくする
     constructor(scene, camera, scale = SCALE) {
         super();
         this.scene = scene;

@@ -1,20 +1,20 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2fb05089';
-import { camera, scene } from '../core.js?v=2fb05089';
-import { DEG } from '../math.js?v=2fb05089';
-import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=2fb05089';
-import { hooks } from '../game/hooks.js?v=2fb05089';
-import { spawnSparks } from '../fx/hitFx.js?v=2fb05089';
-import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=2fb05089';
-import { addGlow } from '../fx/glow.js?v=2fb05089';
-import { isDown } from '../player/down.js?v=2fb05089';
-import { player, position } from '../player/state.js?v=2fb05089';
-import { castThrow, castHit } from '../world/raycast.js?v=2fb05089';
-import { en, hitDir, setEn } from '../enemy/state.js?v=2fb05089';
-import { makeFlashTexture } from './handgunCombat.js?v=2fb05089';
-import { createRound } from './revolver.js?v=2fb05089';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
-import { rifleModel, weaponMats } from './viewModels.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { camera, scene } from '../core.js?v=6b2d2aee';
+import { DEG } from '../math.js?v=6b2d2aee';
+import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js?v=6b2d2aee';
+import { hooks } from '../game/hooks.js?v=6b2d2aee';
+import { HEAVY_FX, spawnGleam, spawnGoldShards, spawnSparks } from '../fx/hitFx.js?v=6b2d2aee';
+import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js?v=6b2d2aee';
+import { addGlow } from '../fx/glow.js?v=6b2d2aee';
+import { isDown } from '../player/down.js?v=6b2d2aee';
+import { player, position } from '../player/state.js?v=6b2d2aee';
+import { castThrow, castHit } from '../world/raycast.js?v=6b2d2aee';
+import { en, hitDir, setEn } from '../enemy/state.js?v=6b2d2aee';
+import { makeFlashTexture } from './handgunCombat.js?v=6b2d2aee';
+import { createRound } from './revolver.js?v=6b2d2aee';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=6b2d2aee';
+import { rifleModel, weaponMats } from './viewModels.js?v=6b2d2aee';
 // ---- スナイパーライフル ----
 // 右クリック（パッドは LT）を押している間、スコープを目の前へ持ち上げて覗く。覗ききったらスコープの絵（ui/scopeOverlay.ts）に切り替え、
 // 視野を SCOPE_ZOOM 倍に絞る（fx/camera.ts）。視点の速さは視野に合わせて落ちる（player/look.ts）
@@ -63,7 +63,44 @@ export const rifleState = {
     spin: false, // 乱射の途中
     spinT: 0, // 今の 1 回転に入ってからの時間
     scopedShot: false, // 最後の 1 発をスコープを覗ききって撃ったか（頭でとどめを刺したときに弾が入るのはこのときだけ）
+    equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
+// ---- 取り出し ----
+// 持ち替えたとき: 画面の右下から、長い銃が顔を掃かないよう右下の前へ離して持ち上げながら、レバーの輪に掛けた指を軸に
+// 銃を縦に 1 回転させる（回る勢いでレバーが開いて閉じる）。前を向いた所で止め、銃床を肩へ「ガッ」と引き付けて構えに収まる。
+// 取り出している間は撃てない（押したのは捨てず、取り出し終えてから効かせる）
+export const RIFLE_EQUIP_SPIN_FROM = 0.08; // 回し始め
+export const RIFLE_EQUIP_SPIN_TO = 0.4; // 回し終えて前を向いた所
+export const RIFLE_EQUIP_TIME = 0.6;
+const RIFLE_EQUIP_SHOULDER = RIFLE_EQUIP_SPIN_TO + 0.06; // 肩へ引き付けた瞬間
+export function startRifleEquip() {
+    rifleState.equipT = 0;
+}
+function updateRifleEquip(dt) {
+    if (rifleState.equipT === Infinity)
+        return;
+    if (game.shownWeapon !== 'rifle') {
+        rifleState.equipT = Infinity;
+        return;
+    }
+    const t0 = rifleState.equipT;
+    const t = (rifleState.equipT += dt);
+    const at = (k) => t0 < k && t >= k;
+    const spinAt = (u) => RIFLE_EQUIP_SPIN_FROM + (RIFLE_EQUIP_SPIN_TO - RIFLE_EQUIP_SPIN_FROM) * u;
+    if (at(RIFLE_EQUIP_SPIN_FROM))
+        sfx.playSwish({ dur: (RIFLE_EQUIP_SPIN_TO - RIFLE_EQUIP_SPIN_FROM) * 0.9, f0: 380, f1: 1400, gain: 0.16 }, skinOf('rifle').swish ?? 'gun');
+    if (at(spinAt(0.35)))
+        sfx.playLever('open');
+    if (at(spinAt(0.8)))
+        sfx.playLever('close');
+    if (at(RIFLE_EQUIP_SHOULDER)) {
+        sfx.playRifleShoulder();
+        kickVel.x += 0.6 * DEG * 22;
+        hooks.addTrauma(0.05);
+    }
+    if (t >= RIFLE_EQUIP_TIME)
+        rifleState.equipT = Infinity;
+}
 // 倒したときに弾を足す（上限まで）。込めている途中で満ちたら、構えへ戻す
 export function addRifleRounds(n) {
     const before = rifleState.ammo;
@@ -76,7 +113,7 @@ export function addRifleRounds(n) {
     if (rifleState.reload !== 'none' && rifleState.ammo >= RIFLE_MAG)
         finishInsert();
 }
-export const rifleReady = () => game.shownWeapon === 'rifle' && game.wantWeapon === 'rifle' && game.holster === 0 && !isDown();
+export const rifleReady = () => game.shownWeapon === 'rifle' && game.wantWeapon === 'rifle' && game.holster === 0 && !isDown() && rifleState.equipT === Infinity;
 // マズルフラッシュ: ハンドガンの光を大きくし、前へ長く伸ばす（互いに読み込み合うので、ハンドガンの値は読み込みの最初に使わない）
 const flashMat = new THREE.MeshBasicMaterial({
     map: makeFlashTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
@@ -125,12 +162,17 @@ const aimDir = new THREE.Vector3();
 const beamDir = new THREE.Vector3();
 // 当たった所への処理（ダメージ・倒す・ボスの部位）。enemy も boss も無ければ壁や床
 export const RIFLE_HIT = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1, dmg: 34 / 30 };
+export const RIFLE_SCOPED_BODY_BONUS = 16; // 覗ききった胴体への射撃は 50 ダメージ
 function onRifleHit(at, dir, enemy, part, boss) {
     void part; // 頭は共通の命中位置の高さで判定する
     // 稲妻を出すスキン（爪）は、当てた所から体に稲妻を走らせる
     const fx = RIFLE_HIT.fx ?? 1;
+    // 金粉を漂わせるスキンは、金色の破片の代わりに金粉を見せる（破片は出さない）
+    const gleam = skinOf('rifle').gleam;
     if (!enemy && boss) {
         hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir), at);
+        if (!gleam)
+            spawnGoldShards(at, dir, false);
     }
     else if (enemy) {
         setEn(enemy);
@@ -139,6 +181,10 @@ function onRifleHit(at, dir, enemy, part, boss) {
             hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
         hitDir.normalize();
         hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.applyHit(RIFLE_HIT, at, 'bullet'), at);
+        if (!gleam)
+            spawnGoldShards(at, dir, !enemy.alive); // 倒した 1 発は多めに散らす
+        else if (!enemy.alive)
+            spawnGleam(at, dir, HEAVY_FX, gleam); // 倒した 1 発は光の筋を長く 2 本にし、金粉を増やす
     }
     else {
         spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
@@ -347,6 +393,7 @@ const spinPressed = (held) => {
     return edge;
 };
 export function updateRifle(dt) {
+    updateRifleEquip(dt);
     const ready = rifleReady();
     updateSpin(dt, ready);
     if (!(rifleState.spinHeld || rifleState.padSpin))
@@ -363,7 +410,7 @@ export function updateRifle(dt) {
     if (t0 < LEVER_OPEN_END && rifleState.cycleT >= LEVER_OPEN_END)
         sfx.playLever('close');
     rifleState.recoil = Math.max(0, rifleState.recoil - dt * 5);
-    if (rifleState.pressed) {
+    if (rifleState.pressed && rifleState.equipT === Infinity) { // 取り出しの途中に押したのは、取り出し終えてから撃つ
         rifleState.pressed = false;
         if (ready && !rifleState.spin && rifleState.cycleT >= RIFLE_CYCLE && rifleState.ammo > 0)
             fireRifle();

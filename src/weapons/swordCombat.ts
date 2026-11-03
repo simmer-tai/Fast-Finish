@@ -25,6 +25,7 @@ import { DASH_ATTACK_WINDOW, DEADEYE_MAX, SWING_SAMPLE, game, kickVel } from '..
 import { hooks } from '../game/hooks.js';
 import { tryWallHit } from './wallHit.js';
 import { startMeleePull, stopMeleePull } from './meleePull.js';
+import { restartAnim } from '../ui/restartAnim.js';
 
 // ---- 剣の攻撃 ----
 // 振り・溜め斬り・居合（構えと突進）。技の定義は swordAttacks.ts
@@ -355,9 +356,7 @@ export function updateFocus() {
   focusHud.classList.toggle('empty', swordState.focusEmptyFlash > 0);
   focusFill.style.transform = `scaleX(${fill.toFixed(3)})`;
   if (ready && !focusShownReady && !swordState.focusing && game.deadEye === 'off') {
-    focusHud.classList.remove('gain');
-    void focusHud.offsetWidth;
-    focusHud.classList.add('gain'); // 満タンになった瞬間に光らせる
+    restartAnim(focusHud, 'gain'); // 満タンになった瞬間に光らせる
   }
   focusShownReady = ready;
 

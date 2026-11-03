@@ -3,8 +3,9 @@ import * as sfx from '../audio.js';
 
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
+// モーションブラーも倍率（1 = 元の強さ、0 で切る）で、カメラの動きのブラーの強さと長さに掛ける（fx/post.ts）。画質で切っている LOW 以下では効かない。
 // 音量は 0〜1 で、音の出口に掛ける（audio.ts の setMasterVolume）。
-// 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。
+// 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。重いときは、どの画質でも解像度を自動で下げる（fx/dynamicRes.ts）。
 // PLAYER CARD はタイトルの右にプレイヤーカードを出すかどうか（overlay の card-on）。次に開いたときのために覚えておく
 const OPTIONS_STORE = 'fast-finish.options';
 const RANGES = {
@@ -12,18 +13,21 @@ const RANGES = {
   padSens: { min: 0.1, max: 3, step: 0.1 },
   padVibration: { min: 0, max: 1, step: 0.1 },
   brightness: { min: 0.5, max: 2, step: 0.1 },
+  motionBlur: { min: 0, max: 2, step: 0.1 },
   volume: { min: 0, max: 1, step: 0.1 },
 };
-const QUALITIES = ['low', 'medium', 'high'] as const;
+const QUALITIES = ['lowest', 'low', 'medium', 'high', 'ultra'] as const;
 export type Quality = (typeof QUALITIES)[number];
 type RangeKey = keyof typeof RANGES;
 const isRangeKey = (k: string | undefined): k is RangeKey => !!k && k in RANGES;
 const QUALITY_NOTES: Record<Quality, string> = {
-  low: '解像度を下げ、影とアンチエイリアスを切る。いちばん軽い',
+  lowest: '遊ぶのに要らない物を全部切る。LOW から、光のにじみ・画面端のブラー・縁の処理を外し、火花や破片をさらに減らす。いちばん軽い',
+  low: '解像度を 2/3 にし、影とカメラのブラーを切って、火花や破片を減らす。縁は FXAA でならし、輪郭を立てる',
   medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
-  high: '高解像度（最大 2 倍）に、細かい影と 4x アンチエイリアス',
+  high: '高解像度（最大 1.5 倍）に、細かい影と 4x アンチエイリアス',
+  ultra: '画面の画素どおりの解像度（最大 2 倍）に、さらに細かい影と 8x アンチエイリアス。隅や足元に暗がり（AO）を入れ、光のにじみも細かく描く。重い',
 };
-export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, volume: 1, quality: 'high' as Quality, showCard: true };
+export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, motionBlur: 1, volume: 1, quality: 'high' as Quality, showCard: true };
 try {
   const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
   for (const k of Object.keys(RANGES) as RangeKey[]) {
@@ -67,7 +71,7 @@ export function renderOptions() {
     const v = options[key];
     const { min, max } = RANGES[key];
     row.querySelector<HTMLElement>('.bar i')!.style.setProperty('--p', `${((v - min) / (max - min)) * 100}%`);
-    row.querySelector('.val')!.textContent = key === 'padVibration' && v === 0 ? 'OFF' : v.toFixed(1);
+    row.querySelector('.val')!.textContent = (key === 'padVibration' || key === 'motionBlur') && v === 0 ? 'OFF' : v.toFixed(1);
   });
   for (const b of qualityButtons) b.classList.toggle('active', b.dataset.quality === options.quality);
   qualityNote.textContent = QUALITY_NOTES[options.quality];

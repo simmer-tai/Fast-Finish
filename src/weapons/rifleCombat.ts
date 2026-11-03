@@ -4,7 +4,7 @@ import { camera, scene } from '../core.js';
 import { DEG } from '../math.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
-import { spawnSparks } from '../fx/hitFx.js';
+import { HEAVY_FX, spawnGleam, spawnGoldShards, spawnSparks } from '../fx/hitFx.js';
 import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
 import { addGlow } from '../fx/glow.js';
 import { isDown } from '../player/down.js';
@@ -69,7 +69,40 @@ export const rifleState = {
   spin: false, // 乱射の途中
   spinT: 0, // 今の 1 回転に入ってからの時間
   scopedShot: false, // 最後の 1 発をスコープを覗ききって撃ったか（頭でとどめを刺したときに弾が入るのはこのときだけ）
+  equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
+
+// ---- 取り出し ----
+// 持ち替えたとき: 画面の右下から、長い銃が顔を掃かないよう右下の前へ離して持ち上げながら、レバーの輪に掛けた指を軸に
+// 銃を縦に 1 回転させる（回る勢いでレバーが開いて閉じる）。前を向いた所で止め、銃床を肩へ「ガッ」と引き付けて構えに収まる。
+// 取り出している間は撃てない（押したのは捨てず、取り出し終えてから効かせる）
+export const RIFLE_EQUIP_SPIN_FROM = 0.08; // 回し始め
+export const RIFLE_EQUIP_SPIN_TO = 0.4; // 回し終えて前を向いた所
+export const RIFLE_EQUIP_TIME = 0.6;
+const RIFLE_EQUIP_SHOULDER = RIFLE_EQUIP_SPIN_TO + 0.06; // 肩へ引き付けた瞬間
+export function startRifleEquip() {
+  rifleState.equipT = 0;
+}
+function updateRifleEquip(dt: number) {
+  if (rifleState.equipT === Infinity) return;
+  if (game.shownWeapon !== 'rifle') {
+    rifleState.equipT = Infinity;
+    return;
+  }
+  const t0 = rifleState.equipT;
+  const t = (rifleState.equipT += dt);
+  const at = (k: number) => t0 < k && t >= k;
+  const spinAt = (u: number) => RIFLE_EQUIP_SPIN_FROM + (RIFLE_EQUIP_SPIN_TO - RIFLE_EQUIP_SPIN_FROM) * u;
+  if (at(RIFLE_EQUIP_SPIN_FROM)) sfx.playSwish({ dur: (RIFLE_EQUIP_SPIN_TO - RIFLE_EQUIP_SPIN_FROM) * 0.9, f0: 380, f1: 1400, gain: 0.16 }, skinOf('rifle').swish ?? 'gun');
+  if (at(spinAt(0.35))) sfx.playLever('open');
+  if (at(spinAt(0.8))) sfx.playLever('close');
+  if (at(RIFLE_EQUIP_SHOULDER)) {
+    sfx.playRifleShoulder();
+    kickVel.x += 0.6 * DEG * 22;
+    hooks.addTrauma(0.05);
+  }
+  if (t >= RIFLE_EQUIP_TIME) rifleState.equipT = Infinity;
+}
 
 // 倒したときに弾を足す（上限まで）。込めている途中で満ちたら、構えへ戻す
 export function addRifleRounds(n: number) {
@@ -82,7 +115,7 @@ export function addRifleRounds(n: number) {
   if (rifleState.reload !== 'none' && rifleState.ammo >= RIFLE_MAG) finishInsert();
 }
 
-export const rifleReady = () => game.shownWeapon === 'rifle' && game.wantWeapon === 'rifle' && game.holster === 0 && !isDown();
+export const rifleReady = () => game.shownWeapon === 'rifle' && game.wantWeapon === 'rifle' && game.holster === 0 && !isDown() && rifleState.equipT === Infinity;
 
 // マズルフラッシュ: ハンドガンの光を大きくし、前へ長く伸ばす（互いに読み込み合うので、ハンドガンの値は読み込みの最初に使わない）
 const flashMat = new THREE.MeshBasicMaterial({
@@ -136,18 +169,24 @@ const beamDir = new THREE.Vector3();
 
 // 当たった所への処理（ダメージ・倒す・ボスの部位）。enemy も boss も無ければ壁や床
 export const RIFLE_HIT: HitDef = { kick: [-1, 0, 0], knock: 120, hitStop: 0.03, fx: 1, dmg: 34 / 30 };
+export const RIFLE_SCOPED_BODY_BONUS = 16; // 覗ききった胴体への射撃は 50 ダメージ
 function onRifleHit(at: THREE.Vector3, dir: THREE.Vector3, enemy: Enemy | null, part: THREE.Object3D | null, boss: BossPart | null) {
   void part; // 頭は共通の命中位置の高さで判定する
   // 稲妻を出すスキン（爪）は、当てた所から体に稲妻を走らせる
   const fx = RIFLE_HIT.fx ?? 1;
+  // 金粉を漂わせるスキンは、金色の破片の代わりに金粉を見せる（破片は出さない）
+  const gleam = skinOf('rifle').gleam;
   if (!enemy && boss) {
     hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir), at);
+    if (!gleam) spawnGoldShards(at, dir, false);
   } else if (enemy) {
     setEn(enemy);
     hitDir.set(dir.x, 0, dir.z);
     if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
     hitDir.normalize();
     hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.applyHit(RIFLE_HIT, at, 'bullet'), at);
+    if (!gleam) spawnGoldShards(at, dir, !enemy.alive); // 倒した 1 発は多めに散らす
+    else if (!enemy.alive) spawnGleam(at, dir, HEAVY_FX, gleam); // 倒した 1 発は光の筋を長く 2 本にし、金粉を増やす
   } else {
     spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
     sfx.playRicochet();
@@ -343,6 +382,7 @@ const spinPressed = (held: boolean) => {
 };
 
 export function updateRifle(dt: number) {
+  updateRifleEquip(dt);
   const ready = rifleReady();
   updateSpin(dt, ready);
   if (!(rifleState.spinHeld || rifleState.padSpin)) prevSpinHeld = false;
@@ -357,7 +397,7 @@ export function updateRifle(dt: number) {
   if (t0 < LEVER_OPEN_END && rifleState.cycleT >= LEVER_OPEN_END) sfx.playLever('close');
   rifleState.recoil = Math.max(0, rifleState.recoil - dt * 5);
 
-  if (rifleState.pressed) {
+  if (rifleState.pressed && rifleState.equipT === Infinity) { // 取り出しの途中に押したのは、取り出し終えてから撃つ
     rifleState.pressed = false;
     if (ready && !rifleState.spin && rifleState.cycleT >= RIFLE_CYCLE && rifleState.ammo > 0) fireRifle();
     else if (ready && rifleState.ammo === 0 && rifleState.reload === 'none') sfx.playDryFire();

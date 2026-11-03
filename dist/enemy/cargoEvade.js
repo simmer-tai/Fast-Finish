@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { GRAVITY } from '../player/config.js?v=2fb05089';
-import { approachingCargo, cargoBlockActive, cargoBlocksAhead } from '../world/movers.js?v=2fb05089';
-import { floorAt } from '../world/blocks.js?v=2fb05089';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from './body.js?v=2fb05089';
-import { env } from './env.js?v=2fb05089';
-import { enemyCanStand, enemyCanStandAt, startLeap, updateLeap } from './motion.js?v=2fb05089';
-import { en } from './state.js?v=2fb05089';
+import { GRAVITY } from '../player/config.js?v=6b2d2aee';
+import { approachingCargo, cargoBlockActive, cargoBlocksAhead } from '../world/movers.js?v=6b2d2aee';
+import { floorAt } from '../world/blocks.js?v=6b2d2aee';
+import { DUMMY_HEIGHT, DUMMY_RADIUS } from './body.js?v=6b2d2aee';
+import { env } from './env.js?v=6b2d2aee';
+import { enemyCanStand, enemyCanStandAt, startLeap, updateLeap } from './motion.js?v=6b2d2aee';
+import { en } from './state.js?v=6b2d2aee';
 const jumps = new WeakMap();
 const SPEED = 7;
 const MARGIN = DUMMY_RADIUS + 0.4;

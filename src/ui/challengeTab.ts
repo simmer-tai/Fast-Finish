@@ -1,5 +1,5 @@
 import * as sfx from '../audio.js';
-import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, ruleTag, ruleText, type Mission } from '../challenges.js';
+import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleTag, ruleText, type Mission } from '../challenges.js';
 import { fmtTime } from '../result.js';
 import { LOCK } from './lvRoadmap.js';
 import { badgePlate } from './cardHonors.js';
@@ -57,7 +57,7 @@ function renderList() {
     if (!isOpen) return;
     for (const { m, i } of ms) {
       rows.push({ mission: i });
-      const w = weaponLabel(m.weapon);
+      const w = m.rule.kind === 'parkour' ? { name: m.name, ja: parkourTargets(m) } : weaponLabel(m.weapon);
       const mark = loadMission(m.id) ? `<em class="st done">${CHECK}</em>` : '<em class="st"></em>';
       html += `<button type="button" class="ch-sub" data-mission="${i}" data-w="${m.weapon}"><span class="sw-plate"><span class="ic"></span></span><span>${w.name}<small>${w.ja}</small></span>${mark}<i class="tl"></i><i class="tr"></i><i class="br"></i><i class="bl"></i></button>`;
     }
@@ -97,22 +97,25 @@ function renderDetail() {
   state.classList.toggle('done', !!best);
   detail.querySelector('.ch-tag')!.textContent = ruleTag(m);
   detail.querySelector('[data-ch="stage"]')!.textContent = m.stage.toUpperCase();
-  detail.querySelector('[data-ch="difficulty"]')!.textContent = m.difficulty.toUpperCase();
+  detail.querySelector('[data-ch="difficulty"]')!.textContent = m.rule.kind === 'parkour' ? '—' : m.difficulty.toUpperCase();
   const bd = detail.querySelector<HTMLElement>('[data-ch="best"]')!;
   bd.textContent = best ? fmtTime(best.time) : '--:--.--';
   bd.classList.toggle('set', !!best);
-  const weapon = weaponLabel(m.weapon);
+  // パルクールは素手で走る（武器の欄は素手と出し、絵は出さない）
+  const parkour = m.rule.kind === 'parkour';
+  const weapon = parkour ? { name: 'UNARMED', ja: '素手' } : weaponLabel(m.weapon);
   const wd = detail.querySelector<HTMLElement>('[data-ch="weapon"]')!;
-  const icon = weaponIcon(m.weapon);
+  const icon = parkour ? null : weaponIcon(m.weapon);
   wd.querySelector('.ic')!.replaceChildren(...(icon ? [icon] : []));
   wd.querySelector('.nm')!.textContent = weapon.name;
   wd.querySelector('.ja')!.textContent = weapon.ja;
   // ご褒美のスキン。達成していれば塗りつぶして解放済みと出す
   const rd = detail.querySelector<HTMLElement>('[data-ch="reward"]')!;
-  rd.querySelector('.nm')!.textContent = m.reward.name;
-  rd.querySelector('.ja')!.textContent = `${weapon.ja}のスキン「${m.reward.ja}」`;
+  rd.querySelector('.nm')!.textContent = m.reward?.name ?? 'NONE';
+  rd.querySelector('.ja')!.textContent = m.reward ? `${weapon.ja}のスキン「${m.reward.ja}」` : '報酬なし';
   const skin = rewardSkin(m);
   rd.querySelectorAll<HTMLElement>('.sk-swatch i').forEach((el, j) => (el.style.background = skin?.swatch[j] ?? ''));
+  rd.querySelector<HTMLElement>('.go')!.hidden = !m.reward;
   rd.querySelector('.go .ic')!.innerHTML = best ? CHECK : LOCK;
   rd.querySelector('.go em')!.textContent = best ? 'UNLOCKED' : 'LOCKED';
   rd.classList.toggle('got', !!best);
@@ -133,10 +136,11 @@ function renderOverview(id: string) {
   const first = ms[0].m;
   overview.querySelector('.ch-tag')!.textContent = ruleTag(first);
   overview.querySelector('[data-ch="stage"]')!.textContent = first.stage.toUpperCase();
-  overview.querySelector('[data-ch="difficulty"]')!.textContent = first.difficulty.toUpperCase();
+  overview.querySelector('[data-ch="difficulty"]')!.textContent = first.rule.kind === 'parkour' ? '—' : first.difficulty.toUpperCase();
   overview.querySelector('[data-ch="progress"]')!.textContent = `${done} / ${ms.length}`;
   const skins = overview.querySelector<HTMLElement>('.ch-skins')!;
-  skins.innerHTML = ms
+  skins.parentElement!.hidden = !ms.some(({ m }) => m.reward);
+  skins.innerHTML = ms.filter(({ m }) => m.reward)
     .map(({ m, i }, k) => {
       const got = !!loadMission(m.id);
       const w = weaponLabel(m.weapon);
@@ -159,12 +163,12 @@ function renderOverview(id: string) {
     slot.classList.toggle('got', got);
     slot.querySelector('.ch-frame')!.innerHTML = partSwatch('plain', b.frame);
     slot.querySelector('.nm')!.textContent = b.name;
-    slot.querySelector('.ja')!.textContent = `${first.reward.name} スキンをどれか ${b.need} つで、カードの${b.ja}`;
+    slot.querySelector('.ja')!.textContent = `${first.reward?.name ?? ""} スキンをどれか ${b.need} つで、カードの${b.ja}`;
     slot.querySelector('.ch-bonus-n')!.textContent = `${Math.min(done, b.need)} / ${b.need}`;
     slot.querySelector('.go .ic')!.innerHTML = got ? CHECK : LOCK;
     slot.querySelector('.go em')!.textContent = got ? 'UNLOCKED' : 'LOCKED';
   }
-  overview.querySelector('.ch-note')!.textContent = `${g.desc} 一覧から武器を選んで START。`;
+  overview.querySelector('.ch-note')!.textContent = `${g.desc} ${parkourTargets(first)} 一覧から選んで START。`;
 }
 function renderFeats() {
   featsPane.innerHTML = FEATS.map((f, i) => {
@@ -268,7 +272,7 @@ export function onChallengeKey(e: KeyboardEvent) {
 
 // ---- ご褒美の見本 ----
 // ご褒美の枠にカーソルを合わせると、その上にロードマップのご褒美と同じ札（.lv-tip）を出し、スキンを着せた武器を明るい台で回して見せる
-const rewardSkin = (m: Mission) => SKINS.find((s) => s.id === m.reward.skin && (!s.weapons || s.weapons.includes(m.weapon as WeaponId)));
+const rewardSkin = (m: Mission) => SKINS.find((s) => s.id === m.reward?.skin && (!s.weapons || s.weapons.includes(m.weapon as WeaponId)));
 const tip = overlay.appendChild(Object.assign(document.createElement('div'), { className: 'lv-tip ch-tip' }));
 const rewardSlot = detail.querySelector<HTMLElement>('[data-ch="reward"]')!;
 function showRewardTip(m: Mission, anchor: HTMLElement) {

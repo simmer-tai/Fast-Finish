@@ -1,13 +1,13 @@
-import { shipState } from './shipState.js?v=2fb05089';
+import { shipState } from './shipState.js?v=6b2d2aee';
 import * as THREE from 'three';
-import { blocks } from './blocks.js?v=2fb05089';
-import { EYE_HEIGHT, PLAYER_RADIUS } from '../player/config.js?v=2fb05089';
-import { lookEuler, mantleFrom, mantleTo, player, position, velocity } from '../player/state.js?v=2fb05089';
-import { sickleState } from '../weapons/sickleCombat.js?v=2fb05089';
-import { hooks } from '../game/hooks.js?v=2fb05089';
-import { game } from '../game/state.js?v=2fb05089';
-import * as sfx from '../audio.js?v=2fb05089';
-import { enemies } from '../enemy/state.js?v=2fb05089';
+import { blocks } from './blocks.js?v=6b2d2aee';
+import { EYE_HEIGHT, PLAYER_RADIUS } from '../player/config.js?v=6b2d2aee';
+import { lookEuler, mantleFrom, mantleTo, player, position, velocity } from '../player/state.js?v=6b2d2aee';
+import { sickleState } from '../weapons/sickleCombat.js?v=6b2d2aee';
+import { hooks } from '../game/hooks.js?v=6b2d2aee';
+import { game } from '../game/state.js?v=6b2d2aee';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { enemies } from '../enemy/state.js?v=6b2d2aee';
 const movers = [];
 let hurry = false;
 // 駅の電車は平行移動だけ。静止電車には mover がない。

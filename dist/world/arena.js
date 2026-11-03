@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { mulberry32 } from '../random.js?v=2fb05089';
-import { PLAYER_RADIUS } from '../player/config.js?v=2fb05089';
-import { STRUCT_GRID, TERRAIN_GRID, addBoxes, blocks, gridMaterial } from './blocks.js?v=2fb05089';
-import { addRiser, riseLines, withRiseBuild } from './rise.js?v=2fb05089';
+import { mulberry32 } from '../random.js?v=6b2d2aee';
+import { PLAYER_RADIUS } from '../player/config.js?v=6b2d2aee';
+import { STRUCT_GRID, TERRAIN_GRID, addBoxes, blocks, gridMaterial } from './blocks.js?v=6b2d2aee';
+import { addRiser, riseLines, withRiseBuild } from './rise.js?v=6b2d2aee';
 // ---- アリーナ（訓練場） ----
 // 88m 四方の闘技場。壁では囲わず、境界線だけで範囲を示す（線の外へは出られない）。
 // 地形（明るい灰色・細線と太線のグリッド）は box(...)、人工物（地面と同じ白と同じグリッド）は struct(...) で置く。

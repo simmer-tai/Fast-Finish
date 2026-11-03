@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { addGlow, removeGlow } from '../fx/glow.js?v=6b2d2aee';
+import { skinFx } from './skins.js?v=6b2d2aee';
 // ---- スナイパーライフルのスキン: 隼 ----
 // 元の形を丸ごと隠し、細身の未来的な狙撃銃に作り直す。輪郭はモチーフのモデル（VASSORA）を横から測って写し、
 // 後ろの翼から銃口へ一方向に流れる稜線でまとめる。主役は翼、次に装填口の核、銃身の順に目が流れるよう、飾りの強さを揃える。
@@ -6,9 +8,11 @@ import * as THREE from 'three';
 //   機関部: 銃身の付け根から上へ膨らんで後ろ下へ尖る、明るい灰色の細い楔。側面に丸い端の溝（ボルト）と、小さな丸い装填口（核）
 //   背骨: 機関部の上から翼の上の縁まで走る細い稜線（一人称で見える上面に流れを付ける）
 //   翼: 核の後ろから後ろ上へ跳ね上がる暗い灰色の翼。先は細く絞り、下は床尾として後ろを縦に切る
-//   羽根: 翼の両面に浮かせた 2 枚の暗い板。先をずらし、短い方は翼の上へ突き出す
+//   羽根: 翼の両面に浮かせた板。長い 1 枚と、付け根から扇に開く金の 3 枚（風切り羽のように、上ほど長く翼の上へ突き出す）
 //   握り: 後ろへ寝かせた板に、前の黒い差し色と付け根の銀の三角。胴の下から握りの前へ黒い細枠を渡す
-//   スコープ: 元のライフルのものをそのまま使う（隠さずに残す）
+//   スコープ: 元のライフルのものをそのまま使う（隠さずに残す。色は skins.ts の looks で翼と金に合わせる）
+// 配色: 白・黒・金。機関部と握りと長い羽根は白い陶器、翼は上塗りした黒い鋼、短い羽根・背骨・帯・ボルト・装填口の輪は金、
+//   銃身は艶消しの黒。装填口の核と照星だけが金色に光る（当てた瞬間に強まる）
 // 寸法は rifle.ts と同じ（m。銃口が -Z、上が +Y、原点は握る位置）。銃口の位置とスコープは元のまま
 const BORE_Y = 0.016;
 const MUZZLE_Z = -0.8;
@@ -25,6 +29,24 @@ const WING = [
 // 羽根: 長い方は翼の面を先端の手前まで、短い方は前から立ち上がって翼の上へ突き出す
 const BLADE_LONG = [[-0.151, -0.008], [-0.01, 0.033], [0.137, 0.063], [0.086, 0.031], [0.015, 0.016]];
 const BLADE_SHORT = [[-0.161, -0.006], [-0.069, 0.022], [0.05, 0.058], [0.012, 0.033], [-0.09, 0.003]];
+// 金の羽根は 3 枚を付け根から扇に開き、翼の風切り羽のように並べる。[開く角度 (度), 長さの倍率, 面から浮かせる量]
+// 上の羽根ほど長く、外側（面から遠く）に重ねる。付け根の側は 3 枚が重なるよう、開きは控えめにする
+const FEATHER_ROOT = [-0.161, -0.006];
+const FEATHER_TIP = [0.05, 0.058]; // 羽根の軸の向き（付け根からこの先端へ）
+const FEATHER_WIDTH = 1.35; // 軸に直交する幅の倍率
+const FEATHERS = [[-7, 0.88, 0.0025], [0, 1, 0.0045], [8, 1.12, 0.0065]];
+// 輪郭を軸に直交する向きへ FEATHER_WIDTH 倍に広げ、root を中心に deg 度回し（+ で上へ開く）、scale 倍に伸ばす
+const fanOutline = (outline, root, deg, scale) => {
+    const c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180);
+    const len = Math.hypot(FEATHER_TIP[0] - root[0], FEATHER_TIP[1] - root[1]);
+    const az = (FEATHER_TIP[0] - root[0]) / len, ay = (FEATHER_TIP[1] - root[1]) / len;
+    return outline.map(([z, y]) => {
+        const along = (z - root[0]) * az + (y - root[1]) * ay;
+        const side = ((z - root[0]) * -ay + (y - root[1]) * az) * FEATHER_WIDTH;
+        const dz = (along * az - side * ay) * scale, dy = (along * ay + side * az) * scale;
+        return [root[0] + dz * c - dy * s, root[1] + dz * s + dy * c];
+    });
+};
 // 背骨: 機関部の先から翼の上の縁へ（中央に細く立てる）
 const SPINE = [
     [-0.305, 0.032], [-0.245, 0.04], [-0.09, 0.035], [0.02, 0.049], [0.104, 0.059], [0.03, 0.04], [-0.095, 0.026], [-0.245, 0.031],
@@ -91,33 +113,33 @@ export const falconRifle = {
         const lever = model.userData.lever;
         model.userData.roundGate = new THREE.Vector3(0.03, PORT_Y, PORT_Z + 0.04);
         model.userData.roundIn = new THREE.Vector3(0.004, PORT_Y, PORT_Z);
-        // 部位のマテリアルから色と質感だけを変えて作る（映り込みは部位のものを使う）
-        const tint = (base, color, metalness = base.metalness, roughness = base.roughness) => {
-            const m = base.clone();
-            m.color.setHex(color);
-            m.metalness = metalness;
-            m.roughness = roughness;
-            return m;
-        };
-        const dark = mats.metal.clone(); // 銃身・照星・握りの差し色
-        const shell = mats.trim.clone(); // 機関部と握り
-        const deep = mats.wrap.clone(); // 装填口の芯
-        const wing = tint(mats.trim, 0x68717a, 0.55, 0.4);
-        const bladeLong = tint(mats.metal, 0x20252a, 0.75, 0.3);
-        const bladeShort = tint(mats.metal, 0x333b42, 0.75, 0.3);
-        const spine = tint(mats.metal, 0x303940, 0.7, 0.34);
-        const barrelFin = tint(mats.metal, 0x343b42, 0.75, 0.32);
-        const frame = tint(mats.metal, 0x252b30);
-        const black = tint(mats.metal, 0x171b1e, mats.metal.metalness, 0.35);
-        const rim = tint(mats.metal, 0x191d21);
-        const band = tint(mats.metal, 0x9ba5ad, 0.8, 0.35);
-        const silver = tint(mats.metal, 0xaeb8c1, 0.9, 0.28);
+        // 隼の配色: 白い陶器の外殻に、黒い鋼の翼。背骨と帯は金、銃身は艶を消した黒、装填口の核と照星は金色に光る
+        // （映り込みは部位のものを使う。面ごとの陰影も部位に合わせる）
+        const env = mats.metal.envMap;
+        const flat = mats.metal.flatShading;
+        const std = (o) => new THREE.MeshStandardMaterial({ envMap: env, flatShading: flat, ...o });
+        const coat = (o) => new THREE.MeshPhysicalMaterial({ envMap: env, flatShading: flat, ...o });
+        // 外殻: 艶のある白い陶器。上塗りで映り込みを薄く乗せる
+        const shell = coat({ color: 0xe6e8ea, metalness: 0, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.8 });
+        // 翼と小翼: 黒い鋼に厚い上塗り（ピアノの塗装のように、黒の上に鋭い映り込み）
+        const wing = coat({ color: 0x111214, metalness: 0.8, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.5 });
+        const barrelFin = wing;
+        // 羽根: 長い方は白い陶器、短い方は金にして、黒い翼の上で重なりを読ませる
+        const bladeLong = coat({ color: 0xe6e8ea, metalness: 0, roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 0.8 });
+        const bladeShort = std({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMapIntensity: 1.4 });
+        // 金: 背骨・銃口の帯・ボルト・装填口の輪・握りの三角。鏡にせず、少し艶を落としたシャンパンゴールド
+        const gold = std({ color: 0xc9a25a, metalness: 1, roughness: 0.3, envMapIntensity: 1.4 });
+        const spine = gold;
+        const band = gold;
+        const silver = gold;
+        // 銃身・溝・握りの差し色: 艶を消した黒（光る外殻との対比）
+        const dark = std({ color: 0x15171a, metalness: 0.55, roughness: 0.55, envMapIntensity: 0.8 });
+        const frame = std({ color: 0x18191b, metalness: 0.85, roughness: 0.3, envMapIntensity: 1.2 });
+        const black = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        const rim = std({ color: 0x0c0d0e, metalness: 0.8, roughness: 0.3, envMapIntensity: 1.2 });
+        // 金の光: 装填口の芯と照星。ゆっくり脈打ち、当てた瞬間に強く光る
+        const deep = std({ color: 0xffe2a0, emissive: 0xe0a640, emissiveIntensity: 1.6, metalness: 0, roughness: 0.3 });
         const g = new THREE.Group();
-        g.userData.undo = () => {
-            body.forEach((o, i) => (o.visible = shown[i]));
-            delete model.userData.roundGate;
-            delete model.userData.roundIn;
-        };
         const put = (o, x, y, z) => {
             o.position.set(x, y, z);
             g.add(o);
@@ -143,13 +165,14 @@ export const falconRifle = {
             prism(0.01, 0.01, 0.0035, 12, BORE_Y, z, band);
         const bore = put(new THREE.Mesh(new THREE.CircleGeometry(0.0045, 12), black), 0, BORE_Y, MUZZLE_Z - 0.0002);
         bore.rotation.y = Math.PI;
-        plate(FRONT_SIGHT, 0.004, dark, undefined, 0.0008);
+        plate(FRONT_SIGHT, 0.004, deep, undefined, 0.0008);
         // 機関部、背骨、翼と床尾、翼の両面の羽根
         plate(RECEIVER, RECEIVER_DEPTH, shell, receiverTaper, 0.003);
         plate(SPINE, 0.006, spine, undefined, 0.001);
         plate(WING, WING_DEPTH, wing, wingTaper, 0.0015);
         g.add(...sidePlates(BLADE_LONG, 0.003, bladeLong, wingHalf, 0.001));
-        g.add(...sidePlates(BLADE_SHORT, 0.003, bladeShort, wingHalf, 0.0025));
+        for (const [deg, scale, gap] of FEATHERS)
+            g.add(...sidePlates(fanOutline(BLADE_SHORT, FEATHER_ROOT, deg, scale), 0.003, bladeShort, wingHalf, gap));
         // ボルトの溝: 丸い端の黒い溝（左右を貫く）
         const slotLen = SLOT_BACK - SLOT_FRONT - SLOT_H;
         const slotSpan = receiverHalf(SLOT_BACK) * 2 + 0.002;
@@ -173,13 +196,26 @@ export const falconRifle = {
             this.position.z = BOLT_FRONT + open * BOLT_PULL;
             THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
         };
-        // 装填口（核）: 暗い丸枠に銀の輪、芯は暗い灰色。左右に小さな銀の鋲
+        // 装填口（核）: 暗い丸枠に金の輪、芯は金色に光る。左右に小さな金の鋲
         const portSpan = receiverHalf(PORT_Z) * 2;
         across(0.0135, portSpan + 0.004, 16, PORT_Y, PORT_Z, rim);
         across(0.0085, portSpan + 0.006, 16, PORT_Y, PORT_Z, silver);
-        across(0.0045, portSpan + 0.007, 12, PORT_Y, PORT_Z, deep);
+        const core = across(0.0045, portSpan + 0.007, 12, PORT_Y, PORT_Z, deep);
         for (const dz of [-0.0105, 0.0105])
             across(0.0018, portSpan + 0.006, 8, PORT_Y, PORT_Z + dz, silver);
+        const glow = addGlow(core, 0xe8b450);
+        glow.strength = 0.45;
+        core.onBeforeRender = () => {
+            const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.0025);
+            deep.emissiveIntensity = 1.4 + pulse * 0.4 + skinFx.flare * 2;
+            glow.strength = 0.4 + pulse * 0.1 + skinFx.flare * 0.5;
+        };
+        g.userData.undo = () => {
+            body.forEach((o, i) => (o.visible = shown[i]));
+            delete model.userData.roundGate;
+            delete model.userData.roundIn;
+            removeGlow(glow);
+        };
         // 握りと差し色、引き金、細枠
         plate(GRIP, 0.026, shell, undefined, 0.003);
         plate(GRIP_INSET, 0.028, dark, undefined, 0.001);

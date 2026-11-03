@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { addGlow } from '../fx/glow.js?v=2fb05089';
-import { MM, TALON_GLOW, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=2fb05089';
-import { ROUND_LEN } from './revolver.js?v=2fb05089';
-import { skinFx } from './skins.js?v=2fb05089';
+import { addGlow } from '../fx/glow.js?v=6b2d2aee';
+import { MM, TALON_GLOW, createTalonMats, plate, tickTalonGlow } from './skinTalon.js?v=6b2d2aee';
+import { ROUND_LEN } from './revolver.js?v=6b2d2aee';
+import { skinFx } from './skins.js?v=6b2d2aee';
 // ---- リボルバーのスキン: 爪 ----
 // 剣の「爪」と同じ黒い機械の銃。形は元のリボルバーのまま、色は skins.ts の looks で黒くし（シリンダーの溝は暗い赤）、飾りを足す。
 //   爪: フレームの前から、厚い爪が銃身の板を左右から挟む。上下二本の指で板をつかむ形（横から見て前が開いた C）で、

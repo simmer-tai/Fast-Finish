@@ -12,7 +12,7 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - `player/`: 動きの設定・状態・移動・視点・パッドの割り当て・エイムアシスト・倒れたとき。
 - `fx/`: カメラ演出・当たりの光・切り跡・斬撃の帯・ポストエフェクト・結果で流すハイライト（`replayClip.ts`。点数がいちばん高いキルの前後を GPU に貯めておく）。
 - `ui/`: HUD・オプション・武器選択・操作一覧・タイトルと一時停止の画面・ロッカー（`playerCard.ts`。プレイヤーカードを作り、タイトルの右に出す）・チャレンジのタブ（`challengeTab.ts`）。
-- `world/`: アリーナ・箱と坂・せり上がり・床のグリッドの広がり・レイの当たり判定・動く物・リフトのシャフト（`shaft.ts`。シャフトを下へ流し、足場の敵を飛び乗らせる）とその罠（`liftTraps.ts`。難易度で種類と間隔が変わる）・SHIP の海面（`sea.ts`。波打って船尾へ流れ、船のまわりに泡を立てる）。
+- `world/`: アリーナ・箱と坂・せり上がり・床のグリッドの広がり・レイの当たり判定・動く物・リフトのシャフト（`shaft.ts`。シャフトを下へ流し、足場の敵を飛び乗らせる）とその罠（`liftTraps.ts`。難易度で種類と間隔が変わる）・SHIP の海面（`sea.ts`。波打って船尾へ流れ、船のまわりに泡を立てる）・パルクールのコース（`parkour.ts`。一直線に -Z へ進む）とその仕掛け（`parkourTraps.ts`。ジャンプ台・加速床・崩れる足場・点滅する足場・光線）。
 - `combat/`: パリィ。
 - `game/`: 武器や演出をまたいで共有する値（`state.ts`）と、本体へのフック（`hooks.ts`）。
 - 直下: 描画の土台（`core.ts`）、入力、音（`audio.ts`）、ステージの組み立て（`station.ts` など）、記録とスコア。
@@ -21,7 +21,7 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 
 - ロードマップ（`mastery.ts`・`ui/lvRoadmap.ts`）は遊んだ量。XP を貯めれば必ず進み、レベルごとにご褒美をもらう。
 - チャレンジ（`challenges.ts`・`ui/challengeTab.ts`）は腕前。ミッション（決まったステージ・難易度・武器に特別なルールを 1 つ足す）と実績（1 回のプレイの中での離れ業）。
-- ミッションでは XP を入れず、ステージの自己ベストも書き換えない。達成のご褒美はスキン（`Mission.reward`。`weapons/skins.ts` の `skinUnlocked` がミッションの記録を見て解放する）。一覧ではミッションを見出し（`MISSION_GROUPS`）でまとめ、押すと開く。見出しを選んでいる間は、詳細の代わりに概要（`MissionGroup.desc`）ともらえるスキンの一覧を出す。見出しには追加のご褒美（`MissionGroup.bonus`）も付けられ、中のミッションをどれか決まった数達成すると、プレイヤーカードのフレームが開く（TALON TRIAL は 3 つで TALON のフレーム。`ui/playerCard.ts` の `partOpen`）。今は TALON TRIAL だけ: LIFT・HARD を、爪のスキンがある武器でノーダメージで倒しきると、その武器の TALON がもらえる。実績には数を貯めるもの（〇〇を 100 体など）を入れない（XP の役目と重なる）。
+- ミッションでは XP を入れず、ステージの自己ベストも書き換えない。達成のご褒美はスキン（`Mission.reward`。`weapons/skins.ts` の `skinUnlocked` がミッションの記録を見て解放する）。一覧ではミッションを見出し（`MISSION_GROUPS`）でまとめ、押すと開く。見出しを選んでいる間は、詳細の代わりに概要（`MissionGroup.desc`）ともらえるスキンの一覧を出す。見出しには追加のご褒美（`MissionGroup.bonus`）も付けられ、中のミッションをどれか決まった数達成すると、プレイヤーカードのフレームが開く（TALON TRIAL は 3 つで TALON のフレーム。`ui/playerCard.ts` の `partOpen`）。今は TALON TRIAL だけ: LIFT・HARD を、爪のスキンがある武器で回復なしで倒しきると、その武器の TALON がもらえる。実績には数を貯めるもの（〇〇を 100 体など）を入れない（XP の役目と重なる）。
 - プレイヤーカードのバッジは実績でだけもらえる（実績 1 つにバッジ 1 つ。`ui/cardHonors.ts` の `BADGES` は `FEATS` から作る）。ロードマップのご褒美にはしない。
 
 ### 決まり
@@ -29,6 +29,8 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - ほかのファイルから書き換える値は、`let` で export しない（import した側からは代入できない）。オブジェクトにまとめてそのプロパティを書き換える: 共有の値は `game`、プレイヤーは `player`、武器ごとは `swordState` などの `*State`。
 - 分けたファイルから `main.ts` は import しない（循環する）。当たりの処理など本体にある処理は、`game/hooks.ts` の `hooks` を通して呼ぶ。本体が起動時に `initGameHooks` で中身を入れる。敵は `enemy/env.ts`（`initEnemyEnv`）、移動は `initMovement`、当たりの光は `initHitFx` が同じ役目。
 - 互いに import し合うファイルでは、読み込みの最初（関数の外）で相手の値を使わない。
+- プレイ中の HUD で CSS のアニメーションを頭からやり直すときは、`void el.offsetWidth` を挟まずに `ui/restartAnim.ts` の `restartAnim` を使う（読むたびにページ全体の配置を計算させるので、弱い PC ではキルの瞬間に大きく引っかかる）。
+- マルチプレイとパルクールのミッションはまだ公開しない。ユーザーから公開の指示があるまで、`localDev.ts` の `localDev`（file: か localhost で開いたとき）が true のときだけ出す。プッシュする前に、この 2 つが公開版（GitHub Pages）で見えないままか確かめる。まだ公開しないものを足すときも同じく `localDev` で隠す。
 
 ### 動きを確かめる URL
 
@@ -45,8 +47,10 @@ three.js の一人称アクション。`src/` の TypeScript を `npm run build`
 - `?dual&yaw=40`（二丁拳銃の構え。`&t=0.3` で連射を始めてからその時間で止める）
 - `?stage=ship&rage=0.8`（SHIP の荒れ具合を 0〜1 に固定）
 - `?new`（セーブデータを初期状態にして遊ぶ。進行はメモリだけに置き、元の記録は読まず消さない）
+- `?perf`（左上にフレームの時間・描画の解像度・描画の数を出す）、`?fixedres`（重いときに解像度を自動で下げる処理を止める）
 - `?devmode`（スキンを全部解放した状態で遊ぶ。公開版でも効く。0 キーで無敵のオン・オフ）
-- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?bow`（弓の構え。`&t=0.3` で引いて止め、`&fly=0.1` で射ってから止める。`&volley` でホイールの 3 本射ち、`&ricochet` で右クリックの跳弾矢にする）、`?bowEquip&t=0.2`（弓の取り出し）、`?batEquip&t=0.2`（バットの取り出し）、`?spearEquip&t=0.2`（槍の取り出し）、`?stage=station`（station / warehouse / lift / ship / ruins。選択画面から外した mall と parking もこれで見られる）
+- `?HGMR`（ライフルの隼（FALCON）のスキンだけ使えるようにする。公開版でも効く）
+- `?grapple`（鎖鎌の引き寄せ）、`?sickleDraw&t=0.2`（鎖鎌の取り出し）、`?focus`（剣の構え）、`?bow`（弓の構え。`&t=0.3` で引いて止め、`&fly=0.1` で射ってから止める。`&volley` でホイールの 3 本射ち、`&ricochet` で右クリックの跳弾矢にする）、`?bowEquip&t=0.2`（弓の取り出し）、`?batEquip&t=0.2`（バットの取り出し）、`?spearEquip&t=0.2`（槍の取り出し）、`?rifleEquip&t=0.2`（ライフルの取り出し）、`?stage=station`（station / warehouse / lift / ship / ruins。選択画面から外した mall と parking もこれで見られる）
 
 ## 武器のプレビュー動画
 

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
-import { rand } from '../random.js?v=2fb05089';
-import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js?v=2fb05089';
+import { trackAnisotropy } from './anisotropy.js?v=6b2d2aee';
+import { rand } from '../random.js?v=6b2d2aee';
+import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js?v=6b2d2aee';
 const DEG = Math.PI / 180;
 const SCAR_MAX = 24; // これより多くなったら古いものから消す
 const SCAR_COOL = 0.35; // 白から黒へ冷めきるまで
@@ -28,7 +29,7 @@ const scarTexture = (() => {
         }
     }
     g.putImageData(img, 0, 0);
-    const t = new THREE.CanvasTexture(c);
+    const t = trackAnisotropy(new THREE.CanvasTexture(c));
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
 })();

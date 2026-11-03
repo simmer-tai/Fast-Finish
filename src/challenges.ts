@@ -7,9 +7,10 @@
 //   数を貯めるもの（〇〇を 100 体など）は XP の役目なので入れない
 import type { WeaponId } from './weapons/ids.js';
 import type { Difficulty } from './game/state.js';
+import { localDev } from './localDev.js';
 
 // ミッションのルール
-export type MissionRule = { kind: 'noDamage' }; // 1 度でもダメージを受けたら失敗
+export type MissionRule = { kind: 'noHeal' } | { kind: 'parkour'; gold: number; silver: number; bronze: number };
 
 // 結果のランク（result.ts の RANKS と同じ文字）。付けたミッションは、倒しきったときにこれ以上でないと達成にしない
 export type MissionRank = 'S' | 'SS' | 'SSS';
@@ -24,7 +25,7 @@ export interface Mission {
   weapon: WeaponId;
   rule: MissionRule;
   rank?: MissionRank; // 無ければランクは問わない
-  reward: { skin: string; name: string; ja: string }; // 達成すると、weapon のこのスキン（weapons/skins.ts の id）を解放する
+  reward?: { skin: string; name: string; ja: string }; // 達成すると、weapon のこのスキン（weapons/skins.ts の id）を解放する
 }
 
 // ミッションの見出し。一覧に 1 行で出し、押すと中のミッション（武器ごと）を開く
@@ -35,12 +36,14 @@ export interface MissionGroup {
   desc: string; // 見出しを選んだときの詳細に出す概要
   bonus?: { need: number; frame: string; name: string; ja: string }; // 中のミッションをどれか need 個達成すると、プレイヤーカードのこのフレーム（ui/cardParts.ts の id）を解放する
 }
+// パルクールはまだ公開しない。見出しとミッションを出すのはローカル開発時だけ（localDev.ts）
 export const MISSION_GROUPS: MissionGroup[] = [
+  ...(localDev ? [{ id: 'parkour', name: 'PARKOUR', ja: 'パルクール', desc: '敵のいないコースを走り、ゴールまでのタイムに挑戦する。' }] : []),
   {
     id: 'talon',
     name: 'TALON TRIAL',
     ja: '爪の試練',
-    desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。一度も攻撃を受けずに倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
+    desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
     bonus: { need: 3, frame: 'talon', name: 'TALON FRAME', ja: '爪のフレーム' },
   },
 ];
@@ -49,7 +52,7 @@ export const groupDone = (id: string) => MISSIONS.filter((m) => m.group === id &
 // そのフレームを追加のご褒美にしている見出し（無ければ、フレームはプレイヤーのレベルで解放する）
 export const bonusGroupOf = (frame: string) => MISSION_GROUPS.find((g) => g.bonus?.frame === frame);
 
-// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、ダメージを受けずに倒しきると、その武器の爪がもらえる
+// 爪（TALON）の試練: LIFT（HARD）を、爪のスキンがある武器で、回復なしで倒しきると、その武器の爪がもらえる
 const TALON_WEAPONS: [WeaponId, string][] = [
   ['kunai', 'クナイ'],
   ['handgun', 'リボルバー'],
@@ -60,7 +63,9 @@ const TALON_WEAPONS: [WeaponId, string][] = [
   ['spear', '槍'],
   ['rifle', 'スナイパーライフル'],
 ];
-export const MISSIONS: Mission[] = TALON_WEAPONS.map(([weapon, ja]) => ({
+// ?parkour（動きを確かめる URL）は公開版でもこれを使う
+export const PARKOUR_MISSION: Mission = { id: 'parkour-01', group: 'parkour', name: 'PARKOUR 01', ja: 'パルクール 01', stage: 'parkour', difficulty: 'normal', weapon: 'kunai', rule: { kind: 'parkour', gold: 75, silver: 100, bronze: 150 } };
+export const MISSIONS: Mission[] = [...TALON_WEAPONS.map(([weapon, ja]): Mission => ({
   id: `talon-${weapon}`,
   group: 'talon',
   name: 'TALON TRIAL',
@@ -68,14 +73,15 @@ export const MISSIONS: Mission[] = TALON_WEAPONS.map(([weapon, ja]) => ({
   stage: 'lift',
   difficulty: 'hard',
   weapon,
-  rule: { kind: 'noDamage' },
+  rule: { kind: 'noHeal' },
   reward: { skin: 'talon', name: 'TALON', ja: '爪' },
-}));
+})), ...(localDev ? [PARKOUR_MISSION] : [])];
 
 // ルールの説明（チャレンジの画面と、ミッションの始まり・失敗の画面に出す）
-export const ruleText = (m: Mission) => (m.rank ? `ダメージを受けずに、ランク ${m.rank} 以上で倒しきる` : 'ダメージを受けずに倒しきる');
+export const parkourTargets = (m: Mission) => m.rule.kind === 'parkour' ? `GOLD ${m.rule.gold}s / SILVER ${m.rule.silver}s / BRONZE ${m.rule.bronze}s` : '';
+export const ruleText = (m: Mission) => m.rule.kind === 'parkour' ? `ゴールを目指す。${parkourTargets(m)}` : (m.rank ? `回復なしで、ランク ${m.rank} 以上で倒しきる` : '回復なしで倒しきる');
 // 短い札（HUD とリストに出す）
-export const ruleTag = (m: Mission) => (m.rank ? `NO DAMAGE / RANK ${m.rank}` : 'NO DAMAGE');
+export const ruleTag = (m: Mission) => m.rule.kind === 'parkour' ? 'TIME TRIAL' : (m.rank ? `NO HEAL / RANK ${m.rank}` : 'NO HEAL');
 // ランクの文字が、ミッションの求める段に届いているか
 const RANK_ORDER = ['C', 'B', 'A', 'S', 'SS', 'SSS'];
 export const rankReached = (m: Mission, rank: string) => !m.rank || RANK_ORDER.indexOf(rank) >= RANK_ORDER.indexOf(m.rank);
@@ -148,7 +154,7 @@ export const FEATS: Feat[] = [
   // SPEED KILL の速いほう（加点が 1 のもの）
   { id: 'speedster', name: 'SPEEDSTER', ja: '疾風', desc: '全速力で駆け抜けながら倒す（SPEED KILL の最高段）', icon: '<path d="M13 2 5 13h6l-1 9 8-11h-6z"/>', tier: 3 },
   // 1 回のとどめで加点を 5 つ以上重ねる（STALE と RANK は数えない）
-  { id: 'stacked', name: 'STACKED', ja: '盛り合わせ', desc: '1 回のとどめで加点を 5 つ重ねる', icon: '<path d="M4 20h16M6 16h12M8 12h8M10 8h4"/><path d="M12 2.5v3"/>', tier: 3 },
+  { id: 'stacked', name: 'STACKED', ja: '盛り合わせ', desc: '1 回のとどめで加点を 5 つ重ねる', icon: '<path d="M4 20h16M6 16h12M8 12h8M10 8h4"/><path d="M12 2.5v3"/>', tier: 2 },
   // ハンドガンか弓で、狙って当てた弾と矢がすべて頭に当たったままクリア（結果のヘッドショット率 100%）
   { id: 'headhunter', name: 'HEADHUNTER', ja: '百発百中', desc: 'ヘッドショット率 100% でステージをクリアする', icon: '<circle cx="12" cy="9" r="5"/><path d="M5 21c1-4 3.8-6 7-6s6 2 7 6"/><path d="M12 1.5v3M12 13.5v-1M7.5 9h-3M19.5 9h-3"/>', tier: 3 },
   // ---- IV ----
@@ -163,7 +169,7 @@ export const FEATS: Feat[] = [
   // HARD のステージをダメージを受けずにクリア
   { id: 'flawless', name: 'FLAWLESS', ja: '完封', desc: 'HARD をノーダメージでクリア', icon: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8 7.5 9.5 4.3-1.5 7.5-4.9 7.5-9.5V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>', tier: 4 },
   // 1 回のとどめで加点を 7 つ以上重ねる（STALE と RANK は数えない）
-  { id: 'grandslam', name: 'GRAND SLAM', ja: '満漢全席', desc: '1 回のとどめで加点を 7 つ重ねる', icon: '<path d="M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19"/><circle cx="12" cy="12" r="2.5" class="fill"/>', tier: 4 },
+  { id: 'grandslam', name: 'GRAND SLAM', ja: '満漢全席', desc: '1 回のとどめで加点を 7 つ重ねる', icon: '<path d="M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19"/><circle cx="12" cy="12" r="2.5" class="fill"/>', tier: 3 },
   // ---- V ----
   // 1 回のデッドアイで 6 体以上を倒す
   { id: 'highnoon', name: 'HIGH NOON', ja: '六連', desc: '1 回のデッドアイで 6 体以上を倒す', icon: '<circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="16.8" cy="9.25" r="1.8"/><circle cx="16.8" cy="14.75" r="1.8"/><circle cx="12" cy="17.5" r="1.8"/><circle cx="7.2" cy="14.75" r="1.8"/><circle cx="7.2" cy="9.25" r="1.8"/><circle cx="12" cy="12" r="1.2" class="fill"/>', tier: 5 },

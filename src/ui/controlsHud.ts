@@ -1,4 +1,5 @@
 import type { WeaponId } from '../weapons/ids.js';
+import { restartAnim } from './restartAnim.js';
 
 // ---- 右の操作一覧 ----
 // 構えている武器の操作を並べる。最後に触ったのがパッドならパッドのボタンで出す
@@ -101,7 +102,5 @@ export function updateControlsHud(shownWeapon: WeaponId, usingPad: boolean) {
     })
     .join('');
   if (!weaponChanged) return;
-  controlsHud.classList.remove('in');
-  void controlsHud.getBoundingClientRect(); // 続けて持ち替えても頭から流し直す
-  controlsHud.classList.add('in');
+  restartAnim(controlsHud, 'in'); // 続けて持ち替えても頭から流し直す
 }

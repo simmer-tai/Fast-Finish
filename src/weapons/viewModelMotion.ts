@@ -3,14 +3,16 @@ import * as THREE from 'three';
 import * as sfx from '../audio.js';
 import type { SwishKind } from '../audio.js';
 import { DEG } from '../math.js';
-import { easeOutBack } from '../ease.js';
+import { easeOutBack, easeOutCubic } from '../ease.js';
 import { SICKLE_VIEW_MODEL_POS } from './chainSickle.js';
 import { AXE_VIEW_MODEL_POS } from './battleAxe.js';
 import { BOW_AIM_POS, BOW_AIM_UNCANT, BOW_SLIDE_TURN, BOW_VIEW_MODEL_POS } from './bow.js';
 import { BAT_VIEW_MODEL_POS } from './bat.js';
 import { SPEAR_VIEW_MODEL_POS } from './spear.js';
 import { RIFLE_REST_ROT, RIFLE_SCOPE_EYE, RIFLE_VIEW_MODEL_POS } from './rifle.js';
-import { LEVER_CLOSE_END, LEVER_OPEN_AT, LEVER_OPEN_END, SCOPE_VIEW_ON, SPIN_TIME, rifleState } from './rifleCombat.js';
+import {
+  LEVER_CLOSE_END, LEVER_OPEN_AT, LEVER_OPEN_END, RIFLE_EQUIP_SPIN_FROM, RIFLE_EQUIP_SPIN_TO, RIFLE_EQUIP_TIME, SCOPE_VIEW_ON, SPIN_TIME, rifleState, startRifleEquip,
+} from './rifleCombat.js';
 import { batEquipOff, batState, startBatEquip } from './batCombat.js';
 import { spearInHand, spearState, spearThrow, startSpearEquip } from './spearCombat.js';
 import { BOW_EQUIP_SNAP, BOW_EQUIP_SPIN, BOW_EQUIP_TURN, bowState, startBowEquip } from './bowCombat.js';
@@ -105,6 +107,11 @@ export function drawWeapon() {
   if (game.shownWeapon === 'spear') {
     game.holster = 0;
     startSpearEquip();
+  }
+  // ライフルは右下から持ち上げながらスピンコックで 1 回転させ、レバーを送ってから肩へ引き付ける
+  if (game.shownWeapon === 'rifle') {
+    game.holster = 0;
+    startRifleEquip();
   }
 }
 
@@ -372,7 +379,24 @@ export function updateViewModel(dt: number) {
   rifleViewModel.position.y -= spinPose * 0.07;
   rifleViewModel.position.z -= spinPose * 0.12;
   rifleViewModel.rotation.y += spinPose * 0.12;
-  (rifleModel.userData.lever as THREE.Group).rotation.x = Math.max(open, spinOpen) * LEVER_SWING;
+  // 取り出し: 右下から持ち上げながら、右下の前へ離した持ち方でスピンコックを 1 回見せ、前を向いた所から肩へ引き付けて構えに収まる
+  let equipOpen = 0;
+  const ret = rifleState.equipT;
+  if (ret !== Infinity) {
+    const rise = 1 - easeOutCubic(Math.min(1, ret / 0.16));
+    const s = THREE.MathUtils.clamp((ret - RIFLE_EQUIP_SPIN_FROM) / (RIFLE_EQUIP_SPIN_TO - RIFLE_EQUIP_SPIN_FROM), 0, 1);
+    if (s < 1) rifleSpin.rotation.x = -(1 - (1 - s) ** 2.2) * Math.PI * 2;
+    equipOpen = s > 0 ? Math.sin(Math.min(1, s / 0.85) * Math.PI) : 0;
+    // 回し終えたら、少し行き過ぎてから構えに収まる（行き過ぎた分は肩へ押し付けた形）
+    const away = ret < RIFLE_EQUIP_SPIN_TO ? 1 : 1 - easeOutBack((ret - RIFLE_EQUIP_SPIN_TO) / (RIFLE_EQUIP_TIME - RIFLE_EQUIP_SPIN_TO));
+    rifleViewModel.position.x += away * 0.07 + rise * 0.05;
+    rifleViewModel.position.y -= away * 0.07 + rise * 0.25;
+    rifleViewModel.position.z -= away * 0.12;
+    rifleViewModel.rotation.x -= rise * 0.5;
+    rifleViewModel.rotation.y += away * 0.12;
+    rifleViewModel.rotation.z -= rise * 0.3;
+  }
+  (rifleModel.userData.lever as THREE.Group).rotation.x = Math.max(open, spinOpen, equipOpen) * LEVER_SWING;
   rifleViewModel.rotation.z -= tilt * 0.22 * rCalm;
   rifleViewModel.rotation.x += tilt * 0.06 * rCalm;
   rifleViewModel.position.y += tilt * 0.02 * rCalm;
@@ -590,7 +614,7 @@ function weaponBusy() {
     case 'bow': return bowState.aimPose > 0.02 || bowState.equipT !== Infinity;
     case 'bat': return batState.attack !== null || batState.hold >= 0 || batState.equipT !== Infinity;
     case 'spear': return spearState.attack !== null || spearState.hold >= 0 || spearState.guard > 0 || spearThrow.phase !== 'none' || spearState.equipT !== Infinity;
-    case 'rifle': return rifleState.scope > 0.01 || rifleState.cycleT < LEVER_CLOSE_END || rifleState.reload !== 'none' || rifleState.spin;
+    case 'rifle': return rifleState.scope > 0.01 || rifleState.cycleT < LEVER_CLOSE_END || rifleState.reload !== 'none' || rifleState.spin || rifleState.equipT !== Infinity;
   }
   return false;
 }

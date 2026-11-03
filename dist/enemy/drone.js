@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { DUMMY_COLOR, buildEnemyRig } from './body.js?v=2fb05089';
-import { en } from './state.js?v=2fb05089';
+import { DUMMY_COLOR, buildEnemyRig } from './body.js?v=6b2d2aee';
+import { en } from './state.js?v=6b2d2aee';
 // ---- ドローン ----
 // 宙に浮いて撃ってくる小型の機体。人型と同じ骨を使い回し、よろめき・砕け方・同期の決まりをそのまま効かせる:
 // 腰と背骨 = 胴、首 = 正面のセンサー、銃の骨 = あごの下の 2 連の砲塔、腕 = 左右のダクトファン（[0] が右 = -X 側）、

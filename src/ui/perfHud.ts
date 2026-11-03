@@ -13,6 +13,11 @@ let acc = 0;
 let frames = 0;
 let worst = 0;
 let calls = 0;
+// 処理ごとの時間 (ms)。このフレームの分と、区間でいちばん重かったフレームの分
+const spans = new Map<string, number>();
+let worstSpans = '';
+let frameStart = 0; // このフレームの処理を始めた時刻
+let lastSpanEnd = 0; // 最後に数え終えた時刻（描画がいちばん最後なので、ゲームの処理の終わりの目安）
 let tris = 0;
 const started = performance.now();
 
@@ -26,7 +31,22 @@ if (PERF_HUD) {
 
 // フレームの頭で呼ぶ
 export function beginPerfFrame() {
-  if (PERF_HUD) renderer.info.reset();
+  if (!PERF_HUD) return;
+  renderer.info.reset();
+  spans.clear();
+  frameStart = lastSpanEnd = performance.now();
+}
+
+// fn にかかった時間を name で数える（?perf のときだけ）。いちばん重かったフレームの内訳として出す
+export function perfSpan<T>(name: string, fn: () => T): T {
+  if (!el) return fn();
+  const t = performance.now();
+  try {
+    return fn();
+  } finally {
+    lastSpanEnd = performance.now();
+    spans.set(name, (spans.get(name) ?? 0) + lastSpanEnd - t);
+  }
 }
 
 // 描き終えたあとで呼ぶ。frame はそのフレームにかかった実時間 (s)
@@ -34,7 +54,14 @@ export function endPerfFrame(frame: number) {
   if (!el) return;
   acc += frame;
   frames++;
-  worst = Math.max(worst, frame);
+  if (frame > worst) {
+    worst = frame;
+    // js: ゲームの処理全体、other: それ以外（ブラウザーのスタイル・配置・描き込み、GPU 待ち）
+    const js = lastSpanEnd - frameStart;
+    spans.set('js', js);
+    spans.set('other', Math.max(0, frame * 1000 - js));
+    worstSpans = [...spans].filter(([, ms]) => ms >= 0.5).map(([k, ms]) => `${k} ${ms.toFixed(0)}`).join('  ');
+  }
   calls = Math.max(calls, renderer.info.render.calls);
   tris = Math.max(tris, renderer.info.render.triangles);
   if (acc < INTERVAL) return;
@@ -49,6 +76,8 @@ export function endPerfFrame(frame: number) {
   el.textContent = [
     `time     ${((performance.now() - started) / 1000).toFixed(0)}s`,
     `fps      ${(frames / acc).toFixed(0)}  worst ${(worst * 1000).toFixed(1)}ms`,
+    `worst内訳 ${worstSpans || '-'}`,
+    `res      x${renderer.getPixelRatio().toFixed(2)}`,
     `calls    ${calls}  tris ${(tris / 1000).toFixed(0)}k`,
     `geo      ${geometries}  tex ${textures}  prog ${renderer.info.programs?.length ?? 0}`,
     `objects  ${objects}  meshes ${visible}`,
@@ -56,4 +85,5 @@ export function endPerfFrame(frame: number) {
     mem ? `heap     ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
   ].join('\n');
   acc = frames = worst = calls = tris = 0;
+  worstSpans = '';
 }

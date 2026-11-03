@@ -95,8 +95,8 @@ export class GlowPass extends Pass {
   // 上に重ねると、光る刃先のまわりの黒い面にも色が乗り、刃先から離れるほど暗くなる濃淡で、平らな刃が丸く見える
   behind = false;
 
-  // scale: にじみを描く画面の縮小率。にじみを狭くする画面では、粗い画素の段差が光の縁に輪郭として出るので小さくする
-  constructor(private scene: THREE.Scene, private camera: THREE.Camera, private scale = SCALE) {
+  // scale: にじみを描く画面の縮小率（変えたら setSize を呼び直す）。にじみを狭くする画面では、粗い画素の段差が光の縁に輪郭として出るので小さくする
+  constructor(private scene: THREE.Scene, private camera: THREE.Camera, public scale = SCALE) {
     super();
     this.needsSwap = false; // 今の画面の上に直接重ねる
   }

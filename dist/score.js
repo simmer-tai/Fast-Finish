@@ -2,7 +2,8 @@
 // 照準の右に、とどめの一撃の点数を出す。基本点に、倒し方（スライディング・パリィ・遠距離など）ごとの倍率を
 // 小さいものから 1 つずつ足していき、最後に掛け合わせた点数を叩きつけるように確定させる。
 // とどめのヒットストップやスローに関係なく、実時間で進める
-import * as sfx from './audio.js?v=2fb05089';
+import * as sfx from './audio.js?v=6b2d2aee';
+import { restartAnim } from './ui/restartAnim.js?v=6b2d2aee';
 const KILL_BASE = 100;
 const FIRST_STEP = 0.26; // 出てから最初の倍率を足すまで
 const STEP_GAP = 0.2; // 倍率を 1 つずつ足していく間隔
@@ -28,11 +29,7 @@ let totalShown = 0;
 let pending = 0; // まだ確定させていない点数（確定前に次を倒したら、合計へ入れてから出し直す）
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 // クラスを外して付け直し、CSS のアニメーションを最初からやり直す
-function restart(node, cls) {
-    node.classList.remove(cls);
-    void node.offsetWidth;
-    node.classList.add(cls);
-}
+const restart = (node, cls) => restartAnim(node, cls);
 function addRow(b) {
     const row = document.createElement('div');
     row.className = 'row';

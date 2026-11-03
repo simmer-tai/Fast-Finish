@@ -80,7 +80,8 @@ export function ensureAudio() {
     startLoops(ctx);
     loadBank(ctx);
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  wantPaused = false;
+  applyAudioPaused();
 }
 
 // 部屋の残響: 最初の数本の反射のあと、高い音から先に消えていくノイズの尾を作る
@@ -321,11 +322,24 @@ function startLoops(c: AudioContext) {
   droneGain.connect(bus);
 }
 
-// 一時停止 / タイトルの間は、鳴っている音も残響も含めて時間ごと止める
+// 一時停止 / タイトルの間は、鳴っている音も残響も含めて時間ごと止める。
+// suspend / resume は終わるまで state が変わらないので、止めてすぐ再開すると resume が飛ばされて音が消えたままになる。
+// 望む状態を覚えておき、切り替えが終わるたびに合わせ直す
+let wantPaused = false;
+let switching = false;
+function applyAudioPaused() {
+  if (!ctx || switching) return;
+  const c = ctx;
+  let p: Promise<void> | null = null;
+  if (wantPaused && c.state === 'running') p = c.suspend();
+  else if (!wantPaused && c.state === 'suspended') p = c.resume();
+  if (!p) return;
+  switching = true;
+  p.catch(() => {}).finally(() => { switching = false; applyAudioPaused(); });
+}
 export function setAudioPaused(paused: boolean) {
-  if (!ctx) return;
-  if (paused && ctx.state === 'running') ctx.suspend();
-  else if (!paused && ctx.state === 'suspended') ctx.resume();
+  wantPaused = paused;
+  applyAudioPaused();
 }
 
 // 同じ音声ノードを次の試合でも使う場合、死亡やスローの状態を持ち越さない。

@@ -23,7 +23,7 @@ import * as sfx from './audio.js';
 import { ensureAudio, playHit, type HitKind } from './audio.js';
 import { resetScore, showKillScore, totalScore, updateScoreHud, type KillBonus } from './score.js';
 import { CLIP_ASPECT, noteReplayKill, playReplay, prepareReplayFrame, resetReplay, startReplay } from './fx/replayClip.js';
-import { finalScore, fmtTime, killPar, scoreRank, showResult, skipResult } from './result.js';
+import { finalScore, fmtTime, killPar, scoreRank, showParkourResult, showResult, skipResult } from './result.js';
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
@@ -75,7 +75,9 @@ import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type
 import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js';
 import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js';
 import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js';
-import { FEATS, MISSION_GROUPS, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat, type Mission } from './challenges.js';
+import { buildParkour, parkourCourse, type ParkourZone } from './world/parkour.js';
+import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js';
+import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat, type Mission } from './challenges.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
 import { addXp, loadXp } from './mastery.js';
@@ -122,7 +124,7 @@ import {
   SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, type SwordAttackDef,
 } from './weapons/swordAttacks.js';
 import { AXE_ATTACKS, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_KESA, AXE_LAUNCH, AXE_WHEEL_HIT, AXE_WHEEL_LIFT, type AxeAttackDef } from './weapons/axeAttacks.js';
-import { HEMI_GROUND, HEMI_INTENSITY, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY, camera, controls, renderer, scene } from './core.js';
+import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY, camera, controls, renderer, scene } from './core.js';
 import { DEFAULT_HIT_STOP, game, kickVel, STYLE_MULT, STYLE_NAMES } from './game/state.js';
 import {
   axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, spearViewModel, sword, swordViewModel, rifleViewModel, viewModel,
@@ -168,16 +170,22 @@ import {
   onWallRunStart, restoreCameraOffset, savedQuat, updateCamera, updateKick,
 } from './fx/camera.js';
 import { GAMEOVER_DELAY, downFall, downSlowFactor, isDown } from './player/down.js';
-import { dashGauges, healPlayer, showPlayerDamage, updateBowHud, updateHookHud, updateHpHud } from './ui/hud.js';
+import { dashGauges, healPlayer as applyPlayerHeal, showPlayerDamage, updateBowHud, updateHookHud, updateHpHud } from './ui/hud.js';
 import { drawWeapon, updateViewModel, updateWeaponSwitch, viewState } from './weapons/viewModelMotion.js';
-import { composer, hitFxRenderPass, impactFxPass, speedFxPass, updateSpeedFx } from './fx/post.js';
+import { aoPass, composer, fxaaPass, glowPass, postQuality, sharpenPass, hitFxRenderPass, impactFxPass, motionBlurPass, speedFxPass, updateSpeedFx } from './fx/post.js';
+import { setAnisotropy } from './fx/anisotropy.js';
+import { dynResScale, updateDynRes } from './fx/dynamicRes.js';
+import { updateBlobShadows } from './fx/blobShadows.js';
 import { overlay } from './ui/overlay.js';
 import { turnView, zoomLookScale } from './player/look.js';
-import { RIFLE_HIT, RIFLE_MAG, RIFLE_RANGE, addRifleRounds, rifleState, updateRifle } from './weapons/rifleCombat.js';
+import { RIFLE_HIT, RIFLE_MAG, RIFLE_RANGE, RIFLE_SCOPED_BODY_BONUS, addRifleRounds, rifleState, updateRifle } from './weapons/rifleCombat.js';
 const RIFLE_GAIN_FLASH = 0.45; // 倒して増えた弾を光らせる時間
 import { updateScopeOverlay } from './ui/scopeOverlay.js';
 import { padState, updatePad } from './player/padControls.js';
-import { beginPerfFrame, endPerfFrame } from './ui/perfHud.js';
+import { beginPerfFrame, endPerfFrame, perfSpan } from './ui/perfHud.js';
+import { restartAnim } from './ui/restartAnim.js';
+import { hudUnit } from './ui/hudUnit.js';
+import { localDev } from './localDev.js';
 
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
@@ -189,7 +197,7 @@ import { beginPerfFrame, endPerfFrame } from './ui/perfHud.js';
 const SHADOW_HALF = 50; // 影を落とす範囲の半幅 (m)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-const hemiLight = new THREE.HemisphereLight(0xffffff, HEMI_GROUND, HEMI_WITH_SUN);
+const hemiLight = new THREE.HemisphereLight(0xffffff, HEMI_GROUND, HEMI_WITH_SUN); // 太陽はいつも点いているので、強さはずっとこのまま
 scene.add(hemiLight);
 const sun = new THREE.DirectionalLight(0xffffff, SUN_INTENSITY);
 sun.castShadow = true;
@@ -200,12 +208,17 @@ sun.shadow.normalBias = 0.04;
 scene.add(sun, sun.target);
 const shadowParamOff = new URLSearchParams(location.search).get('shadow') === '0';
 let shadowsOn = !shadowParamOff;
+// 影を切っても太陽の光は残す（面ごとの明暗が消えると、箱も敵ものっぺりする）。影を落とす処理だけを止め、
+// 代わりに敵の足元へ丸い影を置く（fx/blobShadows.ts）
 function setShadows(on: boolean) {
   shadowsOn = on;
-  sun.visible = on;
-  hemiLight.intensity = on ? HEMI_WITH_SUN : HEMI_INTENSITY;
+  sun.castShadow = on;
 }
 setShadows(shadowsOn);
+// 足元に丸い影を置く物: 見えている敵（倒した敵と、まだ起き上がっていない敵は除く）
+function* enemyFeet() {
+  for (const e of enemies) if (e.alive && e.root.visible) yield e.root;
+}
 // 描くたびに、太陽を視点の真上の方へ置き直す。影がちらつかないよう、1m 刻みでしか動かさない
 scene.onBeforeRender = (_r, _s, cam) => {
   // 床のグリッドも視点についていかせる。線は 1m 間隔なので、1m 刻みで動かせば線の位置は変わらない
@@ -306,8 +319,6 @@ function startFromOverlay() {
     padPlaying = true;
     setPlaying(true);
   } else {
-    // 全画面にして Keyboard Lock を効かせる（fullscreenchange で掛ける）
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
     lockPointer();
   }
 }
@@ -428,8 +439,7 @@ function setPlaySelect(on: boolean) {
 const multiplayerFlow = overlay.querySelector<HTMLElement>('.multiplayer [data-flow]')!;
 const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap'] as const;
 type PlayTab = (typeof ALL_PLAY_TABS)[number];
-// マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ
-const localDev = location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+// マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ（localDev.ts）
 const PLAY_TABS: readonly PlayTab[] = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi');
 if (!localDev) overlay.querySelector<HTMLElement>('.play-tabs [data-tab="multi"]')!.style.display = 'none';
 function currentPlayTab(): PlayTab | null {
@@ -507,8 +517,18 @@ function stepDifficulty(dir: number) {
 const transitionLabel = document.querySelector('#transition .label')!;
 let overlayKicker = 'FAST FINISH — TRAINING'; // 入った後の一時停止の画面に出す、今いる場所
 let mission: Mission | null = null;
+// 回復不可のミッション中は、撃破やデバッグ操作を含むすべての回復を止める。
+function healPlayer(amount: number) {
+  if (mission?.rule.kind === 'noHeal' && stageRun) return;
+  applyPlayerHeal(amount);
+}
 const CHALLENGE_RETURN = 'fast-finish.challenge-return';
 function configureMission(m: Mission) {
+  if (m.rule.kind === 'parkour') {
+    mission = m; pendingStage = 'parkour'; game.unarmed = true;
+    transitionLabel.textContent = 'PARKOUR'; overlayKicker = 'FAST FINISH — PARKOUR';
+    return true;
+  }
   const i = stageButtons.findIndex(b => b.dataset.stage === m.stage);
   const d = DIFFICULTIES.indexOf(m.difficulty);
   if (i < 0 || d < 0 || !stageSelectable(i)) return false;
@@ -682,7 +702,6 @@ function decideGameOver(choice: 'retry' | 'title') {
 }
 function returnToLobby() {
   if (!returnToMultiplayerLobby()) { showToast('部屋との接続が切れました'); return; }
-  sfx.resetMatchAudio();
   multiplayerRun = false; multiplayerSessionLost = false;
   resetRun();
   document.body.classList.add('on-title');
@@ -709,6 +728,7 @@ overlay.addEventListener('click', (e) => {
   // 結果の演出の途中なら、どこを押しても最後まで飛ばす
   if (overlay.classList.contains('result') && skipResult()) return;
   if (target.closest('[data-action="multiplayer-lobby"]') && multiplayerRun) { sfx.playUiSelect(); return returnToLobby(); }
+  if (target.closest('[data-action="parkour-retry"]')) { sfx.playUiSelect(); return retryStage(); }
   if (target.closest('[data-action="title"]')) {
     sfx.playUiSelect();
     return quitToTitle();
@@ -864,6 +884,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (skipResult()) return; // 演出の途中なら、まず最後まで飛ばす
     sfx.playUiSelect();
+    if (e.code === 'Enter' && overlay.classList.contains('parkour-result')) return retryStage(); // パルクールは A でもう一度走る
     return multiplayerRun ? returnToLobby() : quitToTitle();
   }
   // ゲームオーバー: 上下で選んで A で決める。Y はタイトルへすぐ
@@ -982,6 +1003,7 @@ window.addEventListener('keydown', (e) => {
     else if (game.shownWeapon === 'rifle') rifleState.reloadQueued = true;
     else gunState.reloadQueued = true;
   }
+  if (parkour.active && e.code === 'KeyR' && !e.repeat) restartParkour(); // パルクールではスタートからやり直す
   if (!game.unarmed && e.code === 'KeyT' && !e.repeat) viewState.inspectPressed = true; // 武器を眺める
   // 聴き比べ用: G で銃声の案を切り替え、その場で 1 発鳴らす
   // 影の見比べ: L で切り替える
@@ -1084,9 +1106,7 @@ function damagePlayer(amount: number) {
   if (stageRun?.running) stageRun.damage += amount;
   const before = game.playerHp;
   // ステージでは 0 で倒れる。訓練場（と倒しきった後）は死なず、1 で耐えて被弾の演出だけを出す。
-  // ノーダメージのミッションは一撃で倒れる（倒れきったらゲームオーバーの画面に、失敗したミッションを出す）
-  const lethal = mission?.rule.kind === 'noDamage' && stageRun?.running;
-  game.playerHp = lethal ? 0 : Math.max(stageRun?.running ? 0 : 1, game.playerHp - amount);
+  game.playerHp = Math.max(stageRun?.running ? 0 : 1, game.playerHp - amount);
   if (game.playerHp <= 0) downPlayer();
   showPlayerDamage(amount, before);
 }
@@ -1487,6 +1507,7 @@ const HEADSHOT_SLOW_HOLD = 0.75;
 const HEADSHOT_SLOW_RELEASE = 0.55;
 const HEADSHOT_PUNCH = 10; // 撃ち抜いた瞬間に視野を狭める量（度）
 let headSlow = false;
+let realShake = false; // スロー中も揺れを実時間で収める（ヘッドショットと、覗いたライフルの胴体キル）
 let finale = false; // 最後の 1 体を倒したあと
 let killSlowTime = Infinity; // 倒してからの実時間
 let sharedBossBreakTime = Infinity; // ホストの部位破壊を全員に知らせてからの実時間
@@ -1536,15 +1557,16 @@ function inReachOf(reach: number, angle: number): boolean {
 
 // swing は刃が動いていた向き（ワールド座標）。渡すと、光の線や飛び散るものを斬り抜けた向きへ流す
 const hitDamage = (def: HitDef, kind: HitKind) => HIT_DAMAGE[kind] * (def.dmg ?? def.fx ?? 1);
-const dummyHitDamage = (def: HitDef, kind: HitKind, headshot: boolean) =>
-  hitDamage(def, kind) * (headshot ? (def === RIFLE_HIT ? 3 : HEADSHOT_MULT) : 1) + (def === BULLET_HIT && !headshot ? 3 : 0);
+const dummyHitDamage = (def: HitDef, kind: HitKind, headshot: boolean, scoped = false) =>
+  hitDamage(def, kind) * (headshot ? (def === RIFLE_HIT ? 3 : HEADSHOT_MULT) : 1)
+  + (def === BULLET_HIT && !headshot ? 3 : 0) + (def === RIFLE_HIT && !headshot && scoped ? RIFLE_SCOPED_BODY_BONUS : 0);
 // 投げ物と弾が頭（首から上）に当たったら、ダメージを大きくする
 const HEADSHOT_HEIGHT = 1.55; // 敵の足元からの高さ
 const HEADSHOT_MULT = 2.5;
 
 // 当たりの反応と演出。hitDir（攻撃した側から敵の奥への水平の向き）は呼ぶ前に入れておく
 // scar = false なら切り跡を残さない（刃の当たらない衝撃波など）。dmgScale はダメージだけに掛ける倍率
-function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar = true, dmgScale = 1, remote = false) {
+function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar = true, dmgScale = 1, remote = false, scoped = false) {
   if (multiplayerRun && isMultiplayerGuest() && stageRun?.boss) {
     sendGuestHit(def, at, kind, 'core', kind === 'kunai' || kind === 'sword' || kind === 'axe' || (kind === 'bat' && def !== BAT_RETURN_HIT) ? dmgScale * BOSS_MELEE_MULT : dmgScale, enemies.indexOf(en), swing);
     return;
@@ -1574,7 +1596,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
     stageRun.aimedHits++;
     if (headshot) stageRun.headshots++;
   }
-  const damage = dummyHitDamage(def, kind, headshot) * dmgScale;
+  const damage = dummyHitDamage(def, kind, headshot, remote ? scoped : rifleState.scopedShot) * dmgScale;
   en.hp -= damage;
   if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT) chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
   if (!remote && pendingStage === 'tutorial' && game.shownWeapon === 'sword' && kind === 'sword') noteTutorialSwordHit(def);
@@ -1587,8 +1609,8 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
       if (def === ARROW_HIT && bowState.volleyKills) bowState.volleyKills.count++;
       const bonuses = killBonuses(def, headshot);
       noteKillFeats(bonuses, def);
-      if (!stageRun?.boss) scoreKill(showKillScore(styleKillBonuses(bonuses)), highlightWeight(def, kind));
-      killDummy(kind, swing, remote, true, rifleHead ? at : undefined);
+      if (!stageRun?.boss) perfSpan('score', () => scoreKill(showKillScore(styleKillBonuses(bonuses)), highlightWeight(def, kind)));
+      killDummy(kind, swing, remote, true, rifleHead ? at : undefined, def === RIFLE_HIT && rifleState.scopedShot);
     } else {
       killDummy(kind, swing, remote);
     }
@@ -1775,8 +1797,8 @@ function onRemoteKunaiBossHit(hit: KunaiBossHit, attacker: RemoteAttacker, enemy
     const adjusted = !rangedHit || hit.attack === 'spear:skewer' || hit.attack === 'spear:pin' ? (thrown ? amount : amount / BOSS_MELEE_MULT) : amount;
     const hpBefore = enemy.hp;
     const headshot = (kind === 'throw' || kind === 'bullet') && at.y - enemy.root.position.y >= HEADSHOT_HEIGHT;
-    const damage = dummyHitDamage(resolved, kind, headshot) * adjusted;
-    applyDummyHit(resolved, at, kind, undefined, false, adjusted, true);
+    const damage = dummyHitDamage(resolved, kind, headshot, hit.scoped === true) * adjusted;
+    applyDummyHit(resolved, at, kind, undefined, false, adjusted, true, hit.scoped === true);
     if (enemy.alive) applyRemoteAddReaction(weapon, name, scale, resolved, attacker);
     if (enemy.alive && hit.attack === 'spear:skewer') registerRemoteHold(enemy, attacker.id, 'spear');
     if (enemy.alive && hit.attack === 'hook') registerRemoteHold(enemy, attacker.id, 'grapple');
@@ -1948,7 +1970,7 @@ function applyBossHit(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossP
     finale = last && !!stageRun?.running;
     game.hitStop = Math.max(game.hitStop, last ? FINALE_HIT_STOP : KILL_HIT_STOP);
     game.hitStopTotal = game.hitStop;
-    killSlowTime = 0; headSlow = false;
+    killSlowTime = 0; headSlow = false; realShake = false;
     if (!remote) {
       addTrauma(last ? 1 : result === 'down' ? 0.7 : 0.45);
       game.fovKick += last ? 18 : 9;
@@ -1970,23 +1992,25 @@ function applyBossHit(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossP
 }
 
 // headAt: ライフルで頭を撃ち抜いて倒したときの当たった所。頭を撃ち飛ばし、ほかのとどめより長いスローと寄りで見せる
-function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts = true, headAt?: THREE.Vector3) {
+// scoped: スコープを覗いたライフルで倒した。倍率で揺れが大きく見えるので、胴体でもヘッドショットと同じくらいに抑える
+function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts = true, headAt?: THREE.Vector3, scoped = false) {
   en.alive = false;
   en.deadTime = 0;
   const killSoundChain = remote ? 1 : showKillChain();
   sinceKill = 0;
   finale = counts && !!stageRun?.running && !stageRun.boss && stageRun.kills + 1 >= stageRun.quota;
   headSlow = !!headAt;
+  realShake = !!headAt || scoped;
   game.hitStop = Math.max(game.hitStop, finale ? FINALE_HIT_STOP : headAt ? HEADSHOT_HIT_STOP : KILL_HIT_STOP);
   game.hitStopTotal = game.hitStop;
   killSlowTime = 0;
-  if (!remote) { addTrauma(finale ? 1 : 0.45); game.fovKick += finale ? 18 : 9; }
+  if (!remote) { addTrauma(finale ? 1 : 0.45); if (finale || !scoped) game.fovKick += finale ? 18 : 9; }
   if (headAt && !finale) game.fovKick = -HEADSHOT_PUNCH; // 撃ち抜いた瞬間に一瞬だけ寄せ、戻しながら頭が飛ぶのを見せる
   // 刺さったクナイは砕ける前にその場へ残す
   detachEnemyKunai(en);
-  breakDummy(hitDir, headAt ? 'headshot' : kind === 'bat' ? 'launch' : kind === 'axe' ? 'heavy' : 'normal', swing);
+  perfSpan('debris', () => breakDummy(hitDir, headAt ? 'headshot' : kind === 'bat' ? 'launch' : kind === 'axe' ? 'heavy' : 'normal', swing));
   en.root.visible = false;
-  spawnKillFx(en.root.position, hitDir);
+  perfSpan('killFx', () => spawnKillFx(en.root.position, hitDir));
   if (headAt) { spawnHeadshotFx(headAt, hitDir, true); sfx.playHeadshot(true); }
   if (finale) {
     spawnFinaleFx(en.root.position, hitDir);
@@ -1994,10 +2018,10 @@ function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts
     finaleHud.classList.add('on');
     document.body.classList.add('finale'); // キルスコアを FINISH の帯の上へ逃がす
   } else {
-    sfx.playKill(killSoundChain);
+    perfSpan('sound', () => sfx.playKill(killSoundChain));
   }
   if (!remote) rewardKill();
-  if (counts) countStageKill();
+  if (counts) perfSpan('stage', countStageKill);
   startleAllies();
 }
 
@@ -2491,7 +2515,7 @@ function onMultiplayerBossVictory(score: number, time: number) {
   if (!stageRun?.running || !stageRun.boss) return;
   multiplayerResult = { score, time }; stageRun.time = time;
   stageRun.kills++;
-  finale = true; killSlowTime = 0; headSlow = false;
+  finale = true; killSlowTime = 0; headSlow = false; realShake = false;
   finaleHud.classList.add('on'); document.body.classList.add('finale');
   sfx.playFinale(FINALE_HIT_STOP, 1);
   breakAdds();
@@ -2518,6 +2542,96 @@ function onMultiplayerDisconnect(hostLost: boolean) {
   box.append(title, note, back); dialog.appendChild(box); document.body.appendChild(dialog);
   back.focus();
 }
+// ---- パルクール ----
+// スタート台を出た瞬間から、ゴールに入るまでを実時間で計る。落ちたら最後に通ったチェックポイントから続ける（時間は止めない）。
+// R でスタートからやり直す。ゴールしたら少し走らせてから結果の画面に出す
+const PARKOUR_RESULT_DELAY = 0.9;
+const parkour = { active: false, running: false, time: 0, falls: 0, checkpoint: -1, finishT: -1 };
+const inZone = (z: ParkourZone, p: THREE.Vector3) => p.x >= z.minX && p.x <= z.maxX && p.y >= z.minY && p.y <= z.maxY && p.z >= z.minZ && p.z <= z.maxZ;
+function parkourTag() {
+  const n = parkourCourse().checkpoints.length;
+  missionHud.querySelector('.tag')!.textContent = n ? `TIME TRIAL — CP ${parkour.checkpoint + 1} / ${n}` : 'TIME TRIAL';
+}
+function beginParkour() {
+  Object.assign(parkour, { active: true, running: false, time: 0, falls: 0, checkpoint: -1, finishT: -1 });
+  runHud.hidden = false; remainHud.hidden = true; missionHud.hidden = false;
+  runTime.textContent = fmtTime(0);
+  parkourTag();
+}
+// 足もとを p へ移し、yaw の向きで水平に見る。動きの状態は捨てる
+function placeParkour(p: { x: number; y: number; z: number }, yaw = 0) {
+  endWallRun(); restorePlayerState();
+  position.set(p.x, p.y, p.z); velocity.set(0, 0, 0);
+  lookEuler.set(0, yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(lookEuler);
+  camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
+}
+function restartParkour() {
+  if (!parkour.active || parkour.finishT >= 0) return;
+  placeParkour(parkourCourse().layout.start); resetParkourTraps();
+  Object.assign(parkour, { running: false, time: 0, falls: 0, checkpoint: -1 });
+  runTime.textContent = fmtTime(0); runHud.classList.remove('clear');
+  parkourTag();
+  sfx.playUiBack();
+}
+function updateParkour(realDt: number) {
+  if (!parkour.active || introT >= 0 || !mission || mission.rule.kind !== 'parkour') return;
+  const course = parkourCourse();
+  if (parkour.finishT >= 0) {
+    parkour.finishT += realDt;
+    if (parkour.finishT >= PARKOUR_RESULT_DELAY) showParkourResultView(mission);
+    return;
+  }
+  // 光線に触れても、落ちたのと同じに戻す
+  if (updateParkourTraps(realDt) || position.y < course.fallY) {
+    resetParkourTraps();
+    const cp = course.checkpoints[parkour.checkpoint];
+    placeParkour(cp ? cp.spawn : course.layout.start, cp?.yaw);
+    if (parkour.running) parkour.falls++;
+    if (!cp) { parkour.running = false; parkour.time = 0; runTime.textContent = fmtTime(0); }
+    sfx.playUiDenied();
+    return;
+  }
+  if (!parkour.running) {
+    if (inZone(course.startZone, position)) return;
+    parkour.running = true;
+  }
+  parkour.time += realDt;
+  runTime.textContent = fmtTime(parkour.time);
+  // チェックポイントは先へ進む向きにだけ更新する（飛ばして先のを踏んでもよい）
+  for (let i = course.checkpoints.length - 1; i > parkour.checkpoint; i--) {
+    if (!inZone(course.checkpoints[i].zone, position)) continue;
+    parkour.checkpoint = i; parkourTag(); sfx.playResultLock();
+    break;
+  }
+  if (inZone(course.goal, position)) {
+    parkour.finishT = 0;
+    runHud.classList.add('clear');
+    sfx.playResultStamp();
+  }
+}
+// 結果の画面の RETRY。パルクールの間だけ出して、決定の先にする
+function setParkourRetry(on: boolean) {
+  const retry = overlay.querySelector<HTMLButtonElement>('[data-action="parkour-retry"]')!;
+  retry.hidden = !on;
+  retry.classList.toggle('active', on);
+  overlay.querySelector('.rv-menu [data-action="title"]')!.classList.toggle('active', !on);
+}
+// 結果の画面。メダルはタイムで決める。記録はミッションの記録にだけ残す
+function showParkourResultView(m: Mission) {
+  if (m.rule.kind !== 'parkour' || parkour.finishT < 0) return;
+  parkour.active = false; parkour.finishT = -1;
+  const prev = loadMission(m.id)?.time ?? null;
+  const saved = saveMissionClear(m.id, parkour.time);
+  overlay.classList.add('result', 'parkour-result');
+  overlay.querySelector<HTMLButtonElement>('[data-action="multiplayer-lobby"]')!.hidden = true;
+  setParkourRetry(true);
+  overlayPrompt.textContent = 'クリックでスキップ';
+  showParkourResult(
+    { name: m.name, time: parkour.time, best: prev, falls: parkour.falls, newTime: saved.newTime, first: saved.first, gold: m.rule.gold, silver: m.rule.silver, bronze: m.rule.bronze },
+    () => (overlayPrompt.textContent = ''),
+  );
+  pauseGame();
+}
 function updateStageRun(realDt: number) {
   if (!stageRun) return;
   if (stageRun.running) {
@@ -2534,7 +2648,7 @@ function masteryResult(run: StageRun) {
   const row = document.querySelector<HTMLElement>(`#overlay .sw-rows [data-weapon="${id}"]`);
   return { name: row?.dataset.name ?? id.toUpperCase(), ja: row?.dataset.ja ?? '', before: Math.max(0, loadXp(id) - run.xp), gained: run.xp };
 }
-// ミッションの結果。ノーダメージで倒しきっても、ランクが届かなければ記録しない。初めての達成ならご褒美のスキンの名前を添える
+// ミッションの結果。倒しきっても、ランクが届かなければ記録しない。初めての達成ならご褒美のスキンの名前を添える
 function missionOutcome(m: Mission, rank: string, time: number) {
   const base = { name: m.name, ja: m.ja, rank, need: m.rank ?? '' };
   if (!rankReached(m, rank)) return { ...base, cleared: false, first: false, newTime: false };
@@ -2542,7 +2656,7 @@ function missionOutcome(m: Mission, rank: string, time: number) {
   // 追加のご褒美: この達成で見出しの達成数がちょうど届いたら、フレームの解放も出す
   const bonus = MISSION_GROUPS.find((g) => g.id === m.group)?.bonus;
   const bonusNow = saved.first && bonus && groupDone(m.group) === bonus.need ? bonus.name : undefined;
-  return { ...base, cleared: true, ...saved, reward: saved.first ? m.reward.name : undefined, bonus: bonusNow };
+  return { ...base, cleared: true, ...saved, reward: saved.first ? m.reward?.name : undefined, bonus: bonusNow };
 }
 // 一時停止の画面を結果の画面に作り替えて止める。ここからはタイトルへ戻ることしかできない。
 // 自己ベストと比べてから記録し直す
@@ -2767,7 +2881,7 @@ function updateFinishMark() {
 // ---- 画面外の敵の印 ----
 // 画面に映っていない敵の向きを、クロスヘアのまわりのくさびで示す。向きは、カメラから見た敵の胸の位置の上下左右から決める
 // （後ろにいる敵も、振り向く向きに出る）。近いほど濃く、撃つ直前の敵は大きくする
-const THREAT_RADIUS = 64; // クロスヘアの中心からの距離 (px)
+const THREAT_RADIUS = 64; // クロスヘアの中心からの距離 (1920×1080 での px。画面の大きさに合わせて伸び縮みする)
 const THREAT_NEAR = 10; // これより近ければいちばん濃い (m)
 const THREAT_FAR = 45; // これより遠ければいちばん薄い
 const THREAT_EDGE = 0.92; // 画面の端からこれだけ内側（-1..1 の座標）に映っていれば、見えているとみなす
@@ -2794,7 +2908,7 @@ function updateThreatMarks() {
     const aiming = e.kind === 'striker' ? e.strikePhase === 'windup' || e.strikePhase === 'slash'
       : e.kind === 'sniper' ? e.charge >= 0 : e.kind === 'dual' ? e.burst > 0 || e.cooldown < THREAT_AIMING : e.cooldown < THREAT_AIMING;
     el.style.opacity = String(aiming ? 1 : 0.3 + 0.55 * near);
-    el.style.transform = `rotate(${angle}rad) translateY(${-THREAT_RADIUS}px) scale(${aiming ? 1.4 : 1})`;
+    el.style.transform = `rotate(${angle}rad) translateY(${-THREAT_RADIUS * hudUnit()}px) scale(${aiming ? 1.4 : 1})`;
   }
 }
 // en のとどめの印を出す
@@ -2850,7 +2964,7 @@ function killSlowFactor(dt: number) {
     ? [HEADSHOT_SLOW_SCALE, HEADSHOT_SLOW_HOLD, HEADSHOT_SLOW_RELEASE]
     : [KILL_SLOW_SCALE, KILL_SLOW_HOLD, KILL_SLOW_RELEASE];
   const u = THREE.MathUtils.clamp((killSlowTime - hold) / release, 0, 1);
-  cameraFx.realDecay = headSlow && !finale && u < 1;
+  cameraFx.realDecay = realShake && !finale && u < 1;
   return THREE.MathUtils.lerp(scale, 1, u * u);
 }
 // 最後の 1 体を倒したときの白黒: 倒してから結果を出すまでずっと白黒のままにする（結果の画面もその画のまま）
@@ -2884,11 +2998,8 @@ const hitMarker = document.getElementById('hitmarker')!;
 // head: ライフルのヘッドショット。赤く太い線で、回しながら大きく広げる
 function showHitMarker(heavy: boolean, killed = false, head = false) {
   rumble(killed ? 'kill' : heavy ? 'heavy' : 'hit');
-  hitMarker.classList.remove('show', 'heavy', 'head');
-  void hitMarker.offsetWidth; // アニメーションを最初からやり直す
-  hitMarker.classList.add('show');
-  if (heavy) hitMarker.classList.add('heavy');
-  if (head) hitMarker.classList.add('head');
+  hitMarker.classList.remove('heavy', 'head');
+  restartAnim(hitMarker, 'show', ...(heavy ? ['heavy'] : []), ...(head ? ['head'] : [])); // アニメーションを最初からやり直す
 }
 
 // ヒット数: 前の当たりから HIT_COUNT_WINDOW 秒以内に当てると数を足し、2 から照準の左に出す。
@@ -2909,9 +3020,7 @@ function showKillChain() {
   lastDisplayedKill = now;
   if (displayedKills < 2) return displayedKills;
   killChainEl.textContent = `${displayedKills} KILLS`;
-  killChainEl.classList.remove('show');
-  void killChainEl.offsetWidth;
-  killChainEl.classList.add('show');
+  restartAnim(killChainEl, 'show');
   return displayedKills;
 }
 let hitCount = 0;
@@ -2922,9 +3031,7 @@ function countHit(killed: boolean) {
   lastHitAt = killed ? -Infinity : now; // 倒したら次の敵は 1 から数え直す
   if (hitCount < 2) return;
   hitsEl.textContent = String(hitCount);
-  hitsEl.classList.remove('show');
-  void hitsEl.offsetWidth; // アニメーションを最初からやり直す
-  hitsEl.classList.add('show');
+  restartAnim(hitsEl, 'show'); // アニメーションを最初からやり直す
 }
 
 // 刃先の位置から敵の表面の当たった所を求める（hitPointFromTip）ための作業用
@@ -3413,6 +3520,7 @@ function updateHitFx(dt: number) {
   // 一瞬で切り替えず、少しなめらかに寄せる
   const slowWant = (1 - kunaiState.worldSlow) / (1 - WORLD_SLOW_SCALE);
   u.uSlow.value += (slowWant - u.uSlow.value) * Math.min(1, dt * 18);
+  if (slowWant === 0 && u.uSlow.value < 0.001) u.uSlow.value = 0; // 0 に寄せきって、色のにじみの処理を止める
   const ring = kunaiState.worldSlowRingAge / WORLD_SLOW_RING_TIME;
   u.uRing.value = easeOutCubic(Math.min(ring, 1)) * 1.1;
   u.uRingAmt.value = ring < 1 ? (1 - ring) ** 2 : 0;
@@ -4000,6 +4108,25 @@ function runSpearEquipDebug(params: URLSearchParams) {
   });
 }
 
+// ライフルの取り出しを確かめる: ?rifleEquip&t=0.2（クナイから持ち替えて、取り出し始めてからその時間で止める）
+function runRifleEquipDebug(params: URLSearchParams) {
+  overlay.classList.add('hidden');
+  document.body.classList.remove('on-title');
+  game.wantWeapon = game.shownWeapon = 'kunai';
+  const step = 1 / 120;
+  for (let i = 0; i < 30; i++) update(step);
+  game.wantWeapon = 'rifle';
+  while (rifleState.equipT === Infinity) update(step);
+  const tEnd = Number(params.get('t') ?? 0.2);
+  while (rifleState.equipT + step <= tEnd) update(step);
+  updateSpeedFx(0);
+  renderer.setAnimationLoop(() => {
+    applyCameraOffset();
+    composer.render(0);
+    camera.quaternion.copy(savedQuat);
+  });
+}
+
 // 鎖鎌の引き寄せを確かめる: ?grapple（高さ 2m の台の正面へまっすぐ投げ、W を押したまま引き寄せる）。
 // 毎フレームの位置と速さを console に出す。&dist=8（台からの距離）&pitch=0（見下ろす角度、度）&now（W を押さない）
 function runGrappleDebug(params: URLSearchParams) {
@@ -4179,8 +4306,8 @@ function updateStageRise(dt: number) {
 // ---- ステージへ入る ----
 // 訓練場（アリーナ）を丸ごと外し、選んだステージの箱を置き直す。タイトルへ戻ると読み込み直すので、
 // 1 度入ったら訓練場へ戻す処理は持たない。敵は操作を返してから出す
-type StageId = 'tutorial' | 'station' | 'warehouse' | 'parking' | 'lift' | 'mall' | 'ruins' | 'ship';
-const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { tutorial: buildTutorial, station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins, ship: buildShip };
+type StageId = 'parkour' | 'tutorial' | 'station' | 'warehouse' | 'parking' | 'lift' | 'mall' | 'ruins' | 'ship';
+const STAGE_BUILDERS: Record<StageId, () => StageLayout> = { parkour: buildParkour, tutorial: buildTutorial, station: buildStation, warehouse: buildWarehouse, parking: buildParking, lift: buildLift, mall: buildMall, ruins: buildRuins, ship: buildShip };
 let tutorialPickerWaiting = false;
 let pendingStage: StageId | null = null; // 次の入場で入るステージ。null = 訓練場
 // 当たり判定では、同じ幅・同じ高さで z 方向に継ぎ目なく並んだ箱を 1 つにまとめる。
@@ -4270,6 +4397,7 @@ function enterStage(id: StageId) {
   scene.add(root);
   stageRoot = root;
   if (hasEnemies || layout.boss) beginStageRun(!!layout.boss);
+  if (id === 'parkour') beginParkour();
   // 見た目の箱は、線の引き方と格子の起点ごとに 1 つのメッシュにまとめる。遠景は操作を返すのを待たないので別にする
   for (const [list, inArena] of [[[...layout.boxes, ...layout.decor], true], [layout.scenery, false]] as const) {
     for (const group of groupStageBoxes(list)) addBoxes(group, stageMaterial(group[0]), (b) => b.light, root, inArena, stageGeo(group[0]));
@@ -4309,6 +4437,7 @@ function enterStage(id: StageId) {
   }
   setShaft(shaft ?? null, shaftRoot);
   setLiftTraps(shaft ?? null, DIFFICULTIES[difficultyIndex], bounds, root);
+  if (id === 'parkour') setParkourTraps(parkourCourse().traps, root);
   showStageFloor(layout);
   // リフトの床の外は底なし（倒した敵の破片は落ちていく）。床の板は動ける範囲より少し広い
   groundArea.value = shaft ? { minX: bounds.minX - 0.4, maxX: bounds.maxX + 0.4, minZ: bounds.minZ - 0.4, maxZ: bounds.maxZ + 0.4 } : null;
@@ -4502,6 +4631,7 @@ function startStageIntro() {
 function switchToStage() {
   introSwitched = true;
   clearStagePreview();
+  if (pendingStage === 'parkour') game.unarmed = true; // パルクールは素手で走る（やり直しで状態が戻っても付け直す）
   if (game.unarmed) setViewModelsVisible(false);
   if (pendingStage) {
     enterStage(pendingStage);
@@ -4637,6 +4767,7 @@ const restoreGameState = snapshotState(game);
 const restoreCameraState = snapshotState(cameraFx);
 function resetRun() {
   stopTutorial(); tutorialPickerWaiting = false; setViewModelsVisible(false);
+  sfx.resetMatchAudio(); // 死んだときに絞った世界の音やスローのこもりを、次の試合へ持ち越さない
   resetKunaiCombat(); resetSwordCombat(); resetAxeCombat(); resetBatCombat();
   resetSpearCombat(); resetBowCombat(); resetHandgunCombat(); resetSickleCombat();
   resetRifleCombat(); resetViewModelMotion();
@@ -4648,14 +4779,14 @@ function resetRun() {
   clearMovers(); blocks.length = 0; ramps.length = 0;
   risers.length = 0; riseMeshes.clear(); riseLines.length = 0; stageProps.length = 0;
   resetArenaRiseEnd(); setShaft(null, null);
-  setLiftTraps(null, game.difficulty, { maxX: 0 }, scene);
+  setLiftTraps(null, game.difficulty, { maxX: 0 }, scene); clearParkourTraps();
   showStageFloor(null); groundArea.value = null;
   scene.add(arenaRoot);
   blocks.push(...titleBlocks); risers.push(...titleRisers);
   for (const mesh of titleRiseMeshes) riseMeshes.add(mesh);
   riseLines.push(...titleRiseLines); Object.assign(playBounds, titleBounds);
   clearStagePreview();
-  enemySpawns = []; trainOnly = false; stageRun = null;
+  enemySpawns = []; trainOnly = false; stageRun = null; parkour.active = false; parkour.finishT = -1; overlay.classList.remove('parkour-result'); setParkourRetry(false);
   multiplayerResult = null; guestHitPending.clear(); remoteWeaponHolds.clear();
   const difficulty = game.difficulty;
   restoreGameState(); game.difficulty = difficulty; restorePlayerState(); restoreCameraState();
@@ -4666,7 +4797,7 @@ function resetRun() {
   keys.clear(); pressed.clear();
   sinceKill = Infinity; killChain = multiKill = 1; lastKillDef = null; lastAnyHitAt = -Infinity;
   hitCount = 0; lastHitAt = -Infinity; hitsEl.classList.remove('show');
-  finale = false; headSlow = false; killSlowTime = Infinity; sharedBossBreakTime = Infinity;
+  finale = false; headSlow = false; realShake = false; killSlowTime = Infinity; sharedBossBreakTime = Infinity;
   introT = riseT = titleT = titleRiserT = -1; transitionFx.classList.remove('on');
   setLetterbox(0); camera.fov = BASE_FOV; camera.updateProjectionMatrix();
   finaleHud.classList.remove('on'); runHud.classList.remove('clear'); remainHud.classList.remove('clear');
@@ -4716,6 +4847,8 @@ if (debugAttack) {
   runBatEquipDebug(debugParams);
 } else if (debugParams.has('spearEquip')) {
   runSpearEquipDebug(debugParams);
+} else if (debugParams.has('rifleEquip')) {
+  runRifleEquipDebug(debugParams);
 } else if (debugParams.has('sickleDraw')) {
   runSickleDrawDebug(debugParams);
 } else {
@@ -4735,11 +4868,19 @@ if (debugAttack) {
   setupTitleStage();
   prebuildStagePreviews();
   restoreChallengeReturn();
+  if (debugParams.has('parkour')) {
+    configureMission(PARKOUR_MISSION);
+    overlay.classList.add('leaving'); enterStage('parkour'); applyStageRise(Infinity); setViewModelsVisible(false);
+    endOverlayLeave(); overlay.classList.remove('title', 'leaving'); overlay.classList.add('pause');
+    overlayPrompt.textContent = 'クリックで開始'; camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
+    menuRedraw = true;
+  }
   const clock = new THREE.Clock();
   renderer.setAnimationLoop(() => {
     const rawFrame = clock.getDelta();
     endPerfFrame(rawFrame); // 前のフレームの分を数えてから、このフレームの数え直しを始める
     beginPerfFrame();
+    if (updateDynRes(rawFrame)) applyRatio();
     const realFrame = Math.min(rawFrame, 0.05);
     updateMultiplayer(realFrame);
     if (multiplayerSessionLost) return;
@@ -4795,13 +4936,15 @@ if (debugAttack) {
       const gameDt = dt * (multiplayerRun ? 1 : game.timeScale);
       if (!stageRun || stageRun.running) decayStyle(gameDt);
       update(gameDt);
+      updateParkour(realFrame);
       if (pendingStage === 'tutorial' && updateTutorial(realFrame)) {
         tutorialPickerWaiting = true;
         openTutorialPicker();
       }
     }
     updateDummyShake();
-    updateHitFx(dt); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
+    updateBlobShadows(!shadowsOn, enemyFeet());
+    perfSpan('hitFx', () => updateHitFx(dt)); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
     updateSpeedFx(dt);
     updateHpHud(realFrame);
     updateStyleHud(!!stageRun);
@@ -4819,30 +4962,55 @@ if (debugAttack) {
     updateFinishMark();
     placeDeadEyeMarks();
     prepareReplayFrame(realFrame, !!stageRun && (stageRun.running || stageRun.clearedT >= 0));
-    composer.render(dt);
+    perfSpan('render', () => composer.render(dt));
     camera.quaternion.copy(savedQuat);
   });
 }
 
 // ---- 画質 ----
-// maxRatio: 描画の解像度（画面の画素に対する倍率の上限）、msaa: アンチエイリアスのサンプル数
-const QUALITY_PRESETS: Record<Quality, { maxRatio: number; shadows: boolean; shadowMap: number; msaa: number }> = {
-  low: { maxRatio: 0.75, shadows: false, shadowMap: 1024, msaa: 0 },
-  medium: { maxRatio: 1, shadows: true, shadowMap: 1024, msaa: 2 },
-  high: { maxRatio: 2, shadows: true, shadowMap: 2048, msaa: 4 },
+// maxRatio: 描画の解像度（画面の画素に対する倍率の上限）、msaa: アンチエイリアスのサンプル数、
+// fxaa: MSAA の代わりに縁をならすか、sharpen: 輪郭を立てる強さ（0 で切る）、glowScale: 光のにじみを描く画面の縮小率（0 で切る）、motionBlur: カメラの動きのブラー、
+// ao: 隅や足元の暗がり（fx/ao.ts）、anisotropy: 床や壁に貼る跡の異方性フィルタ（1 で切る。fx/anisotropy.ts）
+const QUALITY_PRESETS: Record<Quality, { maxRatio: number; shadows: boolean; shadowMap: number; msaa: number; fxaa: boolean; sharpen: number; glowScale: number; motionBlur: boolean; ao: boolean; anisotropy: number }> = {
+  // lowest は遊ぶのに要らない物を全部切る（光のにじみ・周辺ブラー・縁の処理）。解像度はこれより下げると粗さが目立つので low と同じ
+  lowest: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: false, sharpen: 0, glowScale: 0, motionBlur: false, ao: false, anisotropy: 1 },
+  low: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: true, sharpen: 0.6, glowScale: 6, motionBlur: false, ao: false, anisotropy: 1 },
+  medium: { maxRatio: 1, shadows: true, shadowMap: 1024, msaa: 2, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1 },
+  high: { maxRatio: 1.5, shadows: true, shadowMap: 2048, msaa: 4, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1 },
+  // サンプル数が GPU の上限を超える分は three.js が上限に合わせる
+  ultra: { maxRatio: 2, shadows: true, shadowMap: 4096, msaa: 8, fxaa: false, sharpen: 0, glowScale: 2, motionBlur: true, ao: true, anisotropy: 16 },
 };
-function applyQuality() {
-  const q = QUALITY_PRESETS[options.quality];
-  const ratio = Math.min(window.devicePixelRatio, q.maxRatio);
+const MIN_RATIO = 0.5; // 自動で下げるときも、これより粗くはしない（画質の上限がこれより低ければそちらに合わせる）
+// 解像度だけを決め直す。重いときの自動調整（fx/dynamicRes.ts）で段が変わるたびにも呼ぶ
+function applyRatio() {
+  const base = Math.min(window.devicePixelRatio, QUALITY_PRESETS[options.quality].maxRatio);
+  const ratio = Math.min(base, Math.max(base * dynResScale(), MIN_RATIO));
+  if (ratio === renderer.getPixelRatio()) return;
   renderer.setPixelRatio(ratio);
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setPixelRatio(ratio);
+  menuRedraw = true; // 大きさを変えるとキャンバスが消えるので、止まっている画面でも描き直す
+}
+function applyQuality() {
+  const q = QUALITY_PRESETS[options.quality];
   // サンプル数は描き込み先を作り直さないと変わらない（捨てておけば次に描くときに作り直される）
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
     if (rt.samples === q.msaa) continue;
     rt.samples = q.msaa;
     rt.dispose();
   }
-  composer.setPixelRatio(ratio);
+  fxaaPass.enabled = q.fxaa;
+  sharpenPass.enabled = q.sharpen > 0;
+  sharpenPass.uniforms.uAmount.value = q.sharpen;
+  if (!motionBlurPass.enabled && q.motionBlur) motionBlurPass.reset();
+  motionBlurPass.enabled = q.motionBlur;
+  aoPass.enabled = q.ao;
+  setAnisotropy(q.anisotropy);
+  glowPass.enabled = q.glowScale > 0;
+  if (q.glowScale > 0) glowPass.scale = q.glowScale;
+  postQuality.radialBlur = options.quality !== 'lowest';
+  applyRatio();
+  composer.setSize(window.innerWidth, window.innerHeight); // にじみの縮小率を描き込み先に反映する
   if (sun.shadow.mapSize.x !== q.shadowMap) {
     sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     sun.shadow.map?.dispose();

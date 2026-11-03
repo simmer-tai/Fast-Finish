@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { env } from './env.js?v=2fb05089';
-import { en } from './state.js?v=2fb05089';
-import { floorAt } from '../world/blocks.js?v=2fb05089';
-import { rand } from '../random.js?v=2fb05089';
-import { options } from '../ui/options.js?v=2fb05089';
-import { player, position, velocity } from '../player/state.js?v=2fb05089';
+import { env } from './env.js?v=6b2d2aee';
+import { en } from './state.js?v=6b2d2aee';
+import { floorAt } from '../world/blocks.js?v=6b2d2aee';
+import { rand } from '../random.js?v=6b2d2aee';
+import { options } from '../ui/options.js?v=6b2d2aee';
+import { player, position, velocity } from '../player/state.js?v=6b2d2aee';
 // ---- 倒したときにバラバラになる体 ----
 // 骨ごと（頭・胸・腰・上腕・前腕・太もも・すね・足）と銃を 1 つの塊にして、倒した瞬間の姿勢のまま写し取って飛ばす。
 // 部品のジオメトリとマテリアルは本体と共有する（とどめの白い光りもそのまま乗る）。
@@ -12,7 +12,7 @@ import { player, position, velocity } from '../player/state.js?v=2fb05089';
 // 画質ごとの数（REMAINS_LIMIT）を超えたら古いものから縮んで消える
 export const DEBRIS_GRAVITY = 18;
 export const DEBRIS_BOUNCE = 0.3;
-const REMAINS_LIMIT = { low: 120, medium: 240, high: 420 };
+const REMAINS_LIMIT = { lowest: 50, low: 80, medium: 240, high: 420, ultra: 420 };
 const REMAINS_SHRINK = 0.4; // 数を超えて消すときに縮む時間
 // 歩いて残骸を蹴る。足もとからこの距離（と部品の大きさ）に入った部品を、プレイヤーの速さに掛けた速さで蹴る
 const KICK_REACH = 0.3;

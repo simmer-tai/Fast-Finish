@@ -48,11 +48,15 @@ export const SpeedFxShader = {
       float blur = uBlur * smoothstep(0.15, 0.7, r);
       vec4 col = vec4(0.0);
       const int SAMPLES = 10;
-      for (int i = 0; i < SAMPLES; i++) {
-        float t = float(i) / float(SAMPLES - 1);
-        col += texture2D(tDiffuse, 0.5 + c * (1.0 - blur * t));
+      if (uBlur > 0.0) {
+        for (int i = 0; i < SAMPLES; i++) {
+          float t = float(i) / float(SAMPLES - 1);
+          col += texture2D(tDiffuse, 0.5 + c * (1.0 - blur * t));
+        }
+        col /= float(SAMPLES);
+      } else {
+        col = texture2D(tDiffuse, vUv); // 周辺ブラーを切った画質では 1 回だけ読む
       }
-      col /= float(SAMPLES);
 
       // ビネット
       col.rgb *= 1.0 - smoothstep(0.3, 0.9, r) * uVignette;
@@ -118,24 +122,33 @@ export const ImpactFxShader = {
       // 世界のスローに入った瞬間: 中心から広がる輪の所だけ、画を外へ押し出して歪ませる
       vec2 c = vUv - 0.5;
       c.x *= uAspect;
-      float r = length(c);
-      float wave = exp(-pow((r - uRing) / 0.09, 2.0)) * uRingAmt;
-      vec2 push = r > 1e-4 ? c / r * wave * 0.007 : vec2(0.0);
-      push.x /= uAspect;
-      vec2 uv = vUv - push;
+      vec2 uv = vUv;
+      // 使っていない効果は計算ごと飛ばす（パリィやキルの白黒・暗転だけのときは、画面を 1 回読むだけにする）
+      if (uRingAmt > 0.0) {
+        float r = length(c);
+        float wave = exp(-pow((r - uRing) / 0.09, 2.0)) * uRingAmt;
+        vec2 push = r > 1e-4 ? c / r * wave * 0.007 : vec2(0.0);
+        push.x /= uAspect;
+        uv -= push;
+      }
       // 紅線の締めの技: 斬った線を境に、両側の画を線に沿って逆向きにずらす
-      vec2 cp = vUv - uCutAt;
-      cp.x *= uAspect;
-      float cutD = dot(cp, vec2(-uCutDir.y, uCutDir.x)); // 線からの距離（画面の高さ基準）
-      vec2 slide = uCutDir * sign(cutD) * uCut * 0.004;
-      slide.x /= uAspect;
-      uv += slide;
+      float cutD = 1.0;
+      if (uCut > 0.0) {
+        vec2 cp = vUv - uCutAt;
+        cp.x *= uAspect;
+        cutD = dot(cp, vec2(-uCutDir.y, uCutDir.x)); // 線からの距離（画面の高さ基準）
+        vec2 slide = uCutDir * sign(cutD) * uCut * 0.004;
+        slide.x /= uAspect;
+        uv += slide;
+      }
       // 遅い間は、四隅ほど色の三原色をずらしてにじませる
-      float edge = dot(c, c) * uSlow;
-      vec2 ca = c / max(uAspect, 1.0) * edge * 0.005;
       vec4 col = texture2D(tDiffuse, uv);
-      col.r = texture2D(tDiffuse, uv + ca).r;
-      col.b = texture2D(tDiffuse, uv - ca).b;
+      if (uSlow > 0.0) {
+        float edge = dot(c, c) * uSlow;
+        vec2 ca = c / max(uAspect, 1.0) * edge * 0.005;
+        col.r = texture2D(tDiffuse, uv + ca).r;
+        col.b = texture2D(tDiffuse, uv - ca).b;
+      }
       // 色を抜いて暗くし、あとから重ねる白い光を際立たせる
       float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
       col.rgb = mix(col.rgb, vec3(lum), uDim * 0.6) * (1.0 - uDim * 0.6);
@@ -148,7 +161,7 @@ export const ImpactFxShader = {
       m *= 1.0 - dot(d, d) * 1.6 * uMono; // 四隅を落として中心へ目を寄せる
       col.rgb = mix(col.rgb, vec3(m), uMono);
       // 斬った線そのもの（暗転・白黒のあとに塗って、色を残す）
-      col.rgb = mix(col.rgb, uCutColor, (1.0 - smoothstep(0.0012, 0.0026, abs(cutD))) * uCut);
+      if (uCut > 0.0) col.rgb = mix(col.rgb, uCutColor, (1.0 - smoothstep(0.0012, 0.0026, abs(cutD))) * uCut);
       gl_FragColor = col;
     }
   `,
@@ -217,6 +230,39 @@ export const MotionBlurShader = {
         col += mix(base, texture2D(tDiffuse, uv), sm);
       }
       gl_FragColor = col / float(SAMPLES + 1);
+    }
+  `,
+};
+// 輪郭を立てる。低い解像度を引き伸ばしたぼやけと、FXAA のにじみを戻す（強さ uAmount は画質ごとに main.ts の applyQuality が決める）。
+// まわり 4 画素との差を足し、その範囲（最小〜最大）に収めて、縁に白い縁取りが出ないようにする
+export const SharpenShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        uTexel: { value: new THREE.Vector2(1, 1) },
+        uAmount: { value: 0.5 },
+    },
+    vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform vec2 uTexel;
+    uniform float uAmount;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 n = texture2D(tDiffuse, vUv + vec2(0.0, uTexel.y)).rgb;
+      vec3 s = texture2D(tDiffuse, vUv - vec2(0.0, uTexel.y)).rgb;
+      vec3 e = texture2D(tDiffuse, vUv + vec2(uTexel.x, 0.0)).rgb;
+      vec3 w = texture2D(tDiffuse, vUv - vec2(uTexel.x, 0.0)).rgb;
+      vec3 lo = min(c.rgb, min(min(n, s), min(e, w)));
+      vec3 hi = max(c.rgb, max(max(n, s), max(e, w)));
+      vec3 sharp = c.rgb + (4.0 * c.rgb - n - s - e - w) * uAmount;
+      gl_FragColor = vec4(clamp(sharp, lo, hi), c.a);
     }
   `,
 };

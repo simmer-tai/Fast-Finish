@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=2fb05089';
-import { REST_TIP } from './kunai.js?v=2fb05089';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=6b2d2aee';
+import { REST_TIP } from './kunai.js?v=6b2d2aee';
 export function makeAttack(def) {
     const keys = def.keys.map((k) => ({
         t: k.t,

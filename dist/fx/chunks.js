@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { floorAt, gridMaterial } from '../world/blocks.js?v=2fb05089';
-import { player, position, velocity } from '../player/state.js?v=2fb05089';
-import { options } from '../ui/options.js?v=2fb05089';
+import { floorAt, gridMaterial } from '../world/blocks.js?v=6b2d2aee';
+import { player, position, velocity } from '../player/state.js?v=6b2d2aee';
+import { options } from '../ui/options.js?v=6b2d2aee';
 // ---- 破片 ----
 // 床や柱が砕けた欠片、ボスの装甲の破片。転がりながら跳ねて、床や箱の上に落ち着く。
 // life を省いた破片は、ステージを出るまで床に残る。画質ごとの数（CHUNK_LIMIT）を超えたら、古いものから縮んで消える。
 // 床に落ちている破片も、プレイヤーが歩いて蹴ったり、ボスの足や体・攻撃の風圧や衝撃波で跳ね飛ばされたりする
 const MAX_CHUNKS = 500;
-const CHUNK_LIMIT = { low: 150, medium: 300, high: MAX_CHUNKS };
+const CHUNK_LIMIT = { lowest: 60, low: 100, medium: 300, high: MAX_CHUNKS, ultra: MAX_CHUNKS };
 const GRAVITY = 22;
 const BOUNCE = 0.35; // 跳ね返るときに残す縦の速さの割合
 const SKID = 0.6; // 跳ね返るときに残す横の速さの割合

@@ -1,9 +1,10 @@
-import { HOOK_RECHARGE, sickleState } from '../weapons/sickleCombat.js?v=2fb05089';
-import { BOW_RICOCHET_STOCK, bowState } from '../weapons/bowCombat.js?v=2fb05089';
-import { weaponHud } from './weaponHud.js?v=2fb05089';
-import { hudImpulse } from './hudSway.js?v=2fb05089';
-import { PLAYER_MAX_HP } from '../player/config.js?v=2fb05089';
-import { game } from '../game/state.js?v=2fb05089';
+import { HOOK_RECHARGE, sickleState } from '../weapons/sickleCombat.js?v=6b2d2aee';
+import { BOW_RICOCHET_STOCK, bowState } from '../weapons/bowCombat.js?v=6b2d2aee';
+import { weaponHud } from './weaponHud.js?v=6b2d2aee';
+import { hudImpulse } from './hudSway.js?v=6b2d2aee';
+import { PLAYER_MAX_HP } from '../player/config.js?v=6b2d2aee';
+import { game } from '../game/state.js?v=6b2d2aee';
+import { restartAnim } from './restartAnim.js?v=6b2d2aee';
 // ---- HUD: ダッシュの残り回数（クロスヘア左右の円弧。左が 1 回目、右が 2 回目） ----
 export const dashGauges = [...document.querySelectorAll('#crosshair .gauge')];
 // ---- HUD: 鎖鎌の引き寄せの残り回数（クロスヘアの下の斜めの帯 2 本。左から使い、左から溜まる）。鎖鎌を構えている間だけ出す ----
@@ -23,9 +24,7 @@ export function updateHookHud() {
         hookCells[i].classList.toggle('ready', i < sickleState.hookCharges);
         // 溜まりきった帯を光らせる（最初の表示では光らせない）
         if (hookShown >= 0 && i >= hookShown && i < sickleState.hookCharges) {
-            hookCells[i].classList.remove('gain');
-            void hookCells[i].offsetWidth; // 続けて溜まったときも頭から再生し直す
-            hookCells[i].classList.add('gain');
+            restartAnim(hookCells[i], 'gain'); // 続けて溜まったときも頭から再生し直す
         }
     }
     hookShown = sickleState.hookCharges;
@@ -50,9 +49,7 @@ export function updateBowHud() {
         stockPips[i].classList.toggle('ready', i < stock);
         // 戻った菱形を光らせる（最初の表示では光らせない）
         if (stockShown >= 0 && i >= stockShown && i < stock) {
-            stockPips[i].classList.remove('gain');
-            void stockPips[i].offsetWidth;
-            stockPips[i].classList.add('gain');
+            restartAnim(stockPips[i], 'gain');
         }
     }
     stockShown = stock;

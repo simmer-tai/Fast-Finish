@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mulberry32 } from '../random.js?v=2fb05089';
-import { skinFx } from './skins.js?v=2fb05089';
-import { SWORD_GRIP_LEN, swordBladePoint } from './sword.js?v=2fb05089';
+import { mulberry32 } from '../random.js?v=6b2d2aee';
+import { skinFx } from './skins.js?v=6b2d2aee';
+import { SWORD_GRIP_LEN, swordBladePoint } from './sword.js?v=6b2d2aee';
 // ---- 剣のスキン: 金継ぎ ----
 // 「斬った傷を、金で継ぐ」。一度砕けた黒い刀を金で継ぎ直した、という見立て。
 //   刃: 黒い地鉄に、磨いた明るい刃（波打つ刃文と、その縁の白い霞み・刃へ走る足）。

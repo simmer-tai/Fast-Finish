@@ -1,9 +1,9 @@
-import * as sfx from '../audio.js?v=2fb05089';
-import { skinOf } from '../weapons/skins.js?v=2fb05089';
-import { loadXp, masteryOf } from '../mastery.js?v=2fb05089';
-import { options } from './options.js?v=2fb05089';
-import { closeSkin, onSkinClick, onSkinKey, openSkin, skinOpen } from './skinPicker.js?v=2fb05089';
-import { closeLv, lvOpen, onLvClick, onLvKey, onLvWheel, openLv, showNextReward } from './lvRoadmap.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { skinOf } from '../weapons/skins.js?v=6b2d2aee';
+import { loadXp, masteryOf } from '../mastery.js?v=6b2d2aee';
+import { options } from './options.js?v=6b2d2aee';
+import { closeSkin, onSkinClick, onSkinKey, openSkin, skinOpen } from './skinPicker.js?v=6b2d2aee';
+import { closeLv, lvOpen, onLvClick, onLvKey, onLvWheel, openLv, showNextReward } from './lvRoadmap.js?v=6b2d2aee';
 // ---- 武器の選択画面 ----
 const overlay = document.getElementById('overlay');
 // 持ち込む武器。ステージに入ったときにこれを構えている（中で持ち替えることはできる）。次に開いたときのために覚えておく
@@ -71,7 +71,7 @@ pickerVideo.addEventListener('loadeddata', () => pickerScreen.classList.add('has
 pickerVideo.addEventListener('error', () => pickerScreen.classList.remove('has-video'));
 // 背景: 手前の動画の新しいフレームが出るたびに canvas へ写す（2 本目の動画を流すとずれるので、同じ動画から写す）。
 // 小さく写してその中でぼかし、画面いっぱいに引き伸ばす（全画面に CSS でぼかすより軽い）。大きさは画質の設定に合わせる
-const PICKER_BG_WIDTH = { low: 96, medium: 160, high: 320 };
+const PICKER_BG_WIDTH = { lowest: 96, low: 96, medium: 160, high: 320, ultra: 320 };
 const pickerBg = picker.querySelector('.sw-bg');
 const pickerBgCtx = pickerBg.getContext('2d');
 function drawPickerBg() {

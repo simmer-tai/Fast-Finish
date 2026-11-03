@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+import { trackAnisotropy } from './anisotropy.js';
 import type { HitKind } from '../audio.js';
 import { rand } from '../random.js';
 import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js';
@@ -45,7 +46,7 @@ const scarTexture = (() => {
     }
   }
   g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
+  const t = trackAnisotropy(new THREE.CanvasTexture(c));
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();

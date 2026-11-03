@@ -1,3 +1,4 @@
+import { restartAnim } from './restartAnim.js?v=6b2d2aee';
 // padKeys: パッドだけ押し方が違うとき
 const WEAPON_CONTROLS = {
     kunai: [
@@ -93,7 +94,5 @@ export function updateControlsHud(shownWeapon, usingPad) {
         .join('');
     if (!weaponChanged)
         return;
-    controlsHud.classList.remove('in');
-    void controlsHud.getBoundingClientRect(); // 続けて持ち替えても頭から流し直す
-    controlsHud.classList.add('in');
+    restartAnim(controlsHud, 'in'); // 続けて持ち替えても頭から流し直す
 }

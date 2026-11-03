@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { cameraFx, landShakeAmount } from '../fx/camera.js?v=2fb05089';
-import { forward, right, velocity } from '../player/state.js?v=2fb05089';
+import { cameraFx, landShakeAmount } from '../fx/camera.js?v=6b2d2aee';
+import { forward, right, velocity } from '../player/state.js?v=6b2d2aee';
 // ---- HUD の慣性 ----
 // 画面の HUD を、体に付けた板がばねで吊ってあるように動かす。動いた向きの逆へ遅れてずれ、
 // 速さが変わった瞬間（ダッシュ・ジャンプ・着地）には押されて弾み、前へ速く進むほど外へ広がる。

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rand } from '../random.js';
 import { camera } from '../core.js';
-import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves } from './hitFx.js';
+import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves, spawnGleam } from './hitFx.js';
 import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
 import { en, hitDir, hitPoint } from '../enemy/state.js';
 import type { Skin } from '../weapons/skins.js';
@@ -243,7 +243,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const arcTint = new THREE.Color();
 const ARC_SLASH_WIDTH = 2;
 export function hitWithArcs(
-  skin: Pick<Skin, 'arc' | 'hitSparks' | 'hologram' | 'cutLine' | 'leaves'>, fx: number, swing: THREE.Vector3 | undefined, applyHit: () => void, at: THREE.Vector3 = hitPoint,
+  skin: Pick<Skin, 'arc' | 'hitSparks' | 'hologram' | 'cutLine' | 'leaves' | 'gleam'>, fx: number, swing: THREE.Vector3 | undefined, applyHit: () => void, at: THREE.Vector3 = hitPoint,
 ) {
   const look = skin.arc;
   hitFxTint.sparks = skin.hitSparks ?? null;
@@ -256,6 +256,7 @@ export function hitWithArcs(
   if (skin.hologram) spawnHologramChains(at, hitDir, swing, fx, skin.hologram);
   if (skin.cutLine) spawnCutLine(at, swing, fx, skin.cutLine);
   if (skin.leaves) spawnLeaves(at, hitDir, swing, fx, skin.leaves);
+  if (skin.gleam) spawnGleam(at, hitDir, fx, skin.gleam);
   if (look) spawnArcs(at, hitDir, swing, fx, look, en.root);
 }
 

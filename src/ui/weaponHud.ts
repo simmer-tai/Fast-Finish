@@ -1,5 +1,6 @@
 import { type WeaponId } from '../weapons/ids.js';
 import { game } from '../game/state.js';
+import { restartAnim } from './restartAnim.js';
 
 // ---- 右下の武器表示と弾の数 ----
 export const ammoPips = [...document.querySelectorAll<HTMLElement>('#ammo i')];
@@ -18,9 +19,5 @@ export function updateWeaponHud() {
   for (const svg of weaponIcons) svg.classList.toggle('on', svg.dataset.w === game.shownWeapon);
   if (first) return;
   const icon = weaponIcons.find((svg) => svg.dataset.w === game.shownWeapon)!;
-  for (const el of [weaponName, icon]) {
-    el.classList.remove('in');
-    void el.getBoundingClientRect(); // 続けて持ち替えても頭から流し直す
-    el.classList.add('in');
-  }
+  for (const el of [weaponName, icon]) restartAnim(el, 'in'); // 続けて持ち替えても頭から流し直す
 }

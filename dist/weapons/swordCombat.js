@@ -1,27 +1,28 @@
-import { snapshotState } from '../game/resetState.js?v=2fb05089';
+import { snapshotState } from '../game/resetState.js?v=6b2d2aee';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2fb05089';
-import { playGrip, playRing, playSwish } from '../audio.js?v=2fb05089';
-import { easeInOutCubic, easeOutCubic } from '../ease.js?v=2fb05089';
-import { DEG, catmullRom } from '../math.js?v=2fb05089';
-import { camera, controls } from '../core.js?v=2fb05089';
-import { SWORD_BLADE_BASE_Y, SWORD_STAND_QUAT } from './sword.js?v=2fb05089';
-import { CHARGE_POS, CHARGE_TIP, SWORD_BUFFER, SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_COMBO_RESET, SWORD_HIT_ANGLE, SWORD_ISSEN, SWORD_REACH, SWORD_SWEEP, SWORD_THRUST, SWORD_TIP, } from './swordAttacks.js?v=2fb05089';
-import { sword, swordRest, swordRestQuat, swordSpin } from './viewModels.js?v=2fb05089';
-import { onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
-import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
-import { spawnHologramShed } from '../fx/hitFx.js?v=2fb05089';
-import { rand } from '../random.js?v=2fb05089';
-import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=2fb05089';
-import { en, enemies, hitPoint, setEn } from '../enemy/state.js?v=2fb05089';
-import { castHit, castThrow } from '../world/raycast.js?v=2fb05089';
-import { boss, bossPartOpen, bossTargetAt, bossTargetCount, bossTargetPart } from '../enemy/boss.js?v=2fb05089';
-import { forward, lookEuler, player, position, velocity } from '../player/state.js?v=2fb05089';
-import { endWallRun } from '../player/movement.js?v=2fb05089';
-import { DASH_ATTACK_WINDOW, DEADEYE_MAX, SWING_SAMPLE, game, kickVel } from '../game/state.js?v=2fb05089';
-import { hooks } from '../game/hooks.js?v=2fb05089';
-import { tryWallHit } from './wallHit.js?v=2fb05089';
-import { startMeleePull, stopMeleePull } from './meleePull.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { playGrip, playRing, playSwish } from '../audio.js?v=6b2d2aee';
+import { easeInOutCubic, easeOutCubic } from '../ease.js?v=6b2d2aee';
+import { DEG, catmullRom } from '../math.js?v=6b2d2aee';
+import { camera, controls } from '../core.js?v=6b2d2aee';
+import { SWORD_BLADE_BASE_Y, SWORD_STAND_QUAT } from './sword.js?v=6b2d2aee';
+import { CHARGE_POS, CHARGE_TIP, SWORD_BUFFER, SWORD_CHARGE_SLASH, SWORD_COMBO, SWORD_COMBO_RESET, SWORD_HIT_ANGLE, SWORD_ISSEN, SWORD_REACH, SWORD_SWEEP, SWORD_THRUST, SWORD_TIP, } from './swordAttacks.js?v=6b2d2aee';
+import { sword, swordRest, swordRestQuat, swordSpin } from './viewModels.js?v=6b2d2aee';
+import { onSkinChange, skinFx, skinOf } from './skins.js?v=6b2d2aee';
+import { hitWithArcs } from '../fx/arcs.js?v=6b2d2aee';
+import { spawnHologramShed } from '../fx/hitFx.js?v=6b2d2aee';
+import { rand } from '../random.js?v=6b2d2aee';
+import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=6b2d2aee';
+import { en, enemies, hitPoint, setEn } from '../enemy/state.js?v=6b2d2aee';
+import { castHit, castThrow } from '../world/raycast.js?v=6b2d2aee';
+import { boss, bossPartOpen, bossTargetAt, bossTargetCount, bossTargetPart } from '../enemy/boss.js?v=6b2d2aee';
+import { forward, lookEuler, player, position, velocity } from '../player/state.js?v=6b2d2aee';
+import { endWallRun } from '../player/movement.js?v=6b2d2aee';
+import { DASH_ATTACK_WINDOW, DEADEYE_MAX, SWING_SAMPLE, game, kickVel } from '../game/state.js?v=6b2d2aee';
+import { hooks } from '../game/hooks.js?v=6b2d2aee';
+import { tryWallHit } from './wallHit.js?v=6b2d2aee';
+import { startMeleePull, stopMeleePull } from './meleePull.js?v=6b2d2aee';
+import { restartAnim } from '../ui/restartAnim.js?v=6b2d2aee';
 // ---- 剣の攻撃 ----
 // 振り・溜め斬り・居合（構えと突進）。技の定義は swordAttacks.ts
 // 本体からも読み書きする値
@@ -358,9 +359,7 @@ export function updateFocus() {
     focusHud.classList.toggle('empty', swordState.focusEmptyFlash > 0);
     focusFill.style.transform = `scaleX(${fill.toFixed(3)})`;
     if (ready && !focusShownReady && !swordState.focusing && game.deadEye === 'off') {
-        focusHud.classList.remove('gain');
-        void focusHud.offsetWidth;
-        focusHud.classList.add('gain'); // 満タンになった瞬間に光らせる
+        restartAnim(focusHud, 'gain'); // 満タンになった瞬間に光らせる
     }
     focusShownReady = ready;
     // ロックオンの印を敵に重ねる

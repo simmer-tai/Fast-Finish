@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { rand } from '../random.js?v=2fb05089';
+import { rand } from '../random.js?v=6b2d2aee';
+import { options } from '../ui/options.js?v=6b2d2aee';
+import { spawnGold, updateGoldShards } from './goldShards.js?v=6b2d2aee';
 let env;
 export function initHitFx(e) {
     env = e;
@@ -18,6 +20,9 @@ const ADDITIVE = { transparent: true, blending: THREE.AdditiveBlending, depthTes
 const easeOut3 = (t) => 1 - (1 - t) ** 3;
 const camRight = new THREE.Vector3();
 const camUp = new THREE.Vector3();
+// 軽い画質では、火花・破片・光線の数を減らす（キルで一度に数百出るので、弱い PC ではその瞬間に引っかかる）
+const FX_AMOUNT = { lowest: 0.25, low: 0.4, medium: 1, high: 1, ultra: 1 };
+const fxCount = (n) => (n > 0 ? Math.max(1, Math.round(n * FX_AMOUNT[options.quality])) : 0);
 const BEAM_MAX = 192;
 const beams = [];
 const beamPool = [];
@@ -68,6 +73,8 @@ beamMesh.count = 0;
 beamMesh.frustumCulled = false;
 fxScene.add(beamMesh);
 export function addBeam(origin, dir, opts) {
+    if (Math.random() > FX_AMOUNT[options.quality])
+        return; // まとめて出す光線を、軽い画質では間引く
     if (beams.length >= BEAM_MAX)
         beamPool.push(beams.shift());
     const b = beamPool.pop() ?? {
@@ -246,6 +253,7 @@ sparkMesh.frustumCulled = false;
 fxScene.add(sparkMesh);
 // swing（単位ベクトル）を渡すと、その向きへ寄せて飛ばす。tint を渡すと、白からその色へ変わって消える（スキンの色など）
 export function spawnSparks(at, hitDir, count, lifeScale = 1, size = 1, swing, tint = null) {
+    count = fxCount(count);
     for (let i = 0; i < count; i++) {
         if (sparks.length >= SPARK_MAX)
             sparkPool.push(sparks.shift());
@@ -320,6 +328,7 @@ shardMesh.frustumCulled = false;
 fxScene.add(shardMesh);
 // tint を渡すと、敵の色の代わりにその色で塗る（床のかけらなど）
 export function spawnShards(at, hitDir, count, lifeScale = 1, size = 1, swing, tint = null) {
+    count = fxCount(count);
     for (let i = 0; i < count; i++) {
         if (shards.length >= SHARD_MAX)
             shardPool.push(shards.shift());
@@ -759,6 +768,204 @@ function updateCutLines(dt) {
     cutLineT.needsUpdate = true;
     cutLineFlash.needsUpdate = true;
 }
+const STREAK_MAX = 16;
+const streaks = [];
+const streakPool = [];
+const streakGeo = new THREE.PlaneGeometry(2, 2);
+const streakT = new THREE.InstancedBufferAttribute(new Float32Array(STREAK_MAX), 1);
+streakT.setUsage(THREE.DynamicDrawUsage);
+streakGeo.setAttribute('aT', streakT);
+const streakMat = new THREE.ShaderMaterial({
+    transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color() }, uCore: { value: new THREE.Color() } },
+    vertexShader: /* glsl */ `
+    attribute float aT;
+    varying vec2 vP;
+    varying float vT;
+    void main() {
+      vP = position.xy;
+      vT = aT;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform vec3 uColor;
+    uniform vec3 uCore;
+    varying vec2 vP;
+    varying float vT;
+    void main() {
+      float t = vT;
+      float x = abs(vP.x);
+      float y = abs(vP.y);
+      float grow = 1.0 - pow(1.0 - min(1.0, t * 8.0), 3.0); // 中心から両端へ一気に伸びる
+      float fade = 1.0 - smoothstep(0.15, 1.0, t);
+      float thin = mix(1.0, 0.25, smoothstep(0.1, 1.0, t)); // 伸びきったら細くなる
+      // 両端へ向かって細く薄くなる筋
+      float along = pow(max(0.0, 1.0 - x / max(grow, 1e-3)), 1.6);
+      float line = exp(-y / (0.06 * thin * (0.3 + along))) * along;
+      // 筋のまわりの薄いもや（金だけで、芯より広くにじませる）
+      float haze = exp(-y * 2.2) * pow(max(0.0, 1.0 - x / max(grow, 1e-3)), 2.5) * 0.35;
+      // 中心の光の玉
+      float orb = exp(-(x * x * 500.0 + y * y * 7.0)) * (1.0 - smoothstep(0.0, 0.6, t)) * 1.5;
+      float a = (line + orb + haze) * fade;
+      if (a <= 0.004) discard;
+      // 芯は白く、外ほど金
+      vec3 col = mix(uColor, uCore, clamp(line * 1.3 + orb, 0.0, 1.0) * (1.0 - smoothstep(0.0, 0.25, y * 4.0)));
+      gl_FragColor = vec4(col * a * 2.4, 1.0);
+    }
+  `,
+});
+const streakMesh = new THREE.InstancedMesh(streakGeo, streakMat, STREAK_MAX);
+streakMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+streakMesh.count = 0;
+streakMesh.frustumCulled = false;
+fxScene.add(streakMesh);
+const MOTE_MAX = 400;
+const motes = [];
+const motePool = [];
+const motePos = new THREE.BufferAttribute(new Float32Array(MOTE_MAX * 3), 3);
+const moteSize = new THREE.BufferAttribute(new Float32Array(MOTE_MAX), 1);
+const moteGlow = new THREE.BufferAttribute(new Float32Array(MOTE_MAX), 1);
+for (const a of [motePos, moteSize, moteGlow])
+    a.setUsage(THREE.DynamicDrawUsage);
+const moteGeo = new THREE.BufferGeometry();
+moteGeo.setAttribute('position', motePos);
+moteGeo.setAttribute('aSize', moteSize);
+moteGeo.setAttribute('aGlow', moteGlow);
+const moteMat = new THREE.ShaderMaterial({
+    transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color() }, uCore: { value: new THREE.Color() }, uScale: { value: 1 } },
+    vertexShader: /* glsl */ `
+    attribute float aSize;
+    attribute float aGlow;
+    uniform float uScale;
+    varying float vGlow;
+    void main() {
+      vGlow = aGlow;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = clamp(aSize * projectionMatrix[1][1] * uScale / -mv.z, 1.5, 24.0); // aSize (m) を画面の画素へ
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+    fragmentShader: /* glsl */ `
+    uniform vec3 uColor;
+    uniform vec3 uCore;
+    varying float vGlow;
+    void main() {
+      float d = length(gl_PointCoord - 0.5) * 2.0;
+      float a = exp(-d * d * 5.0) * vGlow;
+      if (a <= 0.004) discard;
+      vec3 col = mix(uColor, uCore, exp(-d * d * 18.0) * min(1.0, vGlow));
+      gl_FragColor = vec4(col * a, 1.0);
+    }
+  `,
+});
+const moteMesh = new THREE.Points(moteGeo, moteMat);
+const moteBuffer = new THREE.Vector2();
+// 点の大きさは描く画面の高さの半分で割り出す（解像度が変わっても同じ見え方に）
+moteMesh.onBeforeRender = (renderer) => (moteMat.uniforms.uScale.value = renderer.getDrawingBufferSize(moteBuffer).y / 2);
+moteMesh.frustumCulled = false;
+fxScene.add(moteMesh);
+const gleamRight = new THREE.Vector3();
+const gleamUp = new THREE.Vector3();
+function addStreak(at, angle, half, width, life) {
+    if (streaks.length >= STREAK_MAX)
+        streakPool.push(streaks.shift());
+    const s = streakPool.pop() ?? { matrix: new THREE.Matrix4(), age: 0, life: 0 };
+    gleamRight.copy(camRight).multiplyScalar(Math.cos(angle)).addScaledVector(camUp, Math.sin(angle));
+    gleamUp.crossVectors(toCamera, gleamRight);
+    s.matrix.makeBasis(gleamRight.multiplyScalar(half), gleamUp.multiplyScalar(width), toCamera);
+    s.matrix.setPosition(at);
+    s.age = 0;
+    s.life = life;
+    streaks.push(s);
+}
+export function spawnGleam(at, hitDir, fx, look) {
+    env.camera.updateMatrixWorld();
+    camRight.setFromMatrixColumn(env.camera.matrixWorld, 0);
+    camUp.setFromMatrixColumn(env.camera.matrixWorld, 1);
+    toCamera.subVectors(env.camera.position, at);
+    const dist = Math.max(toCamera.length(), 1e-3);
+    toCamera.divideScalar(dist);
+    const size = THREE.MathUtils.clamp(Math.sqrt(dist / HIT_FX_REF_DIST), HIT_FX_MIN_SCALE, HIT_FX_MAX_SCALE);
+    const heavy = fx >= HEAVY_FX;
+    const k = Math.sqrt(fx) * size;
+    // 横一文字の筋（わずかに傾ける）。締めの技は長く太くし、傾けた細い筋を重ねる
+    addStreak(at, rand(-2, 2) * DEG, look.len * k * (heavy ? 1.6 : rand(0.85, 1.1)), 0.09 * k * (heavy ? 1.4 : 1), heavy ? 0.55 : 0.38);
+    if (heavy)
+        addStreak(at, rand(8, 14) * DEG * (Math.random() < 0.5 ? -1 : 1), look.len * k * 0.8, 0.035 * k, 0.4);
+    const count = Math.round(look.dust * Math.sqrt(fx) * (heavy ? 1.8 : 1));
+    for (let i = 0; i < count; i++) {
+        if (motes.length >= MOTE_MAX)
+            motePool.push(motes.shift());
+        const m = motePool.pop() ?? { pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0, life: 0, size: 0, twinkle: 0, phase: 0 };
+        m.pos.copy(at);
+        // 弾の抜けた向きへ寄せて、全方向へ弾けさせる
+        m.vel.randomDirection().addScaledVector(hitDir, 0.6).normalize().multiplyScalar(rand(0.8, 4.5) * Math.sqrt(fx) * Math.sqrt(size));
+        m.age = -rand(0, 0.05);
+        m.life = rand(0.6, 1.2) * look.life * (heavy ? 1.3 : 1);
+        m.size = rand(0.006, 0.014) * Math.sqrt(size);
+        m.twinkle = rand(10, 22);
+        m.phase = Math.random() * Math.PI * 2;
+        motes.push(m);
+    }
+    for (const mat of [streakMat, moteMat]) {
+        mat.uniforms.uColor.value.setHex(look.color);
+        mat.uniforms.uCore.value.setHex(look.core);
+    }
+}
+function updateGleams(dt) {
+    let n = 0;
+    for (const s of streaks) {
+        s.age += dt;
+        if (s.age >= s.life) {
+            streakPool.push(s);
+            continue;
+        }
+        streaks[n] = s;
+        streakMesh.setMatrixAt(n, s.matrix);
+        streakT.setX(n, s.age / s.life);
+        n++;
+    }
+    streaks.length = n;
+    streakMesh.count = n;
+    streakMesh.instanceMatrix.needsUpdate = true;
+    streakT.needsUpdate = true;
+    // 速いうちは強く止め、止まったあとはふわりと浮かせて漂わせる
+    const drag = Math.max(0, 1 - 7 * dt);
+    n = 0;
+    for (const m of motes) {
+        m.age += dt;
+        if (m.age >= m.life) {
+            motePool.push(m);
+            continue;
+        }
+        motes[n] = m;
+        let glow = 0;
+        if (m.age >= 0) {
+            m.vel.multiplyScalar(drag);
+            m.vel.y += 0.25 * dt;
+            m.pos.addScaledVector(m.vel, dt);
+            m.pos.x += Math.sin(m.age * 2.3 + m.phase) * 0.05 * dt;
+            m.pos.z += Math.cos(m.age * 1.9 + m.phase) * 0.05 * dt;
+            const t = m.age / m.life;
+            // 出た瞬間は強く光り、そのあとは瞬きながら小さくなって消える
+            const burst = 1 + 2 * (1 - THREE.MathUtils.smoothstep(m.age, 0, 0.12));
+            const tw = 0.55 + 0.45 * Math.sin(m.age * m.twinkle + m.phase);
+            glow = burst * tw * (1 - THREE.MathUtils.smoothstep(t, 0.6, 1));
+        }
+        motePos.setXYZ(n, m.pos.x, m.pos.y, m.pos.z);
+        moteSize.setX(n, m.size);
+        moteGlow.setX(n, glow);
+        n++;
+    }
+    motes.length = n;
+    moteGeo.setDrawRange(0, n);
+    moteMesh.visible = n > 0;
+    motePos.needsUpdate = true;
+    moteSize.needsUpdate = true;
+    moteGlow.needsUpdate = true;
+}
 // -- 画面全体の暗転の時間変化 --
 // age: 当たってからの時間、hold: ヒットストップの長さ（この間は暗転を保つ）、power: 暗転の強さ
 export const impact = { age: Infinity, hold: 0, power: 0 };
@@ -983,6 +1190,14 @@ export function spawnHeadshotFx(at, dir, kill) {
     impact.age = 0;
     impact.power = Math.max(impact.power, 2 * k + 1);
 }
+// ライフルの命中: 金色の破片と火花を、弾の抜けた向きへ散らす。遠くの当たりでも見えるよう、離れるほど大きくする
+const GOLD_SPARK = new THREE.Color(0xffa018);
+export function spawnGoldShards(at, dir, kill) {
+    const size = THREE.MathUtils.clamp(Math.sqrt(at.distanceTo(env.camera.position) / HIT_FX_REF_DIST), HIT_FX_MIN_SCALE, HIT_FX_MAX_SCALE);
+    const k = kill ? 1.6 : 1;
+    spawnGold(at, dir, fxCount(32 * k), size);
+    spawnSparks(at, dir, Math.round(18 * k), 1.4, size, undefined, GOLD_SPARK);
+}
 // 最後の 1 体: とどめの演出に重ねて、天へ伸びる光の柱・時間差で広がる 3 重の輪・さらに大きな閃光を足す
 export function spawnFinaleFx(root, dir) {
     // 天へ伸びる柱: 束ねた太い光線を、わずかに散らして真上へ
@@ -1044,9 +1259,11 @@ export function updateHitParticles(dt) {
     updateBursts(dt);
     updateSparks(dt);
     updateShards(dt);
+    updateGoldShards(dt);
     updateHologramChains(dt);
     updateLeaves(dt);
     updateCutLines(dt);
+    updateGleams(dt);
 }
 // 光が 1 つでも出ているか。出ていなければ、光を重ねる描画ごと飛ばせる
 export const hitFxVisible = () => fxScene.children.some((o) => o.visible && (!(o instanceof THREE.InstancedMesh) || o.count > 0));

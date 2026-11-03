@@ -1,5 +1,6 @@
 import { game } from '../game/state.js';
 import { KUNAI_AMMO, thrown } from '../weapons/kunaiCombat.js';
+import { restartAnim } from './restartAnim.js';
 
 // ---- HUD: クナイの手持ち（照準の下） ----
 // 手持ちの本数だけ濃く塗る。投げた印は跳ねて薄くなり、戻った印は白く光って伸び、投げ切ると全体が震える
@@ -7,11 +8,7 @@ const kunaiHud = document.getElementById('kunaiammo')!;
 const kunaiPips = [...kunaiHud.querySelectorAll<HTMLElement>('i')].slice(0, KUNAI_AMMO);
 let shown = -1; // 表示中の本数（最初の表示では光らせない）
 
-function replay(el: HTMLElement, cls: string) {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
-}
+const replay = (el: HTMLElement, cls: string) => restartAnim(el, cls);
 
 export function updateKunaiHud() {
   kunaiHud.classList.toggle('show', game.shownWeapon === 'kunai' && !game.unarmed);

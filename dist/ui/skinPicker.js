@@ -1,24 +1,24 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2fb05089';
-import { createBat } from '../weapons/bat.js?v=2fb05089';
-import { createBattleAxe } from '../weapons/battleAxe.js?v=2fb05089';
-import { createSpear } from '../weapons/spear.js?v=2fb05089';
-import { createRifle } from '../weapons/rifle.js?v=2fb05089';
-import { createBow } from '../weapons/bow.js?v=2fb05089';
-import { createChainSickle } from '../weapons/chainSickle.js?v=2fb05089';
-import { WEAPON_IDS } from '../weapons/ids.js?v=2fb05089';
-import { createKunai } from '../weapons/kunai.js?v=2fb05089';
-import { createWeaponMats } from '../weapons/materials.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { createBat } from '../weapons/bat.js?v=6b2d2aee';
+import { createBattleAxe } from '../weapons/battleAxe.js?v=6b2d2aee';
+import { createSpear } from '../weapons/spear.js?v=6b2d2aee';
+import { createRifle } from '../weapons/rifle.js?v=6b2d2aee';
+import { createBow } from '../weapons/bow.js?v=6b2d2aee';
+import { createChainSickle } from '../weapons/chainSickle.js?v=6b2d2aee';
+import { WEAPON_IDS } from '../weapons/ids.js?v=6b2d2aee';
+import { createKunai } from '../weapons/kunai.js?v=6b2d2aee';
+import { createWeaponMats } from '../weapons/materials.js?v=6b2d2aee';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY } from '../core.js?v=2fb05089';
-import { GlowPass } from '../fx/glow.js?v=2fb05089';
-import { options } from './options.js?v=2fb05089';
-import { createRevolver } from '../weapons/revolver.js?v=2fb05089';
-import { applySkin, createSkinMats, dressModel, setSkin, skinOf, skinnedWeaponMats, skinsFor, skinTags, skinUnlocked } from '../weapons/skins.js?v=2fb05089';
-import { createSword } from '../weapons/sword.js?v=2fb05089';
-import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=2fb05089';
+import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY } from '../core.js?v=6b2d2aee';
+import { GlowPass } from '../fx/glow.js?v=6b2d2aee';
+import { options } from './options.js?v=6b2d2aee';
+import { createRevolver } from '../weapons/revolver.js?v=6b2d2aee';
+import { applySkin, createSkinMats, dressModel, setSkin, skinOf, skinnedWeaponMats, skinsFor, skinTags, skinUnlocked } from '../weapons/skins.js?v=6b2d2aee';
+import { createSword } from '../weapons/sword.js?v=6b2d2aee';
+import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=6b2d2aee';
 // ---- スキンの選択画面 ----
 // 武器の選択画面の SKIN から開く。左に武器のモデルを大きく出してゆっくり回し（ドラッグで回す・ホイールで寄る）、
 // 右にスキンのタイルを並べる。タイルの絵は同じモデルをそのスキンで描いたもの。
@@ -302,7 +302,7 @@ function showSkin(i, flash) {
     touchSkin(i);
     tiles.forEach((b, j) => b.classList.toggle('active', j === i));
     skinName.textContent = skin.name;
-    skinJa.textContent = skinUnlocked(skin) ? skin.ja : `LOCKED — ${skin.unlock}`;
+    skinJa.textContent = skinUnlocked(skin) ? skin.ja : 'LOCKED';
     win.classList.toggle('sk-locked', !skinUnlocked(skin));
     skinSwatch.forEach((el, j) => (el.style.background = skin.swatch[j]));
     showTags(skin);

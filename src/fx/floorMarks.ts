@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { trackAnisotropy } from './anisotropy.js';
 
 // ---- 床の跡 ----
 // 衝撃波で入ったひびや、レーザーの焦げ跡を床に貼る。戦いの間ずっと残る（ステージを出るまで）。
@@ -43,7 +44,7 @@ const crackTexture = (() => {
   gr.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = gr;
   g.fillRect(0, 0, n, n);
-  const t = new THREE.CanvasTexture(c);
+  const t = trackAnisotropy(new THREE.CanvasTexture(c));
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();
@@ -63,7 +64,7 @@ const scorchTexture = (() => {
     g.fillStyle = gr;
     g.fillRect(0, 0, n, n);
   }
-  const t = new THREE.CanvasTexture(c);
+  const t = trackAnisotropy(new THREE.CanvasTexture(c));
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();

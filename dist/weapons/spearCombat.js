@@ -1,23 +1,24 @@
-import { snapshotState } from '../game/resetState.js?v=2fb05089';
+import { snapshotState } from '../game/resetState.js?v=6b2d2aee';
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2fb05089';
-import { playSwish } from '../audio.js?v=2fb05089';
-import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=2fb05089';
-import { DEG, catmullRom } from '../math.js?v=2fb05089';
-import { camera, controls, scene } from '../core.js?v=2fb05089';
-import { SPEAR_BLADE_BASE_Y, SPEAR_BUTT_Y, SPEAR_REST_TIP, SPEAR_TIP_Y, createSpear } from './spear.js?v=2fb05089';
-import { skinMats, spearModel, spearRest } from './viewModels.js?v=2fb05089';
-import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=2fb05089';
-import { hitWithArcs } from '../fx/arcs.js?v=2fb05089';
-import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=2fb05089';
-import { DEFAULT_KNOCK, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=2fb05089';
-import { knockEnemy } from '../enemy/motion.js?v=2fb05089';
-import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=2fb05089';
-import { hooks } from '../game/hooks.js?v=2fb05089';
-import { tryWallHit } from './wallHit.js?v=2fb05089';
-import { castHit, castThrow } from '../world/raycast.js?v=2fb05089';
-import { player, velocity } from '../player/state.js?v=2fb05089';
-import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { playSwish } from '../audio.js?v=6b2d2aee';
+import { easeInOutCubic, easeInQuad, easeOutBack, easeOutCubic, linear } from '../ease.js?v=6b2d2aee';
+import { DEG, catmullRom } from '../math.js?v=6b2d2aee';
+import { camera, controls, scene } from '../core.js?v=6b2d2aee';
+import { SPEAR_BLADE_BASE_Y, SPEAR_BUTT_Y, SPEAR_REST_TIP, SPEAR_TIP_Y, createSpear } from './spear.js?v=6b2d2aee';
+import { skinMats, spearModel, spearRest } from './viewModels.js?v=6b2d2aee';
+import { Ribbon, SWORD_RIBBON, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js?v=6b2d2aee';
+import { hitWithArcs } from '../fx/arcs.js?v=6b2d2aee';
+import { dressModel, onSkinChange, skinFx, skinOf } from './skins.js?v=6b2d2aee';
+import { DEFAULT_KNOCK, enemies, hitDir, hitPoint, setEn } from '../enemy/state.js?v=6b2d2aee';
+import { knockEnemy } from '../enemy/motion.js?v=6b2d2aee';
+import { SWING_SAMPLE, game, kickVel } from '../game/state.js?v=6b2d2aee';
+import { hooks } from '../game/hooks.js?v=6b2d2aee';
+import { tryWallHit } from './wallHit.js?v=6b2d2aee';
+import { castHit, castThrow } from '../world/raycast.js?v=6b2d2aee';
+import { player, velocity } from '../player/state.js?v=6b2d2aee';
+import { ASSIST_SNAP, findAssistTarget } from '../player/aimAssist.js?v=6b2d2aee';
+import { restartAnim } from '../ui/restartAnim.js?v=6b2d2aee';
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 // 刃先の向き: 左へ薙ぐなら、切っ先を上から見て左回りに回す向き（= 上 × 切っ先）
@@ -947,9 +948,7 @@ function updateGuardHud(dt) {
     guardHud.classList.toggle('empty', guardEmptyFlash > 0);
     guardFill.style.transform = `scaleX(${spearState.guardGauge.toFixed(3)})`;
     if (ready && !guardShownReady) {
-        guardHud.classList.remove('gain');
-        void guardHud.offsetWidth;
-        guardHud.classList.add('gain'); // また回せるようになった瞬間に光らせる
+        restartAnim(guardHud, 'gain'); // また回せるようになった瞬間に光らせる
     }
     guardShownReady = ready;
 }

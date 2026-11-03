@@ -3,6 +3,7 @@
 // 小さいものから 1 つずつ足していき、最後に掛け合わせた点数を叩きつけるように確定させる。
 // とどめのヒットストップやスローに関係なく、実時間で進める
 import * as sfx from './audio.js';
+import { restartAnim } from './ui/restartAnim.js';
 
 export interface KillBonus {
   label: string;
@@ -41,11 +42,7 @@ let pending = 0; // まだ確定させていない点数（確定前に次を倒
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
 // クラスを外して付け直し、CSS のアニメーションを最初からやり直す
-function restart(node: HTMLElement, cls: string) {
-  node.classList.remove(cls);
-  void node.offsetWidth;
-  node.classList.add(cls);
-}
+const restart = (node: HTMLElement, cls: string) => restartAnim(node, cls);
 
 function addRow(b: KillBonus) {
   const row = document.createElement('div');

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=2fb05089';
-import { MM, plate } from './skinTalon.js?v=2fb05089';
+import { loftRings } from '../geometry.js?v=6b2d2aee';
+import { MM, plate } from './skinTalon.js?v=6b2d2aee';
 // ---- 剣のスキン: 遺物 ----
 // 古い西洋の長剣の形。色は元の剣と同じ黒のまま、形だけを替える。
 //   刃: 反りの無い両刃。真ん中に樋（細い溝）が走り、切っ先の手前で消える。根元は少し幅広く、切っ先へ細く絞る

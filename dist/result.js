@@ -5,10 +5,10 @@
 // 出しきって MASTERY_WAIT 秒たったら、左の記録と合計を武器の熟練度に入れ替え、稼いだ XP でゲージを伸ばす（ここは飛ばさない）。
 // 同時に、右のランクの枠をいちばん良かったキルの映像に入れ替える
 // 初めて達成した実績があれば、合計の下にそのバッジを並べる（熟練度に入れ替えても残す）
-import * as sfx from './audio.js?v=2fb05089';
-import { masteryOf } from './mastery.js?v=2fb05089';
-import { TIER_NAMES } from './challenges.js?v=2fb05089';
-import { badgePlate } from './ui/cardHonors.js?v=2fb05089';
+import * as sfx from './audio.js?v=6b2d2aee';
+import { masteryOf } from './mastery.js?v=6b2d2aee';
+import { TIER_NAMES } from './challenges.js?v=6b2d2aee';
+import { badgePlate } from './ui/cardHonors.js?v=6b2d2aee';
 export function fmtTime(t) {
     const cs = Math.floor(t * 100);
     return `${Math.floor(cs / 6000)}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}`;
@@ -79,21 +79,33 @@ const rows = {
     time: q('[data-row="time"]'),
     damage: q('[data-row="damage"]'),
     headshot: q('[data-row="headshot"]'),
+    best: q('[data-row="best"]'),
+    falls: q('[data-row="falls"]'),
 };
 const score = q('.rv-score');
+const scoreLabel = score.querySelector('small');
+const SCORE_LABEL = scoreLabel.innerHTML;
 const scoreVal = score.querySelector('b');
 const meter = q('.rv-meter');
 const meterFill = meter.querySelector('.fill');
 // メーターの右端は SSS の地点（遠さがそのまま見えるようにする）。目印の位置は 1 体あたりのしきい値の比なので、倒した数によらず同じ
 const METER_MAX = RANKS[0][1];
-const marks = RANKS.map(([letter, per]) => {
-    const mk = document.createElement('i');
-    mk.className = 'mk';
-    mk.style.setProperty('--x', `${(per / METER_MAX) * 100}%`);
-    mk.innerHTML = `<span>${letter}</span>`;
-    meter.append(mk);
-    return { mk, at: per / METER_MAX };
-});
+let marks = [];
+// 目印を置き直す（at はメーターの左端からの割合）。パルクールではメダルの目印にする
+function setMarks(list) {
+    for (const m of marks)
+        m.mk.remove();
+    marks = list.map(({ label, at }) => {
+        const mk = document.createElement('i');
+        mk.className = 'mk';
+        mk.style.setProperty('--x', `${at * 100}%`);
+        mk.innerHTML = `<span>${label}</span>`;
+        meter.append(mk);
+        return { mk, at };
+    });
+}
+const RANK_MARKS = RANKS.map(([letter, per]) => ({ label: letter, at: per / METER_MAX }));
+setMarks(RANK_MARKS);
 // メーターを p（0〜1）まで伸ばし、届いた目印を点ける
 function setMeter(p) {
     meterFill.style.setProperty('--p', String(p));
@@ -102,6 +114,8 @@ function setMeter(p) {
             m.mk.classList.add('on');
 }
 const rank = q('.rv-rank');
+const rankLabel = rank.querySelector('small');
+const RANK_LABEL = rankLabel.innerHTML;
 const rankLetter = q('.rv-letter');
 const rankNote = q('.rv-rank-note');
 const clipCanvas = q('.rv-clip');
@@ -133,6 +147,7 @@ const tags = {
     time: q('[data-tag="time"]'),
     damage: q('[data-tag="damage"]'),
     score: q('[data-tag="score"]'),
+    falls: q('[data-tag="falls"]'),
 };
 let steps = [];
 let counts = [];
@@ -190,13 +205,27 @@ function addRow(at, row, to, fmt) {
     steps.push({ at, run: () => show(row) });
     countUp(at + 0.12, ROW_COUNT, val, to, fmt, () => play(sfx.playResultLock));
 }
-export function showResult(d, done) {
-    onDone = done ?? null;
+// 出し直す前に、前の回の演出の跡を消す。parkour ならパルクールの並び（行・見出し・目印）に組み替える
+function resetView(parkour) {
     steps = [];
     counts = [];
     quiet = false;
     for (const node of view.querySelectorAll('.show, .lock, .on, .slam, .swapped, .clip'))
         node.classList.remove('show', 'lock', 'on', 'slam', 'swapped', 'clip');
+    view.classList.toggle('parkour', parkour);
+    rows.time.hidden = rows.damage.hidden = parkour;
+    rows.best.hidden = rows.falls.hidden = !parkour;
+    rows.headshot.hidden = true;
+    featsBox.hidden = true;
+    scoreLabel.innerHTML = parkour ? 'TIME<span class="jp">タイム</span>' : SCORE_LABEL;
+    rankLabel.innerHTML = parkour ? 'MEDAL<span class="jp">メダル</span>' : RANK_LABEL;
+    title.querySelector('.s1').textContent = parkour ? 'COURSE' : 'STAGE';
+    tags.score.textContent = 'NEW RECORD';
+    setMarks(parkour ? [] : RANK_MARKS);
+}
+export function showResult(d, done) {
+    resetView(false);
+    onDone = done ?? null;
     const [letter, , note] = rankOf(d);
     kicker.textContent = `STAGE ${d.stageNo} — ${d.stageName} / ${d.difficulty}`;
     ghost.textContent = `${d.stageName} ${d.stageName} `;
@@ -333,6 +362,126 @@ export function showResult(d, done) {
             },
         });
     }
+    steps.sort((a, b) => a.at - b.at);
+    document.body.classList.add('result-shown');
+    running = true;
+    t0 = performance.now();
+    const id = ++loop;
+    requestAnimationFrame((now) => frame(now, id));
+}
+const MEDALS = [
+    ['GOLD', 'gold'],
+    ['SILVER', 'silver'],
+    ['BRONZE', 'bronze'],
+];
+// メーター: ブロンズの 1.3 倍の時間で 0、ゴールドの 0.8 倍で振り切る
+const medalMeter = (d, t) => {
+    const slow = d.bronze * 1.3;
+    const fast = d.gold * 0.8;
+    return Math.min(1, Math.max(0, (slow - t) / (slow - fast)));
+};
+export function showParkourResult(d, done) {
+    resetView(true);
+    onDone = done ?? null;
+    setMarks(MEDALS.map(([label, key]) => ({ label, at: medalMeter(d, d[key]) })));
+    const meterTo = medalMeter(d, d.time);
+    const got = MEDALS.find(([, key]) => d.time <= d[key]);
+    const letter = got ? got[0] : 'FINISH';
+    // 次のメダルまでのタイムを下に添える
+    const next = [...MEDALS].reverse().find(([, key]) => d.time > d[key]);
+    const nextNote = !next ? 'TOP MEDAL' : `NEXT ${next[0]} ${fmtTime(d[next[1]])}`;
+    kicker.textContent = `PARKOUR — ${d.name}`;
+    ghost.textContent = 'PARKOUR PARKOUR ';
+    rankLetter.textContent = letter;
+    rankLetter.dataset.rank = letter;
+    rankNote.textContent = nextNote;
+    scoreVal.textContent = fmtTime(0);
+    setMeter(0);
+    steps.push({
+        at: T_HEAD,
+        run: () => {
+            show(ghost);
+            show(kicker);
+            show(title);
+            show(rule);
+            play(sfx.playUiOpen);
+        },
+    });
+    // 前回までの自己ベストは数え上げずに出す（無ければ線）
+    rows.best.querySelector('b').textContent = d.best === null ? '—' : fmtTime(d.best);
+    steps.push({
+        at: T_ROW,
+        run: () => {
+            show(rows.best);
+            play(sfx.playResultLock);
+        },
+    });
+    addRow(T_ROW + ROW_GAP, rows.falls, d.falls, (v) => String(Math.round(v)));
+    const T = timesAfterRows(2, 0);
+    steps.push({ at: T.score, run: () => show(score) });
+    steps.push({
+        at: T.score + 0.2,
+        run: () => {
+            counts.push({
+                start: T.score + 0.2,
+                dur: SCORE_COUNT,
+                lastTick: -1,
+                set: (k) => {
+                    const e = 1 - (1 - k) ** 3;
+                    scoreVal.textContent = fmtTime(d.time * e);
+                    setMeter(meterTo * e);
+                },
+                done: () => {
+                    scoreVal.textContent = fmtTime(d.time);
+                    setMeter(meterTo);
+                },
+            });
+        },
+    });
+    steps.push({
+        at: T.slam,
+        run: () => {
+            score.classList.add('slam');
+            restart(scoreVal, 'lock');
+            play(sfx.playResultScore);
+            shakeView(6);
+        },
+    });
+    // メダルの重さで鳴らし分ける（ランクの音を借りる）
+    const sound = got?.[0] === 'GOLD' ? 'SS' : got?.[0] === 'SILVER' ? 'S' : got ? 'A' : 'C';
+    steps.push({
+        at: T.rank,
+        run: () => {
+            show(rank);
+            setTimeout(() => {
+                sfx.playResultRank(sound);
+                shakeView(got?.[0] === 'GOLD' ? 24 : got ? 16 : 10);
+                restart(flash, 'on');
+            }, quiet ? 0 : 180);
+        },
+    });
+    tags.score.textContent = d.first ? 'FIRST CLEAR' : 'NEW RECORD';
+    const tagList = [];
+    if (d.newTime)
+        tagList.push(tags.score);
+    if (d.falls === 0)
+        tagList.push(tags.falls);
+    tagList.forEach((tag, i) => steps.push({
+        at: T.tags + i * 0.16,
+        run: () => {
+            show(tag);
+            play(sfx.playResultStamp);
+        },
+    }));
+    steps.push({
+        at: T.menu,
+        run: () => {
+            show(menu);
+            running = false;
+            onDone?.();
+        },
+    });
+    menuAt = T.menu;
     steps.sort((a, b) => a.at - b.at);
     document.body.classList.add('result-shown');
     running = true;

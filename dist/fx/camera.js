@@ -1,26 +1,26 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=2fb05089';
-import { playRing, playSwish } from '../audio.js?v=2fb05089';
-import { DEG } from '../math.js?v=2fb05089';
-import { camera } from '../core.js?v=2fb05089';
-import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js?v=2fb05089';
-import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js?v=2fb05089';
-import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js?v=2fb05089';
-import { axeState, startAxeAttack } from '../weapons/axeCombat.js?v=2fb05089';
-import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js?v=2fb05089';
-import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js?v=2fb05089';
-import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js?v=2fb05089';
-import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js?v=2fb05089';
-import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js?v=2fb05089';
-import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js?v=2fb05089';
-import { handCam } from './handCam.js?v=2fb05089';
-import { player, position, right, velocity, wallNormal } from '../player/state.js?v=2fb05089';
-import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js?v=2fb05089';
-import { moveToward } from '../player/movement.js?v=2fb05089';
-import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js?v=2fb05089';
-import { game, kick, kickVel } from '../game/state.js?v=2fb05089';
-import { rumble } from '../player/rumble.js?v=2fb05089';
-import { shipSway } from '../world/sea.js?v=2fb05089';
+import * as sfx from '../audio.js?v=6b2d2aee';
+import { playRing, playSwish } from '../audio.js?v=6b2d2aee';
+import { DEG } from '../math.js?v=6b2d2aee';
+import { camera } from '../core.js?v=6b2d2aee';
+import { DASH_SLASH, GROUND_COMBO } from '../weapons/kunaiAttacks.js?v=6b2d2aee';
+import { SWORD_COMBO, SWORD_THRUST } from '../weapons/swordAttacks.js?v=6b2d2aee';
+import { AXE_COMBO, AXE_DRIVE, AXE_LAUNCH, AXE_RUSH } from '../weapons/axeAttacks.js?v=6b2d2aee';
+import { axeState, startAxeAttack } from '../weapons/axeCombat.js?v=6b2d2aee';
+import { CHARGE_ZOOM, FOCUS_ZOOM, startSwordAttack, startSwordTwirl, swordReady, swordState, } from '../weapons/swordCombat.js?v=6b2d2aee';
+import { DASH_TWIRL_TIME, DEADEYE_ZOOM, gunReady, gunState, startTwirl } from '../weapons/handgunCombat.js?v=6b2d2aee';
+import { SICKLE_AIR_COMBO, SICKLE_COMBO, SICKLE_DASH, sickleState, startSickleMove, twirlSickles, } from '../weapons/sickleCombat.js?v=6b2d2aee';
+import { kunaiReady, kunaiState, startAttack } from '../weapons/kunaiCombat.js?v=6b2d2aee';
+import { BOW_ZOOM, bowState } from '../weapons/bowCombat.js?v=6b2d2aee';
+import { SCOPE_ZOOM, scopeView } from '../weapons/rifleCombat.js?v=6b2d2aee';
+import { handCam } from './handCam.js?v=6b2d2aee';
+import { player, position, right, velocity, wallNormal } from '../player/state.js?v=6b2d2aee';
+import { BASE_FOV, EYE_HEIGHT, FOV_SPEED_MAX, LOW_EYE_HEIGHT, MAX_FOV_BONUS, SLIDE_EYE_HEIGHT, SPRINT_SPEED, WALK_SPEED, WALLRUN_ROLL, } from '../player/config.js?v=6b2d2aee';
+import { moveToward } from '../player/movement.js?v=6b2d2aee';
+import { DOWN_EYE, DOWN_PITCH, DOWN_ROLL, downFall } from '../player/down.js?v=6b2d2aee';
+import { game, kick, kickVel } from '../game/state.js?v=6b2d2aee';
+import { rumble } from '../player/rumble.js?v=6b2d2aee';
+import { shipSway } from '../world/sea.js?v=6b2d2aee';
 // ---- カメラ演出 ----
 // 本体からも読み書きする値
 export const cameraFx = {
@@ -194,7 +194,8 @@ export const shakeEuler = new THREE.Euler();
 export const shakeQuat = new THREE.Quaternion();
 export function applyCameraOffset() {
     savedQuat.copy(camera.quaternion);
-    const s = cameraFx.trauma * cameraFx.trauma;
+    // スコープの倍率で揺れも大きく見えるので、覗いている間は倍率で割り、見た目の揺れを覗いていないときと揃える
+    const s = cameraFx.trauma * cameraFx.trauma / scopeMul;
     const t = cameraFx.shakeTime;
     const ls = landShakeAmount();
     shakeEuler.set(s * 0.04 * Math.sin(t * 47.3 + 1.3) + kick.x - ls * 0.09 * Math.abs(Math.sin(t * 97.1 + 0.4)), s * 0.04 * Math.sin(t * 53.1 + 4.1) + kick.y + ls * 0.05 * Math.sin(t * 89.3 + 2.2), cameraFx.roll + s * 0.05 * Math.sin(t * 41.7 + 2.7) + kick.z + ls * 0.07 * Math.sin(t * 103.7 + 5.1) + handCam.z);
