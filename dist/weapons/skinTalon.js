@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=a8ad3029';
-import { addGlow } from '../fx/glow.js?v=a8ad3029';
-import { skinFx } from './skins.js?v=a8ad3029';
+import { loftRings } from '../geometry.js?v=e316db84';
+import { addGlow } from '../fx/glow.js?v=e316db84';
+import { skinFx } from './skins.js?v=e316db84';
 // ---- 剣のスキン: 爪 ----
 // 黒い機械の刀。反りのある片刃を、鍔から伸びる二本の爪が挟む。
 //   刃: 腰から反る黒い片刃で、刃先の細い帯だけ赤く光り、外側へ光がにじむ。断面は元の刀と同じ（棟・鎬・刃先）

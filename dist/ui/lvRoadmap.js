@@ -1,11 +1,12 @@
-import * as sfx from '../audio.js?v=a8ad3029';
-import { BACKGROUNDS, FRAMES, partSwatch } from './cardParts.js?v=a8ad3029';
-import { MASTERY_MILESTONE, MASTERY_REWARDS, PLAYER_REWARDS, loadXp, masteryOf, playerMastery, playerXpToReach, xpToReach } from '../mastery.js?v=a8ad3029';
-import { SKINS } from '../weapons/skins.js?v=a8ad3029';
-import { BADGES, TITLES } from './cardHonors.js?v=a8ad3029';
-import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { BACKGROUNDS, FRAMES, partSwatch } from './cardParts.js?v=e316db84';
+import { MASTERY_MILESTONE, MASTERY_REWARDS, PLAYER_REWARDS, loadXp, masteryOf, playerMastery, playerXpToReach, xpToReach } from '../mastery.js?v=e316db84';
+import { SKINS } from '../weapons/skins.js?v=e316db84';
+import { BADGES, TITLES } from './cardHonors.js?v=e316db84';
+import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=e316db84';
 let cardPreviewHtml = () => '';
 export const initCardPreview = (fn) => (cardPreviewHtml = fn);
+export const cardPreview = (over) => cardPreviewHtml(over);
 // ---- 熟練度のロードマップ ----
 // 武器の熟練度と、プレイヤーのレベル（PLAY のタブの ROADMAP だけ）を同じ形で出す。
 // 武器の選択画面の LV を押すと、窓を入れ替えて出す。レベルの節を横に並べ、今のレベルを左寄りに置いて開く。

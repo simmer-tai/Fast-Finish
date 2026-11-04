@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { rand } from '../random.js?v=a8ad3029';
-import { camera } from '../core.js?v=a8ad3029';
-import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves, spawnGleam } from './hitFx.js?v=a8ad3029';
-import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=a8ad3029';
-import { en, hitDir, hitPoint } from '../enemy/state.js?v=a8ad3029';
+import { rand } from '../random.js?v=e316db84';
+import { camera } from '../core.js?v=e316db84';
+import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves, spawnGleam } from './hitFx.js?v=e316db84';
+import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js?v=e316db84';
+import { en, hitDir, hitPoint } from '../enemy/state.js?v=e316db84';
 const TRUNK_SEGS = 10; // 幹の折れ目の数
 const FORK_SEGS = 4; // 枝の折れ目の数
 const MAX_FORKS = 2;

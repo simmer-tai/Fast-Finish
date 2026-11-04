@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { STRUCT_GRID, boxGeo, gridMaterial, octagonXGeo, octagonZGeo } from '../world/blocks.js?v=a8ad3029';
-import { DUMMY_HIP_Y, buildEnemyBody } from './body.js?v=a8ad3029';
+import { STRUCT_GRID, boxGeo, gridMaterial, octagonXGeo, octagonZGeo } from '../world/blocks.js?v=e316db84';
+import { DUMMY_HIP_Y, buildEnemyBody } from './body.js?v=e316db84';
 // ---- ボスの機体 ----
 // 頭のない二足歩行の機体。高さ 6.5m ほど（プレイヤーの 3.5 倍ほど）で、+Z を向いて立つ。
 // 機動力が高く見えるよう、脚は逆関節（膝が前、かかとが高い）にして、つま先で立たせる。胴体は前のめりに傾け、

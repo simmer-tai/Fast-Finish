@@ -1,4 +1,4 @@
-import { BOSS_LIMBS, boss } from '../enemy/boss.js?v=a8ad3029';
+import { BOSS_LIMBS, boss } from '../enemy/boss.js?v=e316db84';
 // ---- HUD: ボスの体力（画面の中央上） ----
 // 帯 1 本。部位がすべて故障するまでは、部位 4 つの体力の合計を白い斜線の入った灰色の帯（装甲）で黒い本体の手前に重ねる。% は本体の割合
 // 削れた分は赤い帯（.c）として残し、少し待ってから実際の量まで縮める

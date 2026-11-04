@@ -116,7 +116,7 @@
         content: ""; position: absolute; left: calc(-10 * var(--u)); bottom: 0; width: min(calc(1100 * var(--u)), 80vw); height: 1px; pointer-events: none;
         background: linear-gradient(90deg, rgba(51, 51, 51, .55), rgba(51, 51, 51, 0));
       }
-      #overlay.title:is(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap) .play-tabs { display: flex; }
+      #overlay.title:is(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback) .play-tabs { display: flex; }
       #overlay.select-multiplayer:has(.multiplayer [data-flow]:not([hidden])) .play-tabs, #overlay.pick-weapon .play-tabs { display: none; }
       #overlay .play-tabs button {
         position: relative; isolation: isolate; display: flex; align-items: center; border: 0; background: none; cursor: pointer;
@@ -131,10 +131,10 @@
         transition: max-width .3s cubic-bezier(.2, .8, .2, 1), margin-left .3s cubic-bezier(.2, .8, .2, 1), opacity .16s;
       }
       #overlay .play-tabs button small { font-size: max(8px, calc(11 * var(--u))); letter-spacing: .26em; opacity: .7; }
-      #overlay.select-stage .play-tabs [data-tab="single"] span, #overlay.select-challenge .play-tabs [data-tab="challenge"] span, #overlay.select-multiplayer .play-tabs [data-tab="multi"] span, #overlay.select-locker .play-tabs [data-tab="locker"] span, #overlay.select-roadmap .play-tabs [data-tab="roadmap"] span {
+      #overlay.select-stage .play-tabs [data-tab="single"] span, #overlay.select-challenge .play-tabs [data-tab="challenge"] span, #overlay.select-multiplayer .play-tabs [data-tab="multi"] span, #overlay.select-locker .play-tabs [data-tab="locker"] span, #overlay.select-roadmap .play-tabs [data-tab="roadmap"] span, #overlay.select-feedback .play-tabs [data-tab="feedback"] span {
         max-width: 18em; margin-left: calc(12 * var(--u)); opacity: 1; transition: max-width .3s cubic-bezier(.2, .8, .2, 1), margin-left .3s cubic-bezier(.2, .8, .2, 1), opacity .2s .08s;
       }
-      #overlay.select-stage .play-tabs [data-tab="single"] svg, #overlay.select-challenge .play-tabs [data-tab="challenge"] svg, #overlay.select-multiplayer .play-tabs [data-tab="multi"] svg, #overlay.select-locker .play-tabs [data-tab="locker"] svg, #overlay.select-roadmap .play-tabs [data-tab="roadmap"] svg { animation: tab-icon-in .34s cubic-bezier(.3, 1.6, .5, 1) both; }
+      #overlay.select-stage .play-tabs [data-tab="single"] svg, #overlay.select-challenge .play-tabs [data-tab="challenge"] svg, #overlay.select-multiplayer .play-tabs [data-tab="multi"] svg, #overlay.select-locker .play-tabs [data-tab="locker"] svg, #overlay.select-roadmap .play-tabs [data-tab="roadmap"] svg, #overlay.select-feedback .play-tabs [data-tab="feedback"] svg { animation: tab-icon-in .34s cubic-bezier(.3, 1.6, .5, 1) both; }
       @keyframes tab-icon-in { from { transform: scale(.6) rotate(-12deg); } }
       @keyframes tab-band-in { from { transform: skewX(-24deg) scaleX(.2); opacity: 0; } }
       #overlay .play-tabs button::before { content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-24deg); transition: background .12s; }
@@ -144,13 +144,14 @@
       }
       #overlay .play-tabs button:hover, #overlay .play-tabs button:focus-visible { color: var(--ink); outline: none; }
       #overlay .play-tabs button:hover::before, #overlay .play-tabs button:focus-visible::before { background: rgba(51, 51, 51, .07); }
-      #overlay.select-stage .play-tabs [data-tab="single"], #overlay.select-challenge .play-tabs [data-tab="challenge"], #overlay.select-multiplayer .play-tabs [data-tab="multi"], #overlay.select-locker .play-tabs [data-tab="locker"], #overlay.select-roadmap .play-tabs [data-tab="roadmap"] { color: #fff; cursor: default; }
-      #overlay.select-stage .play-tabs [data-tab="single"]::before, #overlay.select-challenge .play-tabs [data-tab="challenge"]::before, #overlay.select-multiplayer .play-tabs [data-tab="multi"]::before, #overlay.select-locker .play-tabs [data-tab="locker"]::before, #overlay.select-roadmap .play-tabs [data-tab="roadmap"]::before { background: var(--ink); transform-origin: 0 50%; animation: tab-band-in .26s cubic-bezier(.2, .8, .2, 1) both; }
+      #overlay.select-stage .play-tabs [data-tab="single"], #overlay.select-challenge .play-tabs [data-tab="challenge"], #overlay.select-multiplayer .play-tabs [data-tab="multi"], #overlay.select-locker .play-tabs [data-tab="locker"], #overlay.select-roadmap .play-tabs [data-tab="roadmap"], #overlay.select-feedback .play-tabs [data-tab="feedback"] { color: #fff; cursor: default; }
+      #overlay.select-stage .play-tabs [data-tab="single"]::before, #overlay.select-challenge .play-tabs [data-tab="challenge"]::before, #overlay.select-multiplayer .play-tabs [data-tab="multi"]::before, #overlay.select-locker .play-tabs [data-tab="locker"]::before, #overlay.select-roadmap .play-tabs [data-tab="roadmap"]::before, #overlay.select-feedback .play-tabs [data-tab="feedback"]::before { background: var(--ink); transform-origin: 0 50%; animation: tab-band-in .26s cubic-bezier(.2, .8, .2, 1) both; }
       #overlay.select-stage .play-tabs :is([data-tab="single"], [data-tab="single"] + button)::after,
       #overlay.select-challenge .play-tabs :is([data-tab="challenge"], [data-tab="challenge"] + button)::after,
       #overlay.select-multiplayer .play-tabs :is([data-tab="multi"], [data-tab="multi"] + button)::after,
       #overlay.select-locker .play-tabs :is([data-tab="locker"], [data-tab="locker"] + button)::after,
-      #overlay.select-roadmap .play-tabs :is([data-tab="roadmap"], [data-tab="roadmap"] + button)::after { display: none; }
+      #overlay.select-roadmap .play-tabs :is([data-tab="roadmap"], [data-tab="roadmap"] + button)::after,
+      #overlay.select-feedback .play-tabs :is([data-tab="feedback"], [data-tab="feedback"] + button)::after { display: none; }
       /* マルチプレイ: 見出しはステージ選択と同じ位置と大きさに置き、状態と BACK / START は下端にそろえる */
       #overlay.select-multiplayer .frame { visibility: hidden; }
       #overlay .multiplayer {
@@ -160,7 +161,7 @@
       #overlay.select-multiplayer .multiplayer { display: flex; }
       #overlay .multiplayer [hidden] { display: none !important; }
       #overlay .mp-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex: none; }
-      #overlay :is(.multiplayer, .locker, .roadmap) h2 { margin: calc(16 * var(--u)) 0 0; font-weight: 600; font-size: calc(104 * var(--u)); line-height: .85; letter-spacing: .01em; animation: ov-slide .45s .04s cubic-bezier(.2, .9, .3, 1) both; }
+      #overlay :is(.multiplayer, .locker, .roadmap, .feedback) h2 { margin: calc(16 * var(--u)) 0 0; font-weight: 600; font-size: calc(104 * var(--u)); line-height: .85; letter-spacing: .01em; animation: ov-slide .45s .04s cubic-bezier(.2, .9, .3, 1) both; }
       #overlay .mp-heading-side { text-align: right; color: var(--ink-soft); font-size: max(10px, calc(14 * var(--u))); letter-spacing: .32em; white-space: nowrap; }
       #overlay .mp-heading-side b { display: block; margin-top: calc(6 * var(--u)); font-size: max(22px, calc(40 * var(--u))); line-height: 1; color: var(--ink); letter-spacing: .08em; }
       #overlay .multiplayer .rule { flex: none; }
@@ -326,8 +327,8 @@
       #overlay .mp-bottom { flex: none; margin-top: auto; padding-top: calc(14 * var(--u)); }
       /* PLAY のタブ（CO-OP / CHALLENGE / LOCKER / ROADMAP）の下の帯: BACK の行だけを、画面下の帯（.foot）の高さまで下げて置く。
          .foot のタブ名は上のタブと見出しで分かるので出さない。その分、中身を下まで使う */
-      #overlay :is(.multiplayer, .challenge, .locker, .roadmap) .mp-bottom .mp-footer { margin-top: 0; }
-      #overlay.title:is(.select-challenge, .select-multiplayer, .select-locker, .select-roadmap) .foot { display: none; }
+      #overlay :is(.multiplayer, .challenge, .locker, .roadmap, .feedback) .mp-bottom .mp-footer { margin-top: 0; }
+      #overlay.title:is(.select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback) .foot { display: none; }
       #overlay .mp-status { display: flex; align-items: center; gap: 12px; margin: 0; padding: calc(12 * var(--u)) 0; border-top: 1px solid var(--ink-faint); font: 500 max(12px, calc(14 * var(--u)))/1.5 "IBM Plex Sans JP", sans-serif; }
       #overlay .mp-status::before { content: "STATUS"; flex: none; padding: 4px 9px; background: var(--ink); color: #fff; font: 600 max(10px, calc(12 * var(--u))) "Barlow Condensed", sans-serif; letter-spacing: .2em; }
       #overlay .mp-footer { align-items: center; margin-top: calc(10 * var(--u)); }
@@ -388,9 +389,49 @@
       @media (prefers-reduced-motion: reduce) { #overlay .pc-mark-talon .tc-red { animation: none; } }
       #overlay .pcard .pc-id { min-width: 0; }
       #overlay .pcard .pc-name {
-        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 2cqw;
+        /* 上下左の余白は、名前の色の光や縁が切れないためのもの。同じだけ負の margin で打ち消して、字の位置は変えない */
+        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2em 2cqw 0.2em 0.2em; margin: -0.2em 0 -0.2em -0.2em;
         font: 600 10.5cqw/0.9 "Barlow Condensed", "IBM Plex Sans JP", sans-serif; letter-spacing: 0.02em;
       }
+      /* 名前の色（cardParts.ts の NAME_COLORS）。カードの名前とパレットの見本で共通。大きさは em で書く */
+      #overlay .nc-black { color: #333; }
+      #overlay .nc-white { color: #f2f2f2; }
+      /* 地と同じ明るさの白・黒は、そのままだと読めないので縁を付ける */
+      #overlay :is(.pcard, .lk-palette):not(.dark) .nc-white { -webkit-text-stroke: 0.04em #333; paint-order: stroke fill; }
+      #overlay :is(.pcard, .lk-palette).dark .nc-black { color: #111; -webkit-text-stroke: 0.04em rgba(242, 242, 242, 0.85); paint-order: stroke fill; }
+      #overlay .nc-rededge { color: #e52828; }
+      /* TALON: 黒い字に赤いネオンの縁。周期はフレームの赤い帯（tl-flicker）と同じで、一緒にまたたく */
+      #overlay .nc-talon {
+        --nc-glow: 0 0 0.06em #ff2a2a, 0 0 0.2em rgba(255, 40, 40, 0.75);
+        color: #0c0c0c; -webkit-text-stroke: 0.05em #ff3b30; paint-order: stroke fill; text-shadow: var(--nc-glow); animation: nc-talon 5.3s linear infinite;
+      }
+      @keyframes nc-talon {
+        0%, 87%, 89%, 91.5%, 100% { -webkit-text-stroke-color: #ff3b30; text-shadow: var(--nc-glow); }
+        88% { -webkit-text-stroke-color: #6e1712; text-shadow: 0 0 0 transparent, 0 0 0 transparent; }
+        90% { -webkit-text-stroke-color: #a8241c; text-shadow: 0 0 0.03em rgba(255, 42, 42, 0.5), 0 0 0.08em rgba(255, 40, 40, 0.3); }
+      }
+      /* FALCON: 黒い鋼の字に細い金の縁。縁の上を、フレームの金の線（fc-glint）と同じ色・周期の光がうっすら走る。
+         光は字に重ねた SVG の文字（playerCard.ts の nameText）に破線を引いて動かす。SVG は幅も高さも 0 の行内の要素で、y = 0 がちょうど字のベースラインに来る */
+      #overlay .nc-falcon { color: #111214; -webkit-text-stroke: 0.035em #c9a25a; paint-order: stroke fill; }
+      #overlay .nc-trace { display: inline; width: 0; height: 0; overflow: visible; }
+      #overlay .nc-trace text {
+        fill: none; stroke: #fff6dc; stroke-width: 0.022em; stroke-linecap: round; stroke-dasharray: 0.4em 6em; -webkit-text-stroke: 0;
+        filter: drop-shadow(0 0 0.03em rgba(255, 210, 122, 0.7)); animation: nc-trace 4.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      @keyframes nc-trace { 0% { stroke-dashoffset: 0; opacity: 0; } 4% { opacity: 0.6; } 36% { opacity: 0.6; } 40% { stroke-dashoffset: -4em; opacity: 0; } 100% { stroke-dashoffset: -4em; opacity: 0; } }
+      /* SCAN: 走査線の入った緑の蛍光 */
+      #overlay .nc-scan {
+        color: transparent; background: repeating-linear-gradient(0deg, #a4ffd0 0 0.05em, rgba(164, 255, 208, 0.45) 0.05em 0.09em); -webkit-background-clip: text; background-clip: text;
+        filter: drop-shadow(0 0 0.07em rgba(90, 255, 170, 0.7));
+      }
+      /* 明るい地では淡い緑が読めないので、濃い緑にして光を弱める */
+      #overlay :is(.pcard, .lk-palette):not(.dark) .nc-scan {
+        background-image: repeating-linear-gradient(0deg, #0c9a5f 0 0.05em, rgba(12, 154, 95, 0.6) 0.05em 0.09em);
+        -webkit-text-stroke: 0.012em #0a5c3a; filter: drop-shadow(0 0 0.04em rgba(12, 154, 95, 0.35));
+      }
+      @media (prefers-reduced-motion: reduce) { #overlay .nc-talon { animation: none; } #overlay .nc-trace { display: none; } }
+      #overlay.low-quality .lk-nc-tile .nc-talon { animation: none; }
+      #overlay.low-quality .lk-nc-tile .nc-trace { display: none; }
       /* 称号とバッジ: 名前の下の段。称号は赤い斜めの印を頭に付けた小さな字で左に、バッジは小さな台にして右に並べる */
       /* 名前の下に称号、その下にバッジを左寄せで並べる */
       #overlay .pcard .pc-sub { display: flex; flex-direction: column; align-items: flex-start; gap: 1.6cqw; margin-top: 1.8cqw; }
@@ -517,7 +558,32 @@
         90% { opacity: 0.45; }
         91.5%, 100% { opacity: 1; }
       }
-      @media (prefers-reduced-motion: reduce) { #overlay .pc-talon :is(.tl-red, .tl-zap > *) { animation: none; } }
+      /* カードの表面の爪痕（SVG は cardParts.ts の TALON_SCARS）。FALCON の面と同じく z-index: -1 で文字の下に敷く。奥の赤は枠の帯と一緒にまたたき、ts-flare は枠の放電と同じ周期で強く光る */
+      #overlay .pcard .pc-scars { display: none; position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #overlay .pcard.fr-talon .pc-scars { display: block; }
+      #overlay .pc-scars .ts-cut { fill: #050505; fill-opacity: 0.82; }
+      #overlay .pcard.dark .pc-scars .ts-cut { fill-opacity: 0.95; }
+      #overlay .pc-scars .ts-lip { fill: none; stroke: #fff; stroke-opacity: 0.45; stroke-width: 0.18; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay .pcard.dark .pc-scars .ts-lip { stroke-opacity: 0.22; }
+      #overlay .pc-scars .ts-core { fill: #ff3b30; filter: drop-shadow(0 0 0.5px #ff2a2a) drop-shadow(0 0 1.4px rgba(255, 40, 40, 0.7)); animation: tl-flicker 5.3s linear infinite; }
+      #overlay .pc-scars .ts-flare { fill: #ffe1dc; opacity: 0; filter: drop-shadow(0 0 0.6px #ff3b30) drop-shadow(0 0 2.4px rgba(255, 40, 40, 0.95)); animation: ts-flare var(--d) var(--o) linear infinite; }
+      @keyframes ts-flare { 0%, 90% { opacity: 0; } 90.2% { opacity: 1; } 91.5% { opacity: 0.35; } 92.5% { opacity: 0.85; } 95%, 100% { opacity: 0; } }
+      /* カード全体に走る大きな電撃（SVG は cardParts.ts の TALON_SURGE）。周期は 20 秒で、終わりの 0.5 秒ほどだけ光る。最初の 1 回は表示から 6 秒足らずで来るよう、周期を先へ進めておく。爪痕と面も同じ時間で光る */
+      #overlay .pc-talon .tl-surge > * { fill: none; stroke: #fff; stroke-width: 0.55; stroke-linecap: round; stroke-linejoin: round; opacity: 0; filter: drop-shadow(0 0 0.6px #ff3b30) drop-shadow(0 0 3px rgba(255, 40, 40, 0.95)); }
+      #overlay .pc-talon .tl-surge .sa { animation: tl-surge-a 20s -14s linear infinite; }
+      #overlay .pc-talon .tl-surge .sb { animation: tl-surge-b 20s -14s linear infinite; }
+      #overlay .pc-talon .tl-surge .sbr { stroke-width: 0.3; animation: tl-surge-br 20s -14s linear infinite; }
+      #overlay .pc-scars .ts-surge { fill: #fff2ef; opacity: 0; filter: drop-shadow(0 0 0.8px #ff3b30) drop-shadow(0 0 3.2px rgba(255, 40, 40, 0.95)); animation: ts-surge 20s -14s linear infinite; }
+      #overlay .pc-scars .ts-wash { fill: #ff2a2a; opacity: 0; animation: ts-wash 20s -14s linear infinite; }
+      @keyframes tl-surge-a { 0%, 97% { opacity: 0; } 97.01%, 97.3% { opacity: 1; } 97.31%, 98.1% { opacity: 0; } 98.11%, 98.4% { opacity: 1; } 98.41%, 100% { opacity: 0; } }
+      @keyframes tl-surge-b { 0%, 97.35% { opacity: 0; } 97.36%, 97.65% { opacity: 1; } 97.66%, 98.45% { opacity: 0; } 98.46%, 98.65% { opacity: 0.8; } 98.66%, 100% { opacity: 0; } }
+      @keyframes tl-surge-br { 0%, 97.05% { opacity: 0; } 97.06%, 97.6% { opacity: 1; } 97.61%, 100% { opacity: 0; } }
+      @keyframes ts-surge { 0%, 97% { opacity: 0; } 97.1% { opacity: 1; } 98% { opacity: 0.5; } 98.15% { opacity: 1; } 99.5%, 100% { opacity: 0; } }
+      @keyframes ts-wash { 0%, 97% { opacity: 0; } 97.1% { opacity: 0.28; } 97.8% { opacity: 0.08; } 98.15% { opacity: 0.2; } 99.2%, 100% { opacity: 0; } }
+      /* 背景の一覧の見本は 8 枚並ぶので、爪痕は光らせず、大きな電撃も出さない */
+      #overlay .lk-bg[data-bg] .pc-scars .ts-core { animation: none; }
+      #overlay .lk-bg[data-bg] :is(.pc-scars .ts-flare, .pc-scars .ts-surge, .pc-scars .ts-wash, .pc-talon .tl-surge) { display: none; }
+      @media (prefers-reduced-motion: reduce) { #overlay .pc-talon :is(.tl-red, .tl-zap > *, .tl-surge > *) { animation: none; } #overlay .pc-scars :is(.ts-core, .ts-flare, .ts-surge, .ts-wash) { animation: none; } }
       /* 上の爪の下に札の文字が入らないよう、少し下げる */
       #overlay .pcard.fr-talon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
       /* FALCON: 隼のスキンの意匠（SVG は cardParts.ts の FALCON_FRAME）。背景の色によらず白い陶器の縁・黒い鋼の翼・金の羽根 */
@@ -529,26 +595,34 @@
       #overlay .pc-falcon .fc-wing { fill: #111214; stroke: #34373c; stroke-width: 0.3; stroke-linejoin: round; }
       #overlay .pc-falcon .fc-gloss { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.3; stroke-linecap: round; }
       #overlay .pc-falcon .fc-shell { fill: #e6e8ea; stroke: #8f9399; stroke-width: 0.2; }
-      #overlay .pc-falcon .fc-gold { fill: #c9a25a; stroke: #7a5a22; stroke-width: 0.2; animation: fc-sheen 6.4s linear infinite; }
+      #overlay .pc-falcon .fc-gold { fill: #c9a25a; stroke: #7a5a22; stroke-width: 0.2; animation: fc-sheen 4.8s linear infinite; }
       #overlay .pc-falcon .fc-ring { fill: #0c0d0e; stroke: #c9a25a; stroke-width: 0.6; }
       #overlay .pc-falcon .fc-slot { fill: #c9a25a; }
       #overlay .pc-falcon .fc-core { fill: #ffe2a0; filter: drop-shadow(0 0 0.5px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.9)); animation: fc-core 3.2s ease-in-out infinite; }
       /* 金の線を走る光。向かい合う 2 本が、周期の初めの 3 割で半周ずつ進む */
       #overlay .pc-falcon .fc-glint {
         fill: none; stroke: #fff6dc; stroke-width: 0.7; stroke-linecap: round; stroke-dasharray: 3 47;
-        filter: drop-shadow(0 0 0.6px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.8)); animation: fc-glint 6.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        filter: drop-shadow(0 0 0.6px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.8)); animation: fc-glint 4.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
-      #overlay .pc-falcon .fc-dust { fill: #ffe2a0; opacity: 0; filter: drop-shadow(0 0 0.4px #e0a640); animation: fc-dust var(--d) var(--o) ease-out infinite; }
-      @keyframes fc-glint { 0% { stroke-dashoffset: 0; opacity: 0; } 3% { opacity: 1; } 27% { opacity: 1; } 30% { stroke-dashoffset: -50; opacity: 0; } 100% { stroke-dashoffset: -50; opacity: 0; } }
+      @keyframes fc-glint { 0% { stroke-dashoffset: 0; opacity: 0; } 4% { opacity: 1; } 36% { opacity: 1; } 40% { stroke-dashoffset: -50; opacity: 0; } 100% { stroke-dashoffset: -50; opacity: 0; } }
       /* 光が角を出る瞬間に、金の羽根が明るく照る */
-      @keyframes fc-sheen { 0%, 100% { fill: #c9a25a; } 2% { fill: #f4dca0; } 8% { fill: #c9a25a; } }
+      @keyframes fc-sheen { 0%, 100% { fill: #c9a25a; } 2.667% { fill: #f4dca0; } 10.667% { fill: #c9a25a; } }
       @keyframes fc-core { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-      @keyframes fc-dust {
-        0%, 55% { opacity: 0; transform: none; }
-        60% { opacity: 1; transform: none; }
-        100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
-      }
-      @media (prefers-reduced-motion: reduce) { #overlay .pc-falcon :is(.fc-gold, .fc-core, .fc-glint, .fc-dust) { animation: none; } #overlay .pc-falcon .fc-glint { display: none; } }
+      /* カードの表面の三角形（SVG は cardParts.ts の FALCON_FACETS）。z-index: -1 で背景の模様より上、文字より下に敷く。面の明暗は計算して白と黒の半透明で重ねるので、背景の明暗によらず凹凸に見える。内側の影で、面が枠より一段奥に沈んで見えるようにする */
+      #overlay .pcard .pc-facets { display: none; position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; pointer-events: none; box-shadow: inset 0 0 6cqw rgba(0, 0, 0, 0.16); }
+      #overlay .pcard.dark .pc-facets { box-shadow: inset 0 0 6cqw rgba(0, 0, 0, 0.5); }
+      #overlay .pcard.fr-falcon .pc-facets { display: block; }
+      #overlay .pc-facets .fc-face { stroke: var(--fg); stroke-opacity: 0.05; stroke-width: 0.12; stroke-linejoin: round; }
+      /* 光る面。単色の金で塗り、線は引かない。傾きの大きい面ほど強い（--a）。周期は cardParts.ts の FACET_ORBIT_SEC と同じ */
+      #overlay .pc-facets .fc-lit { fill: #c9a25a; fill-opacity: calc(var(--a) * 0.5); opacity: 0; animation: fc-facet-lit 10s var(--o) ease-in-out infinite; }
+      #overlay .pcard.dark .pc-facets .fc-lit { fill: #ffe9b8; fill-opacity: calc(var(--a) * 0.32); }
+      @keyframes fc-facet-lit { 0% { opacity: 0; } 6% { opacity: 1; } 18%, 100% { opacity: 0; } }
+      /* 背景の一覧の見本は 8 枚並ぶので、面だけ見せて光らせない */
+      #overlay .lk-bg[data-bg] .pc-facets .fc-lit { display: none; }
+      /* LOW 以下ではロッカーの一覧のフレームを静止させる */
+      #overlay.low-quality .lk-bg .pcard :is(.pc-talon *, .pc-scars *, .pc-falcon *, .pc-facets *) { animation: none; }
+      #overlay.low-quality .lk-bg .pcard .fc-glint { display: none; }
+      @media (prefers-reduced-motion: reduce) { #overlay .pc-falcon :is(.fc-gold, .fc-core, .fc-glint) { animation: none; } #overlay .pc-falcon .fc-glint { display: none; } #overlay .pc-facets .fc-lit { animation: none; } }
       /* 上の翼の下に札の文字が入らないよう、少し下げる */
       #overlay .pcard.fr-falcon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
       /* HAZARD: 上下に斜めの縞の帯 */
@@ -563,7 +637,7 @@
         display: none; position: absolute; right: calc(80 * var(--u)); top: calc(683 * var(--u)); width: calc(480 * var(--u)); pointer-events: none;
         transform: translateY(-100%) perspective(calc(1200 * var(--u))) rotateY(-6deg); transform-origin: 100% 50%;
       }
-      #overlay.title.card-on:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .title-card { display: block; }
+      #overlay.title.card-on:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .title-card { display: block; }
       #overlay .title-card .pcard { animation: pc-in 0.6s 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
       @keyframes pc-in { from { opacity: 0; transform: translateX(calc(60 * var(--u))); } }
       /* ---- ロッカー ----
@@ -675,6 +749,14 @@
         background: rgba(255, 255, 255, 0.45); color: var(--ink); font: 600 max(24px, calc(48 * var(--u)))/1 "Barlow Condensed", "IBM Plex Sans JP", sans-serif; letter-spacing: 0.06em;
       }
       #overlay .lk-pane[data-pane="name"] input:focus { background: rgba(255, 255, 255, 0.8); }
+      /* 名前の色のパレット。見本の地は今の背景の明暗に合わせる。解放していないフレームや背景の色は一覧に出さない */
+      #overlay .lk-pane[data-pane="name"] .lk-nc-head { display: block; margin: calc(24 * var(--u)) 0 calc(10 * var(--u)); font: 500 max(12px, calc(14 * var(--u))) "IBM Plex Sans JP", sans-serif; color: var(--ink-soft); }
+      #overlay .lk-palette { --tile: #efefef; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: calc(16 * var(--u)); padding: calc(6 * var(--u)); }
+      #overlay .lk-palette.dark { --tile: #2b2b2b; }
+      #overlay .lk-nc .lk-nc-tile { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 11; background: var(--tile); box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.25); font: 600 max(24px, calc(46 * var(--u)))/1 "Barlow Condensed", sans-serif; }
+      #overlay .lk-nc .lk-nc-tile b { padding: 0.08em 0.14em; font-weight: inherit; }
+      #overlay .lk-nc small { letter-spacing: 0.12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #overlay .lk-palette .lk-nc.lk-nc-absent { display: none; }
       #overlay .lk-note { flex: none; display: none; margin: calc(16 * var(--u)) 0 0 calc(12 * var(--u)); font: 500 max(11px, calc(13 * var(--u)))/1.6 "IBM Plex Sans JP", sans-serif; color: var(--ink-soft); }
       #overlay .lk-edit:has(.lk-pane[data-pane="stats"].active) .lk-note[data-note="stats"], #overlay .lk-edit:has(.lk-pane[data-pane="badge"].active) .lk-note[data-note="badge"] { display: block; }
       #overlay .locker .mp-footer > button { padding: calc(12 * var(--u)) calc(36 * var(--u)); font-size: max(18px, calc(30 * var(--u))); letter-spacing: 0.16em; }
@@ -702,6 +784,44 @@
         #overlay .lk-cats button::after { content: none; }
       }
       @media (max-width: 700px) { #overlay .locker { padding: 28px 24px 32px; } }
+      /* ---- フィードバック（PLAY のタブ） ----
+         ロードマップと同じ置き方。呼びかけ、書いてほしいことの例、フォームを開くボタンの順に並べる */
+      #overlay.select-feedback .frame { visibility: hidden; }
+      #overlay .feedback {
+        display: none; position: absolute; inset: 0; flex-direction: column; overflow: hidden; cursor: default; box-sizing: border-box;
+        padding: calc(80 * var(--u)) calc(80 * var(--u)) max(56px, calc(100 * var(--u)));
+      }
+      #overlay.select-feedback .feedback { display: flex; }
+      #overlay .feedback .rule { flex: none; }
+      #overlay .fb-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; gap: calc(34 * var(--u)); max-width: calc(1420 * var(--u)); animation: ov-slide 0.45s 0.08s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      #overlay .fb-lead { margin: 0; font: 700 max(20px, calc(46 * var(--u)))/1.3 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.02em; }
+      #overlay .fb-text { margin: calc(-16 * var(--u)) 0 0; font: 500 max(13px, calc(21 * var(--u)))/1.75 "IBM Plex Sans JP", sans-serif; color: rgba(51, 51, 51, 0.85); }
+      #overlay .fb-topics { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(16 * var(--u)); }
+      #overlay .fb-topic { padding: calc(18 * var(--u)) calc(20 * var(--u)); border-left: calc(4 * var(--u)) solid var(--ink); background: rgba(255, 255, 255, 0.5); }
+      #overlay .fb-topic small { display: block; font-size: max(10px, calc(15 * var(--u))); letter-spacing: 0.22em; color: var(--ink-soft); }
+      #overlay .fb-topic b { display: block; margin-top: calc(6 * var(--u)); font: 700 max(13px, calc(22 * var(--u)))/1.35 "IBM Plex Sans JP", sans-serif; }
+      #overlay .fb-topic p { margin: calc(10 * var(--u)) 0 0; font: 500 max(11px, calc(16 * var(--u)))/1.55 "IBM Plex Sans JP", sans-serif; color: rgba(51, 51, 51, 0.72); }
+      #overlay .fb-action { display: flex; flex-wrap: wrap; align-items: center; gap: calc(16 * var(--u)) calc(34 * var(--u)); padding-left: calc(12 * var(--u)); }
+      #overlay .fb-send {
+        position: relative; isolation: isolate; display: flex; align-items: baseline; gap: calc(16 * var(--u)); padding: calc(18 * var(--u)) calc(46 * var(--u)); border: 0; background: none; color: #fff; cursor: pointer;
+        font: 600 max(20px, calc(38 * var(--u))) "Barlow Condensed", sans-serif; letter-spacing: 0.14em; transition: transform 0.15s;
+      }
+      #overlay .fb-send::before { content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-18deg); background: var(--ink); }
+      #overlay .fb-send small { font: 500 max(11px, calc(17 * var(--u))) "IBM Plex Sans JP", sans-serif; letter-spacing: 0.08em; opacity: 0.85; }
+      #overlay .fb-send:is(:hover, :focus-visible, .pad-focus) { outline: none; transform: translateX(calc(8 * var(--u))); }
+      #overlay .fb-note { margin: 0; font: 500 max(11px, calc(17 * var(--u)))/1.5 "IBM Plex Sans JP", sans-serif; color: var(--ink-soft); }
+      #overlay .fb-note.thanks { color: var(--ink); font-weight: 700; }
+      #overlay .feedback .mp-footer > button {
+        position: relative; isolation: isolate; border: 0; background: none; color: var(--ink); cursor: pointer;
+        font: 600 max(18px, calc(30 * var(--u))) "Barlow Condensed", sans-serif; letter-spacing: 0.16em; transition: color 0.15s;
+      }
+      #overlay .feedback .mp-footer > button::before { content: ""; position: absolute; z-index: -1; inset: 0; transform: skewX(-18deg); box-shadow: inset 0 0 0 1px rgba(51, 51, 51, 0.4); transition: background 0.15s; }
+      #overlay .feedback .mp-footer > button:is(:hover, :focus-visible, .pad-focus) { color: #fff; outline: none; }
+      #overlay .feedback .mp-footer > button:is(:hover, :focus-visible, .pad-focus)::before { background: var(--ink); }
+      @media (max-width: 700px) {
+        #overlay .feedback { padding: 28px 24px 32px; }
+        #overlay .fb-topics { grid-template-columns: repeat(2, 1fr); }
+      }
       /* ---- ロードマップ（PLAY のタブ） ----
          ロッカーと同じ置き方。上に武器のアイコンのタブ、その下に武器の選択画面の窓と同じ中身（.lv-sum と .lv-track。見た目は下の熟練度のロードマップの節） */
       #overlay.select-roadmap .frame { visibility: hidden; }
@@ -890,6 +1010,7 @@
       #overlay .ch-bonus.got::before, #overlay .ch-bonus.got:hover::before { background: var(--ink); box-shadow: none; }
       #overlay .ch-bonus.got, #overlay .ch-bonus.got .go { color: #fff; }
       #overlay .ch-frame { display: block; flex: none; width: calc(112 * var(--u)); container-type: inline-size; }
+      #overlay :is(.challenge .ch-frame, .ch-tip) .pc-talon * { animation: none; }
       #overlay .ch-bonus .sw-name .nm { font-size: calc(28 * var(--u)); }
       #overlay .ch-bonus .go { color: var(--ink); font-weight: 600; }
       #overlay .ch-bonus .go em { font-style: normal; }
@@ -1003,6 +1124,9 @@
         display: flex; align-items: center; gap: calc(12 * var(--u)); margin: 0 0 calc(14 * var(--u)); font-weight: 600; font-size: max(10px, calc(14 * var(--u))); letter-spacing: 0.32em;
       }
       #overlay .options h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(51, 51, 51, 0.5), rgba(51, 51, 51, 0)); }
+      #overlay .options h2 { padding-right: calc(72 * var(--u)); }
+      #overlay .options-close { position: absolute; top: calc(22 * var(--u)); right: calc(30 * var(--u)); border: 1px solid var(--ink-faint); background: transparent; color: var(--ink); padding: 6px 10px; font: 600 max(10px, calc(11 * var(--u))) "IBM Plex Sans JP", sans-serif; letter-spacing: 0.12em; cursor: pointer; }
+      #overlay .options-close:hover, #overlay .options-close:focus-visible { background: var(--ink); color: #fff; }
       #overlay .options h3 { margin: 0 0 calc(6 * var(--u)); font-weight: 600; font-size: max(10px, calc(12 * var(--u))); letter-spacing: 0.3em; color: var(--ink-soft); }
       /* 1 行 = 1 項目。選んでいる行は左に斜めの短い帯を立てる */
       #overlay .opt { position: relative; display: flex; align-items: center; gap: calc(12 * var(--u)); padding: calc(8 * var(--u)) 0 calc(8 * var(--u)) calc(16 * var(--u)); }
@@ -1048,6 +1172,39 @@
         animation: ov-fade 0.6s 0.7s ease-out both;
       }
       #overlay .foot .prompt { font-family: "Barlow Condensed", "IBM Plex Sans JP", sans-serif; color: var(--ink); animation: ov-blink 1.2s ease-in-out infinite alternate; }
+      /* パッチノート。タイトルの右下のアイコンから開く。ほかの画面を出している間はアイコンを隠す */
+      #overlay .pn-open {
+        display: none; position: absolute; z-index: 1; right: calc(80 * var(--u)); bottom: calc(30 * var(--u)); isolation: isolate; border: 0; background: none; cursor: pointer;
+        padding: calc(10 * var(--u)) calc(16 * var(--u)); color: var(--ink); transition: color 0.12s; animation: ov-fade 0.6s 0.7s ease-out both;
+      }
+      #overlay.title:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .pn-open { display: block; }
+      #overlay .pn-open svg { display: block; width: max(22px, calc(34 * var(--u))); height: max(22px, calc(34 * var(--u))); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay :is(.pn-open, .pn-close)::before { content: ""; position: absolute; z-index: -1; inset: 0; background: none; transform: skewX(-24deg); transition: background 0.12s; }
+      #overlay :is(.pn-open, .pn-close):is(:hover, :focus-visible, .pad-focus) { color: #fff; outline: none; }
+      #overlay :is(.pn-open, .pn-close):is(:hover, :focus-visible, .pad-focus)::before { background: var(--ink); }
+      #overlay .patch-notes {
+        position: absolute; z-index: 5; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(51, 51, 51, 0.35); cursor: default;
+        opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0s 0.2s;
+      }
+      #overlay.show-patch-notes .patch-notes { opacity: 1; visibility: visible; transition: opacity 0.2s; }
+      #overlay .pn-win {
+        display: flex; flex-direction: column; width: min(calc(760 * var(--u)), 100%); max-height: 80vh; padding: calc(30 * var(--u)) calc(36 * var(--u)) calc(36 * var(--u));
+        background: rgb(240, 240, 240); box-shadow: 0 0 0 1px var(--ink-faint);
+      }
+      #overlay.show-patch-notes .pn-win { animation: ov-slide 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+      #overlay .pn-head { display: flex; align-items: center; justify-content: space-between; gap: calc(20 * var(--u)); padding-bottom: calc(16 * var(--u)); border-bottom: 1px solid var(--ink-faint); }
+      #overlay .pn-head h2 { display: flex; align-items: baseline; gap: calc(16 * var(--u)); margin: 0; font-weight: 600; font-size: max(24px, calc(48 * var(--u))); line-height: 1; letter-spacing: 0.08em; }
+      #overlay .pn-head h2 span { font: 500 max(11px, calc(15 * var(--u)))/1 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.12em; color: var(--ink-soft); }
+      #overlay .pn-close {
+        position: relative; isolation: isolate; flex: none; border: 0; background: none; cursor: pointer; padding: calc(8 * var(--u)) calc(18 * var(--u));
+        font: inherit; font-size: max(13px, calc(20 * var(--u))); letter-spacing: 0.18em; color: var(--ink); transition: color 0.12s;
+      }
+      #overlay .pn-body { overflow-y: auto; margin-top: calc(22 * var(--u)); }
+      #overlay .pn-entry + .pn-entry { margin-top: calc(30 * var(--u)); }
+      #overlay .pn-entry time { font-size: max(12px, calc(18 * var(--u))); letter-spacing: 0.2em; color: var(--ink-soft); }
+      #overlay .pn-entry p { margin: calc(10 * var(--u)) 0 calc(14 * var(--u)); font: 500 max(13px, calc(19 * var(--u)))/1.7 "IBM Plex Sans JP", sans-serif; }
+      #overlay .pn-entry ul { display: flex; flex-wrap: wrap; gap: calc(8 * var(--u)) calc(10 * var(--u)); margin: 0; padding: 0; list-style: none; }
+      #overlay .pn-entry li { padding: calc(6 * var(--u)) calc(14 * var(--u)); background: rgba(51, 51, 51, 0.08); font: 500 max(12px, calc(16 * var(--u)))/1.4 "IBM Plex Sans JP", sans-serif; }
       /* 一時停止のときは、タイトルの代わりに PAUSED を出す */
       #overlay .logo .paused { display: none; }
       #overlay.pause .logo .l1, #overlay.pause .logo .l2 { display: none; }
@@ -2733,7 +2890,7 @@
         100% { opacity: 0; transform: scale(1.75) rotate(0deg); }
       }
       /* PLAY のタブの下の余白（.mp-bottom の節を参照）。各タブの padding と狭い画面の指定より後ろに置いて、下だけ詰める */
-      #overlay :is(.multiplayer, .challenge, .locker, .roadmap) { padding-bottom: max(calc(16 * var(--u)), calc(26 * var(--u))); }
+      #overlay :is(.multiplayer, .challenge, .locker, .roadmap, .feedback) { padding-bottom: max(calc(16 * var(--u)), calc(26 * var(--u))); }
     </style>
   </head>
   <body class="on-title">
@@ -3122,6 +3279,8 @@
             <div class="lk-pane" data-pane="name">
               <label for="lk-name">名前（12 文字まで）</label>
               <input id="lk-name" data-card-name autocomplete="off" spellcheck="false">
+              <span class="lk-nc-head">名前の色</span>
+              <div class="lk-palette" data-name-colors></div>
             </div>
             <div class="lk-pane lk-list" data-pane="title"></div>
             <div class="lk-pane lk-grid" data-pane="emblem"></div>
@@ -3159,15 +3318,41 @@
           <div class="mp-actions mp-footer"><button type="button" data-action="roadmap-back">BACK</button></div>
         </div>
       </div>
+      <!-- フィードバック: 感想を書いてもらう呼びかけと、Google フォームを開くボタン（動きは ui/feedbackTab.ts） -->
+      <div class="feedback">
+        <div class="mp-heading">
+          <div><h2>FEEDBACK</h2></div>
+          <div class="mp-heading-side">HELP US<b>SHARPEN THE BLADE</b></div>
+        </div>
+        <div class="rule"></div>
+        <div class="fb-body">
+          <p class="fb-lead">このゲームは、まだ研いでいる途中です。</p>
+          <p class="fb-text">遊んで感じたことを、ひとことだけ聞かせてください。<br>うまく書けなくても大丈夫。あなたの一言が、次のアップデートを決める材料になります。</p>
+          <div class="fb-topics">
+            <div class="fb-topic"><small>BEST MOMENT</small><b>気持ちよかった瞬間</b><p>「あの武器のとどめが最高だった」</p></div>
+            <div class="fb-topic"><small>STUCK</small><b>詰まったところ</b><p>「あの敵の倒し方が分からない」</p></div>
+            <div class="fb-topic"><small>BUGS</small><b>不具合・動作の重さ</b><p>「この場面でカクついた」</p></div>
+            <div class="fb-topic"><small>WISHLIST</small><b>遊びたいもの</b><p>「こんな武器やステージが欲しい」</p></div>
+          </div>
+          <div class="fb-action">
+            <button type="button" class="fb-send" data-action="feedback-send">SEND FEEDBACK<small>フォームを開く</small></button>
+            <p class="fb-note" data-feedback-note></p>
+          </div>
+        </div>
+        <div class="mp-bottom">
+          <div class="mp-actions mp-footer"><button type="button" data-action="feedback-back">BACK</button></div>
+        </div>
+      </div>
       <!-- タイトル画面の右に出すプレイヤーカード（オプションで出すかどうかを選ぶ） -->
       <div class="title-card" data-player-card></div>
-      <!-- ステージ選択・チャレンジ・マルチプレイ・ロッカー・ロードマップを切り替えるタブ。どれが選ばれているかは overlay の select-stage / select-challenge / select-multiplayer / select-locker / select-roadmap で決まる -->
+      <!-- ステージ選択・チャレンジ・マルチプレイ・ロッカー・ロードマップ・フィードバックを切り替えるタブ。どれが選ばれているかは overlay の select-stage / select-challenge / select-multiplayer / select-locker / select-roadmap / select-feedback で決まる -->
       <div class="play-tabs">
         <button type="button" data-tab="single" title="SINGLE PLAYER — ステージ選択"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5c0-4 3.1-7 7-7s7 3 7 7"/></svg><span>SINGLE PLAYER<span class="jp">ステージ選択</span></span></button>
         <button type="button" data-tab="challenge" title="CHALLENGE — チャレンジ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5"/><path d="M12 14v4M8 20.5h8"/></svg><span>CHALLENGE<span class="jp">チャレンジ</span></span></button>
         <button type="button" data-tab="multi" title="MULTIPLAYER (TEST) — 協力プレイ"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19.5c0-3.4 2.7-6 6-6s6 2.6 6 6"/><path d="M15 5.2a3 3 0 0 1 0 5.6M17.5 13.9c2 .8 3.5 2.9 3.5 5.6"/></svg><span>MULTIPLAYER<small>TEST</small><span class="jp">協力プレイ</span></span></button>
         <button type="button" data-tab="locker" title="LOCKER — プレイヤーカード編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8.5 6.5h7M8.5 9h7M15 13v3"/></svg><span>LOCKER<span class="jp">カード編集</span></span></button>
         <button type="button" data-tab="roadmap" title="ROADMAP — 武器の熟練度"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>ROADMAP<span class="jp">熟練度</span></span></button>
+        <button type="button" data-tab="feedback" title="FEEDBACK — ご意見・感想"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-4.5 4v-4H4z"/><path d="M8 9h8M8 12h5"/></svg><span>FEEDBACK<span class="jp">ご意見・感想</span></span></button>
       </div>
       <!-- ステージ選択（GAME） -->
       <div class="stages">
@@ -3462,6 +3647,7 @@
         </div>
       </div>
       <div class="options">
+        <button type="button" class="options-close" data-action="options-close" aria-label="設定を閉じる">CLOSE</button>
         <section class="sec">
           <h2>OPTIONS</h2>
           <h3>SENSITIVITY<span class="jp">感度</span></h3>
@@ -3539,6 +3725,36 @@
       <div class="foot">
         <span class="prompt">SELECT MODE</span>
       </div>
+      <button type="button" class="pn-open" data-action="patch-notes" title="PATCH NOTES — パッチノート" aria-label="パッチノート"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 11.5h7M9 15h7M9 18.5h4"/></svg></button>
+      <!-- パッチノート。更新を足すときは .pn-entry を .pn-body の先頭に足す（新しい順） -->
+      <div class="patch-notes" role="dialog" aria-label="パッチノート">
+        <div class="pn-win">
+          <div class="pn-head">
+            <h2>PATCH NOTES<span>パッチノート</span></h2>
+            <button type="button" class="pn-close" data-action="patch-close">CLOSE</button>
+          </div>
+          <div class="pn-body">
+            <section class="pn-entry">
+              <time datetime="2026-11-04">2026.11.04</time>
+              <p>プレイヤーカードの TALON フレームの見た目とアニメーションを強化しました。</p>
+              <ul>
+                <li>カードの表面に、赤く光る 3 本の爪痕が入りました。</li>
+                <li>ときどき、大きな電撃がカード全体を走るようになりました。</li>
+              </ul>
+            </section>
+            <section class="pn-entry">
+              <time datetime="2026-11-04">2026.11.04</time>
+              <p>次の武器の攻撃が、敵に当てやすくなりました。</p>
+              <ul>
+                <li>クナイ</li>
+                <li>リボルバー</li>
+                <li>弓</li>
+                <li>スナイパーライフル</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </div>
     </div>
     <script type="importmap">
       {
@@ -3574,7 +3790,7 @@
       if (new URLSearchParams(location.search).has('new') && !window.__freshStorageReady) {
         throw new Error('Could not isolate storage for ?new');
       }
-      import('./dist/main.js?v=a8ad3029');
+      import('./dist/main.js?v=e316db84');
     </script>
   </body>
 </html>

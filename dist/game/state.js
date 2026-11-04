@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER_MAX_HP } from '../player/config.js?v=a8ad3029';
+import { PLAYER_MAX_HP } from '../player/config.js?v=e316db84';
 // スタイルランクの段（0〜5）の表示名と得点倍率。計算は main.ts、表示は ui/styleHud.ts
 export const STYLE_NAMES = ['D', 'C', 'B', 'A', 'S', 'SS'];
 export const STYLE_MULT = [1, 1.25, 1.5, 2, 2.5, 3];

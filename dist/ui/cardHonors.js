@@ -1,7 +1,7 @@
-import { WEAPON_IDS } from '../weapons/ids.js?v=a8ad3029';
-import { loadXp, masteryOf, playerMastery } from '../mastery.js?v=a8ad3029';
-import { allBests } from '../records.js?v=a8ad3029';
-import { FEATS, TIER_NAMES, featDone } from '../challenges.js?v=a8ad3029';
+import { WEAPON_IDS } from '../weapons/ids.js?v=e316db84';
+import { loadXp, masteryOf, playerMastery } from '../mastery.js?v=e316db84';
+import { allBests } from '../records.js?v=e316db84';
+import { FEATS, TIER_NAMES, featDone } from '../challenges.js?v=e316db84';
 // ---- プレイヤーカードの称号とバッジ ----
 // ロッカー（ui/playerCard.ts）で選んでカードに載せる。称号は名前の下に 1 つ、バッジはその右に BADGE_SLOTS 個まで。
 // 称号の解放の条件は、プレイヤーのレベル・武器の熟練度・記録のどれか。レベルで解放するものは、ロードマップの節にも出す（ui/lvRoadmap.ts）。

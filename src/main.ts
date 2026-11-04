@@ -74,6 +74,7 @@ import { updateArcs } from './fx/arcs.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
 import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js';
 import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js';
+import { closeFeedbackTab, onFeedbackClick, openFeedbackTab } from './ui/feedbackTab.js';
 import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js';
 import { buildParkour, parkourCourse, type ParkourZone } from './world/parkour.js';
 import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js';
@@ -328,7 +329,7 @@ function pauseGame() {
   padPlaying = false;
   setPlaying(false);
 }
-const PANELS = ['options'] as const;
+const PANELS = ['options', 'patch-notes'] as const;
 function showPanel(name: (typeof PANELS)[number] | null) {
   for (const n of PANELS) {
     overlay.classList.toggle(`show-${n}`, n === name);
@@ -437,7 +438,7 @@ function setPlaySelect(on: boolean) {
 // PLAY の上のタブ。ステージ選択（SINGLE PLAYER）・チャレンジ・マルチプレイの入口・ロッカー・ロードマップを行き来する。
 // 部屋を作る・参加する流れに入ったあとは、切り替えると抜けてしまうので受け付けない（タブも隠れている）
 const multiplayerFlow = overlay.querySelector<HTMLElement>('.multiplayer [data-flow]')!;
-const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap'] as const;
+const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap', 'feedback'] as const;
 type PlayTab = (typeof ALL_PLAY_TABS)[number];
 // マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ（localDev.ts）
 const PLAY_TABS: readonly PlayTab[] = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi');
@@ -448,6 +449,7 @@ function currentPlayTab(): PlayTab | null {
   if (overlay.classList.contains('select-multiplayer')) return 'multi';
   if (overlay.classList.contains('select-locker')) return 'locker';
   if (overlay.classList.contains('select-roadmap')) return 'roadmap';
+  if (overlay.classList.contains('select-feedback')) return 'feedback';
   return null;
 }
 function switchPlayTab(tab: PlayTab) {
@@ -463,6 +465,7 @@ function switchPlayTab(tab: PlayTab) {
     overlay.classList.remove('select-multiplayer');
   } else if (cur === 'locker') closeLocker();
   else if (cur === 'roadmap') closeRoadmapTab();
+  else if (cur === 'feedback') closeFeedbackTab();
   if (tab === 'single') return setStageSelect(true);
   showPanel(null);
   if (tab === 'challenge') {
@@ -474,9 +477,12 @@ function switchPlayTab(tab: PlayTab) {
   } else if (tab === 'locker') {
     openLocker();
     overlayPrompt.textContent = 'LOCKER';
-  } else {
+  } else if (tab === 'roadmap') {
     openRoadmapTab(selectedLoadout());
     overlayPrompt.textContent = 'ROADMAP';
+  } else {
+    openFeedbackTab();
+    overlayPrompt.textContent = 'FEEDBACK';
   }
 }
 // LB / RB で隣のタブへ（端より先へは進まない）
@@ -727,6 +733,14 @@ overlay.addEventListener('click', (e) => {
   }
   // 結果の演出の途中なら、どこを押しても最後まで飛ばす
   if (overlay.classList.contains('result') && skipResult()) return;
+  if (target.closest('[data-action="options-close"]')) return togglePanel('options');
+  if (overlay.classList.contains('show-options') && target.closest('.menu button:not([data-action="options"])')) showPanel(null);
+  if (target.closest('[data-action="patch-notes"]')) return togglePanel('patch-notes');
+  if (overlay.classList.contains('show-patch-notes')) {
+    // CLOSE か、窓の外を押したら閉じる
+    if (target.closest('[data-action="patch-close"]') || !target.closest('.pn-win')) togglePanel('patch-notes');
+    return;
+  }
   if (target.closest('[data-action="multiplayer-lobby"]') && multiplayerRun) { sfx.playUiSelect(); return returnToLobby(); }
   if (target.closest('[data-action="parkour-retry"]')) { sfx.playUiSelect(); return retryStage(); }
   if (target.closest('[data-action="title"]')) {
@@ -753,6 +767,12 @@ overlay.addEventListener('click', (e) => {
     if (overlay.classList.contains('select-roadmap')) {
       if (!target.closest('[data-action="roadmap-back"]')) return onRoadmapClick(target);
       closeRoadmapTab();
+      overlayPrompt.textContent = 'SELECT MODE';
+      return sfx.playUiBack();
+    }
+    if (overlay.classList.contains('select-feedback')) {
+      if (!target.closest('[data-action="feedback-back"]')) return onFeedbackClick(target);
+      closeFeedbackTab();
       overlayPrompt.textContent = 'SELECT MODE';
       return sfx.playUiBack();
     }
@@ -807,7 +827,7 @@ overlay.addEventListener('click', (e) => {
 // 項目に乗ったら小さく鳴らす（同じ項目の中を動いている間は鳴らさない。選べない項目は鳴らさない）
 let hoveredButton: Element | null = null;
 overlay.addEventListener('mouseover', (e) => {
-  const button = (e.target as HTMLElement).closest('.menu button, .play-tabs button, .si-diff button, .sw-slot, .sw-rows button, .sw-win .menu button, .opt button, .locker button, .challenge button');
+  const button = (e.target as HTMLElement).closest('.menu button, .play-tabs button, .si-diff button, .sw-slot, .sw-rows button, .sw-win .menu button, .opt button, .options-close, .locker button, .challenge button, .feedback button, .pn-open, .pn-close');
   if (button === hoveredButton) return;
   hoveredButton = button;
   if (button && button.getAttribute('aria-disabled') !== 'true') sfx.playUiHover();
@@ -857,7 +877,15 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (overlay.classList.contains('show-options')) return onOptionsKey(e);
-  // LB / RB で PLAY のタブ（SINGLE PLAYER / CHALLENGE / MULTIPLAYER / LOCKER / ROADMAP）を切り替える
+  // パッチノート: 上下でスクロールし、A / B で閉じる
+  if (overlay.classList.contains('show-patch-notes')) {
+    const scroll = { ArrowUp: -80, ArrowDown: 80 }[e.code];
+    if (scroll) overlay.querySelector('.pn-body')!.scrollBy(0, scroll);
+    else if (e.code === 'Enter' || e.code === 'Escape') togglePanel('patch-notes');
+    e.preventDefault();
+    return;
+  }
+  // LB / RB で PLAY のタブ（SINGLE PLAYER / CHALLENGE / MULTIPLAYER / LOCKER / ROADMAP / FEEDBACK）を切り替える
   if ((e.code === 'PageUp' || e.code === 'PageDown') && overlay.classList.contains('title') && !pickerOpen() && currentPlayTab()) {
     e.preventDefault();
     return stepPlayTab(e.code === 'PageDown' ? 1 : -1);
@@ -869,6 +897,10 @@ window.addEventListener('keydown', (e) => {
   if (overlay.classList.contains('select-roadmap')) {
     if (e.code === 'Escape' || e.code === 'KeyQ') return overlay.querySelector<HTMLElement>('[data-action="roadmap-back"]')?.click();
     return onRoadmapKey(e);
+  }
+  if (overlay.classList.contains('select-feedback')) {
+    if (e.code === 'Escape') return overlay.querySelector<HTMLElement>('[data-action="feedback-back"]')?.click();
+    return onPadMenuKey(e, '.feedback button');
   }
   if (overlay.classList.contains('select-locker')) {
     if (e.code === 'Escape') return overlay.querySelector<HTMLElement>('[data-action="locker-back"]')?.click();
@@ -916,7 +948,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     overlay.querySelector<HTMLElement>('[data-action="play-back"]')!.click();
   } else if (overlay.classList.contains('title') || overlay.classList.contains('pause')) {
-    onPadMenuKey(e, !overlay.classList.contains('title') ? '.main button' : overlay.classList.contains('select-play') ? '.play button' : '.modes button');
+    onPadMenuKey(e, !overlay.classList.contains('title') ? '.main button' : overlay.classList.contains('select-play') ? '.play button, .pn-open' : '.modes button, .pn-open');
   }
 });
 // 訓練場へ入るときは、タイトルをすぐには消さずに払い出す。切り替えの帯で覆いきったら（switchToStage）、

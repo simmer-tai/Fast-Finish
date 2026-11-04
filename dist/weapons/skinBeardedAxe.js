@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { AXE_EDGE_T, AXE_HEAD_T, axeBevel, axePointFromMm } from './battleAxe.js?v=a8ad3029';
-import { plate } from './skinTalon.js?v=a8ad3029';
+import { AXE_EDGE_T, AXE_HEAD_T, axeBevel, axePointFromMm } from './battleAxe.js?v=e316db84';
+import { plate } from './skinTalon.js?v=e316db84';
 // ---- 斧のスキン: 髭斧 ----
 // 両刃の大斧の形。頭を作り直す（柄は元のまま）。
 //   頭: 柄を包む筒の左右へ同じ形の刃が付く。刃は柄の側が細く、上下の縁が内へ反りながら広がって、刃先は大きな三日月。

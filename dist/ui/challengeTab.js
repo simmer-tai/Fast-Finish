@@ -1,11 +1,11 @@
-import * as sfx from '../audio.js?v=a8ad3029';
-import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleTag, ruleText } from '../challenges.js?v=a8ad3029';
-import { fmtTime } from '../result.js?v=a8ad3029';
-import { LOCK } from './lvRoadmap.js?v=a8ad3029';
-import { badgePlate } from './cardHonors.js?v=a8ad3029';
-import { partSwatch } from './cardParts.js?v=a8ad3029';
-import { SKINS } from '../weapons/skins.js?v=a8ad3029';
-import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleTag, ruleText } from '../challenges.js?v=e316db84';
+import { fmtTime } from '../result.js?v=e316db84';
+import { LOCK, cardPreview } from './lvRoadmap.js?v=e316db84';
+import { badgePlate } from './cardHonors.js?v=e316db84';
+import { partSwatch } from './cardParts.js?v=e316db84';
+import { SKINS } from '../weapons/skins.js?v=e316db84';
+import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js?v=e316db84';
 // ---- PLAY のタブの CHALLENGE ----
 // 上の MISSIONS / FEATS で切り替える。MISSIONS は左にミッションの一覧、右に選んだものの詳細と START。
 // 一覧はミッションを見出し（MISSION_GROUPS）でまとめて 1 行にし、見出しを押すと中のミッションを開く（もう一度押すと閉じる）。
@@ -279,6 +279,16 @@ export function onChallengeKey(e) {
 const rewardSkin = (m) => SKINS.find((s) => s.id === m.reward?.skin && (!s.weapons || s.weapons.includes(m.weapon)));
 const tip = overlay.appendChild(Object.assign(document.createElement('div'), { className: 'lv-tip ch-tip' }));
 const rewardSlot = detail.querySelector('[data-ch="reward"]');
+function placeRewardTip(anchor) {
+    tip.classList.add('on');
+    const r = anchor.getBoundingClientRect();
+    const gap = 10;
+    let top = r.top - tip.offsetHeight - gap;
+    if (top < gap)
+        top = r.bottom + gap;
+    tip.style.left = `${Math.min(Math.max(gap, r.left + r.width / 2 - tip.offsetWidth / 2), innerWidth - tip.offsetWidth - gap)}px`;
+    tip.style.top = `${top}px`;
+}
 function showRewardTip(m, anchor) {
     const skin = rewardSkin(m);
     if (!skin)
@@ -289,14 +299,20 @@ function showRewardTip(m, anchor) {
             `<div class="sk-stage lv-tip-skin"><span class="sk-tag"><i></i>PREVIEW</span><span class="sk-feats">${skinTagsHtml(skin)}</span></div>` +
             `<p class="lv-tip-req">${weaponLabel(m.weapon).ja}で達成するとアンロック</p>`;
     tip.querySelector('.lv-tip-skin').prepend(startSkinSpin(m.weapon, skin));
-    tip.classList.add('on');
-    const r = anchor.getBoundingClientRect();
-    const gap = 10;
-    let top = r.top - tip.offsetHeight - gap;
-    if (top < gap)
-        top = r.bottom + gap;
-    tip.style.left = `${Math.min(Math.max(gap, r.left + r.width / 2 - tip.offsetWidth / 2), innerWidth - tip.offsetWidth - gap)}px`;
-    tip.style.top = `${top}px`;
+    placeRewardTip(anchor);
+}
+function showBonusTip(anchor) {
+    const row = rows[cursor];
+    const g = row && 'group' in row ? MISSION_GROUPS.find((x) => x.id === row.group) : undefined;
+    if (!g?.bonus)
+        return;
+    const b = g.bonus;
+    const got = groupDone(g.id) >= b.need;
+    tip.innerHTML =
+        `<header><b>${b.name}</b><span>${b.ja}</span><em>${got ? 'UNLOCKED' : 'LOCKED'}</em></header>` +
+            `<figure class="lv-tip-card">${cardPreview({ frame: b.frame })}</figure>` +
+            `<p class="lv-tip-req">${g.name} のミッションを ${b.need} つ達成するとアンロック</p>`;
+    placeRewardTip(anchor);
 }
 function hideRewardTip() {
     if (!tip.classList.contains('on'))
@@ -309,13 +325,17 @@ rewardSlot.addEventListener('mouseleave', hideRewardTip);
 // 概要のスキンの一覧: 乗っている 1 枚の見本を出す
 let tipSkin = null;
 overview.addEventListener('mouseover', (e) => {
-    const b = e.target.closest('.ch-skin');
+    const b = e.target.closest('.ch-skin, .ch-bonus');
     if (b === tipSkin)
         return;
     tipSkin = b;
+    hideRewardTip();
     if (!b)
-        return hideRewardTip();
-    showRewardTip(MISSIONS[Number(b.dataset.skinMission)], b);
+        return;
+    if (b.matches('.ch-bonus'))
+        showBonusTip(b);
+    else
+        showRewardTip(MISSIONS[Number(b.dataset.skinMission)], b);
 });
 overview.addEventListener('mouseleave', () => {
     tipSkin = null;

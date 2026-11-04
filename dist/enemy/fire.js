@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
-import { DEG, UP, wrapAngle } from '../math.js?v=a8ad3029';
-import { camera, scene } from '../core.js?v=a8ad3029';
-import { createPistol } from '../weapons/pistol.js?v=a8ad3029';
-import { weaponMats } from '../weapons/viewModels.js?v=a8ad3029';
-import { MUZZLE_FLASH_LIFE, TRACER_AXIS, bulletBack, tracerGeo } from '../weapons/handgunCombat.js?v=a8ad3029';
-import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
-import { DUMMY_FOREARM, DUMMY_UPPER_ARM } from './body.js?v=a8ad3029';
-import { ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en } from './state.js?v=a8ad3029';
-import { castWorld } from '../world/raycast.js?v=a8ad3029';
-import { player, position } from '../player/state.js?v=a8ad3029';
-import { PLAYER_RADIUS } from '../player/config.js?v=a8ad3029';
-import { broadcastBossParry, broadcastBossShot, remotePlayers, sendRemotePlayerShot } from '../multiplayer/connectionTest.js?v=a8ad3029';
-import { game, kickVel } from '../game/state.js?v=a8ad3029';
-import { env } from './env.js?v=a8ad3029';
-import { hooks } from '../game/hooks.js?v=a8ad3029';
-import { PARRY_ANGLE, PARRY_RANGE, PARRY_THREAT, closestSegmentPoints, reflectRemoteBossBullet, remoteParryEffect, tryParry } from '../combat/parry.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { DEG, UP, wrapAngle } from '../math.js?v=e316db84';
+import { camera, scene } from '../core.js?v=e316db84';
+import { createPistol } from '../weapons/pistol.js?v=e316db84';
+import { weaponMats } from '../weapons/viewModels.js?v=e316db84';
+import { MUZZLE_FLASH_LIFE, TRACER_AXIS, bulletBack, tracerGeo } from '../weapons/handgunCombat.js?v=e316db84';
+import { spawnSparks } from '../fx/hitFx.js?v=e316db84';
+import { DUMMY_FOREARM, DUMMY_UPPER_ARM } from './body.js?v=e316db84';
+import { ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en } from './state.js?v=e316db84';
+import { castWorld } from '../world/raycast.js?v=e316db84';
+import { player, position } from '../player/state.js?v=e316db84';
+import { PLAYER_RADIUS } from '../player/config.js?v=e316db84';
+import { broadcastBossParry, broadcastBossShot, remotePlayers, sendRemotePlayerShot } from '../multiplayer/connectionTest.js?v=e316db84';
+import { game, kickVel } from '../game/state.js?v=e316db84';
+import { env } from './env.js?v=e316db84';
+import { hooks } from '../game/hooks.js?v=e316db84';
+import { PARRY_ANGLE, PARRY_RANGE, PARRY_THREAT, closestSegmentPoints, reflectRemoteBossBullet, remoteParryEffect, tryParry } from '../combat/parry.js?v=e316db84';
 // ---- 敵の銃 ----
 // 自動拳銃の持たせ方と、敵の射撃
 // ---- 敵の射撃 ----

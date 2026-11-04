@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js?v=a8ad3029';
-import { RISER_C, limbPath, loftClosed, section } from './bow.js?v=a8ad3029';
-import { createFalconMats } from './skinFalconRifle.js?v=a8ad3029';
-import { MM, plate } from './skinTalon.js?v=a8ad3029';
-import { skinFx } from './skins.js?v=a8ad3029';
+import { addGlow, removeGlow } from '../fx/glow.js?v=e316db84';
+import { RISER_C, limbPath, loftClosed, section } from './bow.js?v=e316db84';
+import { createFalconMats } from './skinFalconRifle.js?v=e316db84';
+import { MM, plate } from './skinTalon.js?v=e316db84';
+import { skinFx } from './skins.js?v=e316db84';
 // ---- 弓のスキン: 隼 ----
 // ライフル・リボルバーの隼と同じ白い陶器・黒い鋼・金の弓。柄とリムを作り直し、上下のリムを隼の翼に見立てる。
 //   リム: 上塗りした黒い鋼の翼。元のリムの中心線をなめらかになぞり、先へ細って、弦を掛ける所を越えて尖る。

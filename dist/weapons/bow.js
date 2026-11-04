@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=a8ad3029';
+import { loftRings } from '../geometry.js?v=e316db84';
 export const RISER_C = 0.05; // 柄の中心の高さ（握りより少し上）。上下のリムはここを境に対称
 const RISER_HALF = 0.36; // 柄の長さの半分
 const SHELF_Y = 0.058; // 矢を載せる棚の高さ

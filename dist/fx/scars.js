@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
-import { trackAnisotropy } from './anisotropy.js?v=a8ad3029';
-import { rand } from '../random.js?v=a8ad3029';
-import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js?v=a8ad3029';
+import { trackAnisotropy } from './anisotropy.js?v=e316db84';
+import { rand } from '../random.js?v=e316db84';
+import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js?v=e316db84';
 const DEG = Math.PI / 180;
 const SCAR_MAX = 24; // これより多くなったら古いものから消す
 const SCAR_COOL = 0.35; // 白から黒へ冷めきるまで

@@ -1,7 +1,7 @@
 import * as sfx from '../audio.js';
 import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleTag, ruleText, type Mission } from '../challenges.js';
 import { fmtTime } from '../result.js';
-import { LOCK } from './lvRoadmap.js';
+import { LOCK, cardPreview } from './lvRoadmap.js';
 import { badgePlate } from './cardHonors.js';
 import { partSwatch } from './cardParts.js';
 import { SKINS } from '../weapons/skins.js';
@@ -275,6 +275,15 @@ export function onChallengeKey(e: KeyboardEvent) {
 const rewardSkin = (m: Mission) => SKINS.find((s) => s.id === m.reward?.skin && (!s.weapons || s.weapons.includes(m.weapon as WeaponId)));
 const tip = overlay.appendChild(Object.assign(document.createElement('div'), { className: 'lv-tip ch-tip' }));
 const rewardSlot = detail.querySelector<HTMLElement>('[data-ch="reward"]')!;
+function placeRewardTip(anchor: HTMLElement) {
+  tip.classList.add('on');
+  const r = anchor.getBoundingClientRect();
+  const gap = 10;
+  let top = r.top - tip.offsetHeight - gap;
+  if (top < gap) top = r.bottom + gap;
+  tip.style.left = `${Math.min(Math.max(gap, r.left + r.width / 2 - tip.offsetWidth / 2), innerWidth - tip.offsetWidth - gap)}px`;
+  tip.style.top = `${top}px`;
+}
 function showRewardTip(m: Mission, anchor: HTMLElement) {
   const skin = rewardSkin(m);
   if (!skin) return;
@@ -284,13 +293,19 @@ function showRewardTip(m: Mission, anchor: HTMLElement) {
     `<div class="sk-stage lv-tip-skin"><span class="sk-tag"><i></i>PREVIEW</span><span class="sk-feats">${skinTagsHtml(skin)}</span></div>` +
     `<p class="lv-tip-req">${weaponLabel(m.weapon).ja}で達成するとアンロック</p>`;
   tip.querySelector('.lv-tip-skin')!.prepend(startSkinSpin(m.weapon as WeaponId, skin));
-  tip.classList.add('on');
-  const r = anchor.getBoundingClientRect();
-  const gap = 10;
-  let top = r.top - tip.offsetHeight - gap;
-  if (top < gap) top = r.bottom + gap;
-  tip.style.left = `${Math.min(Math.max(gap, r.left + r.width / 2 - tip.offsetWidth / 2), innerWidth - tip.offsetWidth - gap)}px`;
-  tip.style.top = `${top}px`;
+  placeRewardTip(anchor);
+}
+function showBonusTip(anchor: HTMLElement) {
+  const row = rows[cursor];
+  const g = row && 'group' in row ? MISSION_GROUPS.find((x) => x.id === row.group) : undefined;
+  if (!g?.bonus) return;
+  const b = g.bonus;
+  const got = groupDone(g.id) >= b.need;
+  tip.innerHTML =
+    `<header><b>${b.name}</b><span>${b.ja}</span><em>${got ? 'UNLOCKED' : 'LOCKED'}</em></header>` +
+    `<figure class="lv-tip-card">${cardPreview({ frame: b.frame })}</figure>` +
+    `<p class="lv-tip-req">${g.name} のミッションを ${b.need} つ達成するとアンロック</p>`;
+  placeRewardTip(anchor);
 }
 function hideRewardTip() {
   if (!tip.classList.contains('on')) return;
@@ -302,11 +317,13 @@ rewardSlot.addEventListener('mouseleave', hideRewardTip);
 // 概要のスキンの一覧: 乗っている 1 枚の見本を出す
 let tipSkin: HTMLElement | null = null;
 overview.addEventListener('mouseover', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('.ch-skin');
+  const b = (e.target as HTMLElement).closest<HTMLElement>('.ch-skin, .ch-bonus');
   if (b === tipSkin) return;
   tipSkin = b;
-  if (!b) return hideRewardTip();
-  showRewardTip(MISSIONS[Number(b.dataset.skinMission)], b);
+  hideRewardTip();
+  if (!b) return;
+  if (b.matches('.ch-bonus')) showBonusTip(b);
+  else showRewardTip(MISSIONS[Number(b.dataset.skinMission)], b);
 });
 overview.addEventListener('mouseleave', () => {
   tipSkin = null;

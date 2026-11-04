@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
 // ---- オプション ----
 // 感度は倍率で持つ（1 = 元の速さ）。明るさも倍率（1 = そのまま）で、最後の色調補正の露出に掛ける。
 // モーションブラーも倍率（1 = 元の強さ、0 で切る）で、カメラの動きのブラーの強さと長さに掛ける（fx/post.ts）。画質で切っている LOW 以下では効かない。
@@ -74,6 +74,7 @@ export function renderOptions() {
     for (const b of cardButtons)
         b.classList.toggle('active', (b.dataset.card === 'on') === options.showCard);
     overlay.classList.toggle('card-on', options.showCard);
+    overlay.classList.toggle('low-quality', options.quality === 'low' || options.quality === 'lowest');
 }
 // 変わったら true
 function setRange(key, v) {

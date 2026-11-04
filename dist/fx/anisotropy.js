@@ -1,4 +1,4 @@
-import { renderer } from '../core.js?v=a8ad3029';
+import { renderer } from '../core.js?v=e316db84';
 // ---- 異方性フィルタ ----
 // 床や壁に貼る跡（ひび・焦げ・切り傷）を斜めから見たときに、にじまないようにする。画質の切り替えで main.ts の applyQuality が決める。
 // 床の格子はシェーダーで引いているので関係ない

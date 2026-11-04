@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
-import { PLAYER_RADIUS } from '../player/config.js?v=a8ad3029';
-import { player, position, velocity } from '../player/state.js?v=a8ad3029';
-import { hooks } from '../game/hooks.js?v=a8ad3029';
-import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
-import { STRUCT_GRID, blocks, boxGeo, gridMaterial } from './blocks.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { PLAYER_RADIUS } from '../player/config.js?v=e316db84';
+import { player, position, velocity } from '../player/state.js?v=e316db84';
+import { hooks } from '../game/hooks.js?v=e316db84';
+import { spawnSparks } from '../fx/hitFx.js?v=e316db84';
+import { STRUCT_GRID, blocks, boxGeo, gridMaterial } from './blocks.js?v=e316db84';
 const SLAB = 1; // 崩れる足場・点滅する足場の厚み
 const CRUMBLE_DELAY = 0.45; // 乗ってから落ちるまで (s)。その間は震える
 const CRUMBLE_BACK = 2.5; // 落ちてから戻るまで (s)

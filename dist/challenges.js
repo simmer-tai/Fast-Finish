@@ -1,4 +1,4 @@
-import { localDev } from './localDev.js?v=a8ad3029';
+import { localDev } from './localDev.js?v=e316db84';
 // パルクールはまだ公開しない。見出しとミッションを出すのはローカル開発時だけ（localDev.ts）
 export const MISSION_GROUPS = [
     ...(localDev ? [{ id: 'parkour', name: 'PARKOUR', ja: 'パルクール', desc: '敵のいないコースを走り、ゴールまでのタイムに挑戦する。' }] : []),

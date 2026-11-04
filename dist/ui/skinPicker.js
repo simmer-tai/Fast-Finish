@@ -1,24 +1,24 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
-import { createBat } from '../weapons/bat.js?v=a8ad3029';
-import { createBattleAxe } from '../weapons/battleAxe.js?v=a8ad3029';
-import { createSpear } from '../weapons/spear.js?v=a8ad3029';
-import { createRifle } from '../weapons/rifle.js?v=a8ad3029';
-import { createBow } from '../weapons/bow.js?v=a8ad3029';
-import { createChainSickle } from '../weapons/chainSickle.js?v=a8ad3029';
-import { WEAPON_IDS } from '../weapons/ids.js?v=a8ad3029';
-import { createKunai } from '../weapons/kunai.js?v=a8ad3029';
-import { createWeaponMats } from '../weapons/materials.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { createBat } from '../weapons/bat.js?v=e316db84';
+import { createBattleAxe } from '../weapons/battleAxe.js?v=e316db84';
+import { createSpear } from '../weapons/spear.js?v=e316db84';
+import { createRifle } from '../weapons/rifle.js?v=e316db84';
+import { createBow } from '../weapons/bow.js?v=e316db84';
+import { createChainSickle } from '../weapons/chainSickle.js?v=e316db84';
+import { WEAPON_IDS } from '../weapons/ids.js?v=e316db84';
+import { createKunai } from '../weapons/kunai.js?v=e316db84';
+import { createWeaponMats } from '../weapons/materials.js?v=e316db84';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY } from '../core.js?v=a8ad3029';
-import { GlowPass } from '../fx/glow.js?v=a8ad3029';
-import { options } from './options.js?v=a8ad3029';
-import { createRevolver } from '../weapons/revolver.js?v=a8ad3029';
-import { applySkin, createSkinMats, dressModel, setSkin, skinOf, skinnedWeaponMats, skinsFor, skinTags, skinUnlocked } from '../weapons/skins.js?v=a8ad3029';
-import { createSword } from '../weapons/sword.js?v=a8ad3029';
-import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=a8ad3029';
+import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY } from '../core.js?v=e316db84';
+import { GlowPass } from '../fx/glow.js?v=e316db84';
+import { options } from './options.js?v=e316db84';
+import { createRevolver } from '../weapons/revolver.js?v=e316db84';
+import { applySkin, createSkinMats, dressModel, setSkin, skinOf, skinnedWeaponMats, skinsFor, skinTags, skinUnlocked } from '../weapons/skins.js?v=e316db84';
+import { createSword } from '../weapons/sword.js?v=e316db84';
+import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js?v=e316db84';
 // ---- スキンの選択画面 ----
 // 武器の選択画面の SKIN から開く。左に武器のモデルを大きく出してゆっくり回し（ドラッグで回す・ホイールで寄る）、
 // 右にスキンのタイルを並べる。タイルの絵は同じモデルをそのスキンで描いたもの。

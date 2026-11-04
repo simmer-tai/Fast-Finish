@@ -1,5 +1,5 @@
-import { renderer, scene } from '../core.js?v=a8ad3029';
-import { strikerNavStats } from '../enemy/striker.js?v=a8ad3029';
+import { renderer, scene } from '../core.js?v=e316db84';
+import { strikerNavStats } from '../enemy/striker.js?v=e316db84';
 // ---- 重さの内訳（?perf） ----
 // 左上に、フレームの時間と描画の数、GPU に載っている物の数、シーンの物の数を出す。
 // 進むほど重くなるとき、どの数字が増え続けているかで原因を絞る

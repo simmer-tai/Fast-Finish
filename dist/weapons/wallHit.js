@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
-import { DEG } from '../math.js?v=a8ad3029';
-import { camera } from '../core.js?v=a8ad3029';
-import { castHit, castThrow } from '../world/raycast.js?v=a8ad3029';
-import { spawnShards, spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
-import { spawnWallArcs } from '../fx/arcs.js?v=a8ad3029';
-import { skinFx, skinOf } from './skins.js?v=a8ad3029';
-import { game, kickVel } from '../game/state.js?v=a8ad3029';
-import { hooks } from '../game/hooks.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { DEG } from '../math.js?v=e316db84';
+import { camera } from '../core.js?v=e316db84';
+import { castHit, castThrow } from '../world/raycast.js?v=e316db84';
+import { spawnShards, spawnSparks } from '../fx/hitFx.js?v=e316db84';
+import { spawnWallArcs } from '../fx/arcs.js?v=e316db84';
+import { skinFx, skinOf } from './skins.js?v=e316db84';
+import { game, kickVel } from '../game/state.js?v=e316db84';
+import { hooks } from '../game/hooks.js?v=e316db84';
 const WALL_MARGIN = 0.4; // 武器の届く距離は敵の中心までなので、面にはそれより手前で当てる
 const WALL_HIT_STOP = 0.035; // 刃が弾かれた一瞬の止まり（敵に当てたときよりずっと短い）
 const WALL_CHIP_TINT = new THREE.Color(0xa8a8a8); // 削れた壁のかけらの色

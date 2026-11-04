@@ -7,9 +7,10 @@ import { BADGES, TITLES, type Honor } from './cardHonors.js';
 import { skinTagsHtml, startSkinSpin, stopSkinSpin } from './skinPicker.js';
 
 // プレイヤーカードの見本。playerCard.ts はこのファイルを import するので、向こうから initCardPreview で入れてもらう
-type CardPreview = (over: { emblem?: WeaponId; title?: string }) => string;
+type CardPreview = (over: { emblem?: WeaponId; title?: string; frame?: string }) => string;
 let cardPreviewHtml: CardPreview = () => '';
 export const initCardPreview = (fn: CardPreview) => (cardPreviewHtml = fn);
+export const cardPreview = (over: Parameters<CardPreview>[0]) => cardPreviewHtml(over);
 
 // ---- 熟練度のロードマップ ----
 // 武器の熟練度と、プレイヤーのレベル（PLAY のタブの ROADMAP だけ）を同じ形で出す。

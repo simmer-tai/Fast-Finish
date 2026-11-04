@@ -1,6 +1,6 @@
-import { findPad } from '../gamepad.js?v=a8ad3029';
-import { game } from '../game/state.js?v=a8ad3029';
-import { options } from '../ui/options.js?v=a8ad3029';
+import { findPad } from '../gamepad.js?v=e316db84';
+import { game } from '../game/state.js?v=e316db84';
+import { options } from '../ui/options.js?v=e316db84';
 const effects = {
     dash: { priority: 0, pulses: [{ duration: 45, strong: 0.12, weak: 0.25 }] },
     hit: { priority: 1, pulses: [{ duration: 55, strong: 0.22, weak: 0.55 }] },

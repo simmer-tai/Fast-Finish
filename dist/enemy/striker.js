@@ -1,19 +1,19 @@
 import * as THREE from 'three';
-import * as sfx from '../audio.js?v=a8ad3029';
-import { DEG, UP, wrapAngle } from '../math.js?v=a8ad3029';
-import { camera } from '../core.js?v=a8ad3029';
-import { env } from './env.js?v=a8ad3029';
-import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en, enemies, hitDir } from './state.js?v=a8ad3029';
-import { ENEMY_KNOCK_STOP, carEvadeDir, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, enemySoundAt, knockEnemy, startLeap, updateLeap } from './motion.js?v=a8ad3029';
-import { solveDummyLegs, staggerDummy } from './stagger.js?v=a8ad3029';
-import { floorAt } from '../world/blocks.js?v=a8ad3029';
-import { playBounds } from '../world/arena.js?v=a8ad3029';
-import { castWorld } from '../world/raycast.js?v=a8ad3029';
-import { player, position, velocity } from '../player/state.js?v=a8ad3029';
-import { game, kickVel } from '../game/state.js?v=a8ad3029';
-import { hooks } from '../game/hooks.js?v=a8ad3029';
-import { PARRY_ANGLE, PARRY_HIT_STOP, parryActive, parryState } from '../combat/parry.js?v=a8ad3029';
-import { spawnSparks } from '../fx/hitFx.js?v=a8ad3029';
+import * as sfx from '../audio.js?v=e316db84';
+import { DEG, UP, wrapAngle } from '../math.js?v=e316db84';
+import { camera } from '../core.js?v=e316db84';
+import { env } from './env.js?v=e316db84';
+import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, en, enemies, hitDir } from './state.js?v=e316db84';
+import { ENEMY_KNOCK_STOP, carEvadeDir, enemyBlockedAt, enemyCanStand, enemyCanStandAt, enemyPathClear, enemySoundAt, knockEnemy, startLeap, updateLeap } from './motion.js?v=e316db84';
+import { solveDummyLegs, staggerDummy } from './stagger.js?v=e316db84';
+import { floorAt } from '../world/blocks.js?v=e316db84';
+import { playBounds } from '../world/arena.js?v=e316db84';
+import { castWorld } from '../world/raycast.js?v=e316db84';
+import { player, position, velocity } from '../player/state.js?v=e316db84';
+import { game, kickVel } from '../game/state.js?v=e316db84';
+import { hooks } from '../game/hooks.js?v=e316db84';
+import { PARRY_ANGLE, PARRY_HIT_STOP, parryActive, parryState } from '../combat/parry.js?v=e316db84';
+import { spawnSparks } from '../fx/hitFx.js?v=e316db84';
 // ---- ストライカー ----
 // 右腕が刃の近接型。間合いを保たずに走って詰め寄り、届く所まで来たら刃を振りかぶって（縁が光る）、踏み込みながら袈裟に斬る。
 // 斬り終えた後は少しの間、刃を振り抜いたまま動けない（ここが反撃の機会）。打たれ弱く、当てられると構えが崩れて追い直す。

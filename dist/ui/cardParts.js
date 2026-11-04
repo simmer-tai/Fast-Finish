@@ -19,6 +19,14 @@ export const FRAMES = [
     { id: 'talon', name: 'TALON' },
     { id: 'falcon', name: 'FALCON', pending: true },
 ];
+export const NAME_COLORS = [
+    { id: 'black', name: 'BLACK' },
+    { id: 'white', name: 'WHITE' },
+    { id: 'rededge', name: 'RED EDGE', frame: 'rededge' },
+    { id: 'talon', name: 'TALON', frame: 'talon' },
+    { id: 'falcon', name: 'FALCON', frame: 'falcon' },
+    { id: 'scan', name: 'SCAN', bg: 'scan' },
+];
 // カードの土台（背景とフレーム）の class。ロッカーの見本でも使う
 export const baseClass = (bgId, frame) => `pcard bg-${bgId}${BACKGROUNDS.find((b) => b.id === bgId).dark ? ' dark' : ''} fr-${frame}`;
 // フレームの層と、左上・右下のかぎ括弧（使うフレームだけ見せる）
@@ -35,6 +43,35 @@ const TALON_HALF = '<path class="tl-plate" d="M0 0H20L17 5L8 6L6 8L5 17L0 20Z"/>
     '<path class="tl-red" d="M19 4.3L40 3.4Q43.4 3.5 45.4 5.6M4.3 19L3.4 40Q3.5 43.4 5.6 45.4M52 3.1H112M151.5 3.6L156.4 8.5"/>' +
     '<circle class="tl-bolt" cx="10.5" cy="2.8" r="1"/><circle class="tl-bolt" cx="2.8" cy="10.5" r="1"/>' +
     '<circle class="tl-bolt" cx="70" cy="1.2" r="0.7"/><circle class="tl-bolt" cx="90" cy="1.2" r="0.7"/><circle class="tl-bolt" cx="1.2" cy="62" r="0.7"/>';
+// カード全体に走る大きな電撃: 20 秒に一度、爪の先から向かいの爪の先へ、左右と斜めの 2 本が走る。1 本につき稲妻 2 通り（sa / sb を交互に出す）と枝（sbr）。
+// 同じ瞬間に、爪痕（TALON_SCARS の ts-surge）とカードの面（ts-wash）も光る。タイミングは index.html の tl-surge-* と ts-surge / ts-wash。文字にかかるのは一瞬なので、枠と同じ層で文字の上に出す。
+// どのカードでも同じ形になるよう、乱数は種を決めて作る
+const TALON_SURGE = (() => {
+    let seed = 20261106;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    // a から b へ、進む向きと直角にぶらしながら折れ線を作る（両端は動かさない）
+    const bolt = (a, b, segments, spread) => {
+        const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+        const len = Math.hypot(dx, dy);
+        return Array.from({ length: segments + 1 }, (_, i) => {
+            const t = i / segments;
+            const off = (rnd() - 0.5) * 2 * spread * Math.sin(Math.PI * t) ** 0.5;
+            return [a[0] + dx * t - (dy / len) * off, a[1] + dy * t + (dx / len) * off];
+        });
+    };
+    const path = (points) => `M${points.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}`;
+    const arcs = [[[6.5, 47], [153.5, 43]], [[47, 6.5], [113, 83.5]]];
+    return arcs.map(([a, b]) => {
+        const first = bolt(a, b, 14, 7);
+        const branches = [4, 9].map((i) => {
+            const from = first[i];
+            const angle = rnd() * Math.PI * 2;
+            const reach = 12 + rnd() * 10;
+            return `<path class="sbr" d="${path(bolt(from, [from[0] + Math.cos(angle) * reach, from[1] + Math.sin(angle) * reach], 5, 2.5))}"/>`;
+        });
+        return `<g class="tl-surge"><path class="sa" d="${path(first)}"/><path class="sb" d="${path(bolt(a, b, 14, 7))}"/>${branches.join('')}</g>`;
+    }).join('');
+})();
 const TALON_FRAME = '<svg class="pc-talon" viewBox="0 0 160 90" aria-hidden="true">' +
     // 外周はカードの縁（clip-path）より 1 外まで塗る。縁ちょうどだと境目の画素に地の色がにじみ、枠のまわりに明るい線が出て浮いて見える
     '<path class="tl-plate" fill-rule="evenodd" d="M-1 -1H149.4L161 10.6V91H10.6L-1 79.4ZM5.4 2.4H149.4L157.6 10.6V84.6L154.6 87.6H10.6L2.4 79.4V5.4Z"/>' +
@@ -44,12 +81,45 @@ const TALON_FRAME = '<svg class="pc-talon" viewBox="0 0 160 90" aria-hidden="tru
     '<g class="tl-zap" style="--d:8.3s;--o:-5.4s"><circle class="zg" cx="81.0" cy="3.1" r="10.1"/><path class="za" d="M72.0 3.1L74.6 4.0L77.1 0.6L79.7 4.0L82.3 5.6L84.9 5.2L87.4 3.2L90.0 3.1"/><path class="zb" d="M72.0 3.1L74.6 1.3L77.1 1.2L79.7 5.6L82.3 3.4L84.9 1.7L87.4 2.3L90.0 3.1"/><path class="zbr" d="M82.3 5.6L82.6 3.5L83.8 1.6L85.6 -0.0L85.0 -2.5"/><circle class="zp" cx="84.9" cy="5.2" r="0.36" style="--dx:-0.4px;--dy:-2.6px"/><circle class="zp" cx="84.9" cy="5.2" r="0.26" style="--dx:-0.5px;--dy:-2.8px"/><circle class="zp" cx="77.1" cy="0.6" r="0.28" style="--dx:3.8px;--dy:-2.0px"/><circle class="zp" cx="82.3" cy="5.6" r="0.34" style="--dx:3.1px;--dy:-2.6px"/></g>' +
     '<g class="tl-zap" style="--d:7.6s;--o:-0.8s"><circle class="zg" cx="10.2" cy="86.0" r="7.4"/><path class="za" d="M4.5 84.5L6.2 84.6L8.1 84.3L9.9 84.3L10.5 88.2L12.6 87.0L14.2 87.8L16.0 87.6"/><path class="zb" d="M4.5 84.5L6.5 83.6L8.1 84.1L9.2 86.7L11.5 84.7L12.2 88.5L14.1 88.3L16.0 87.6"/><path class="zbr" d="M8.1 84.3L8.0 85.7L9.5 87.1L7.8 88.6L8.4 90.0"/><circle class="zp" cx="8.1" cy="84.3" r="0.35" style="--dx:1.8px;--dy:1.8px"/><circle class="zp" cx="12.6" cy="87.0" r="0.38" style="--dx:1.3px;--dy:3.6px"/><circle class="zp" cx="9.9" cy="84.3" r="0.28" style="--dx:-0.1px;--dy:5.0px"/><circle class="zp" cx="12.6" cy="87.0" r="0.39" style="--dx:1.9px;--dy:4.2px"/></g>' +
     '<g class="tl-zap" style="--d:10.1s;--o:-7.3s"><circle class="zg" cx="4.1" cy="22.0" r="6.6"/><path class="za" d="M5.0 17.0L4.4 18.4L3.1 19.6L4.4 21.3L3.1 22.6L2.2 23.9L3.4 25.6L3.2 27.0"/><path class="zb" d="M5.0 17.0L3.4 18.2L4.6 19.9L3.3 21.1L3.0 22.5L4.7 24.3L4.7 25.8L3.2 27.0"/><path class="zbr" d="M4.4 21.3L3.3 21.9L2.0 21.4L0.9 22.3L-0.4 22.0"/><circle class="zp" cx="4.4" cy="21.3" r="0.37" style="--dx:-3.1px;--dy:-1.5px"/><circle class="zp" cx="3.1" cy="19.6" r="0.25" style="--dx:-4.3px;--dy:-2.1px"/><circle class="zp" cx="2.2" cy="23.9" r="0.29" style="--dx:-2.9px;--dy:-2.7px"/><circle class="zp" cx="3.1" cy="22.6" r="0.35" style="--dx:-1.5px;--dy:-4.1px"/></g>' +
+    TALON_SURGE +
     '</svg>';
+const TALON_SCAR_LINES = [
+    { from: [120, 15], via: [124, 33], to: [101, 53], width: 2.2, d: '4.7s', o: '0s' },
+    { from: [134, 13], via: [139, 36], to: [114, 60], width: 2.8, d: '8.3s', o: '-5.4s' },
+    { from: [148, 17], via: [151, 36], to: [132, 55], width: 2, d: '6.9s', o: '-2.1s' },
+];
+const TALON_SCAR_STEPS = 16;
+const TALON_SCARS = (() => {
+    let seed = 20261105;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    const scars = TALON_SCAR_LINES.map(({ from, via, to, width, d, o }) => {
+        const spine = Array.from({ length: TALON_SCAR_STEPS + 1 }, (_, i) => {
+            const t = i / TALON_SCAR_STEPS;
+            const [u, end] = [1 - t, i === 0 || i === TALON_SCAR_STEPS];
+            const x = u * u * from[0] + 2 * u * t * via[0] + t * t * to[0];
+            const y = u * u * from[1] + 2 * u * t * via[1] + t * t * to[1];
+            const [dx, dy] = [2 * u * (via[0] - from[0]) + 2 * t * (to[0] - via[0]), 2 * u * (via[1] - from[1]) + 2 * t * (to[1] - via[1])];
+            const len = Math.hypot(dx, dy);
+            // 切り口の縁を少しだけ荒らす（両端はとがらせたまま）
+            return { x, y, nx: -dy / len, ny: dx / len, half: (width / 2) * Math.sin(Math.PI * t ** 0.7), upper: end ? 0 : (rnd() - 0.5) * 0.28, lower: end ? 0 : (rnd() - 0.5) * 0.28 };
+        });
+        const at = (p, side, scale) => {
+            const off = (p.half + (side === 1 ? p.upper : p.lower)) * scale * side;
+            return `${(p.x + p.nx * off).toFixed(2)} ${(p.y + p.ny * off).toFixed(2)}`;
+        };
+        const line = (side, scale) => spine.map((p) => at(p, side, scale));
+        const shape = (scale) => `M${line(1, scale).join('L')}L${line(-1, scale).reverse().join('L')}Z`;
+        // 法線は左上を向くので、-1 の側が右下の縁
+        return `<path class="ts-cut" d="${shape(1)}"/><path class="ts-lip" d="M${line(-1, 1).join('L')}"/>` +
+            `<path class="ts-core" d="${shape(0.3)}"/><path class="ts-flare" d="${shape(0.45)}" style="--d:${d};--o:${o}"/><path class="ts-surge" d="${shape(0.7)}"/>`;
+    });
+    return `<svg class="pc-scars" viewBox="0 0 160 90" aria-hidden="true"><rect class="ts-wash" x="-1" y="-1" width="162" height="92"/>${scars.join('')}</svg>`;
+})();
 // FALCON: 隼のスキンの意匠。白い陶器の細い縁に金の線。左上と右下の角から、黒い鋼の翼が上と横の縁に沿って伸びる。
 // 翼は風切り羽を段々に重ねた形: 先を斜めに切り落とした帯を、縁から内へ黒・金・白・金と、内ほど短く並べる（曲線は使わず、角ばらせる）。
 // 角には金の輪に光る核（ライフルの装填口）。上の真ん中に金の山形、落とした角に金の帯。
 // 翼は上の縁の分を描き、x と y を入れ替えて（長さは 0.65 倍に縮めて）横の縁にも置く。TALON と同じく半分を描いて 180° 回す。
-// 動き: 金の線を光が二手に分かれて走り（fc-glint）、核がゆっくり明滅し、羽根の先から金粉がこぼれる
+// 動き: 金の線を光が二手に分かれて走り（fc-glint）、核がゆっくり明滅する
 // 羽根: y0〜y1 の帯を、角の核の外（x = 7）から x まで伸ばし、先を k だけ斜めに切る
 const quill = (cls, y0, y1, x, k) => `<path class="${cls}" d="M7 ${y0}H${x}L${x - k} ${y1}H7Z"/>`;
 const FALCON_WING = 
@@ -64,12 +134,7 @@ const FALCON_HALF = `<g>${FALCON_WING}</g><g transform="matrix(0 0.65 1 0 0 0)">
     '<path class="fc-wing" d="M68 0H92L88.6 3.4H71.4Z"/><path class="fc-line" d="M75 1.1L80 2.6L85 1.1"/>' +
     '<path class="fc-wing" d="M136 0H150.6L160 9.4V22L157.4 19.4V10.8L148.6 2H138Z"/>' +
     '<path class="fc-line" d="M149.8 3.2L156.8 10.2M140.5 0.4L139.6 1.6M143 0.4L142.1 1.6M145.5 0.4L144.6 1.6"/>' +
-    '<rect class="fc-slot" x="158.2" y="12" width="0.9" height="5" rx="0.45"/>' +
-    '<circle class="fc-dust" cx="47.4" cy="3.4" r="0.32" style="--dx:2.4px;--dy:1.6px;--d:3.7s;--o:-0.4s"/>' +
-    '<circle class="fc-dust" cx="22.5" cy="6.2" r="0.26" style="--dx:1.8px;--dy:2.2px;--d:4.6s;--o:-2.9s"/>' +
-    '<circle class="fc-dust" cx="60" cy="1.3" r="0.28" style="--dx:2.8px;--dy:1.2px;--d:5.3s;--o:-1.7s"/>' +
-    '<circle class="fc-dust" cx="3.4" cy="30.8" r="0.3" style="--dx:1.5px;--dy:2.4px;--d:4.1s;--o:-3.3s"/>' +
-    '<circle class="fc-dust" cx="6.2" cy="14.6" r="0.25" style="--dx:2.1px;--dy:1.7px;--d:5.8s;--o:-0.9s"/>';
+    '<rect class="fc-slot" x="158.2" y="12" width="0.9" height="5" rx="0.45"/>';
 const FALCON_FRAME = '<svg class="pc-falcon" viewBox="0 0 160 90" aria-hidden="true">' +
     // 外周は TALON と同じく、カードの縁より 1 外まで塗る
     '<path class="fc-plate" fill-rule="evenodd" d="M-1 -1H149.4L161 10.6V91H10.6L-1 79.4ZM2 2H149.6L158 10.4V88H10.4L2 79.6Z"/>' +
@@ -78,6 +143,75 @@ const FALCON_FRAME = '<svg class="pc-falcon" viewBox="0 0 160 90" aria-hidden="t
     '<path class="fc-glint" pathLength="100" d="M3 3H149.2L157 10.8V87H10.8L3 79.2Z"/>' +
     `<g>${FALCON_HALF}</g><g transform="rotate(180 80 45)">${FALCON_HALF}</g>` +
     '</svg>';
-export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${TALON_FRAME}${FALCON_FRAME}`;
+// FALCON のカードの表面: 頂点に高さを持たせた凹凸の面を三角形に割り、左上からの光で面ごとの明暗を計算して塗る（フラットシェーディング）。
+// 光に向く面は白、背を向ける面は黒の半透明で重ねるので、背景の明暗によらず凹凸に見える。三角形は濃さ（FACET_LEVELS 段）ごとに 1 本の path にまとめる。
+// その上に、傾きの大きい面だけ同じ形の光る面（fc-lit）を重ねる。光がカードのまわりをゆっくり回る見立てで、面の向きと光の向きが合ったときに光る。
+// 位置ではなく向きで順番が決まるので、離れた面が同時に光る。傾きが大きい面ほど強く光る。
+// どのカードでも同じ模様になるよう、乱数は種を決めて作る。文字の下に敷くので、枠の SVG とは別に置く
+const FACET_COLS = 12;
+const FACET_ROWS = 7;
+const FACET_LEVELS = 6;
+const FACET_LEVEL_ALPHA = 0.04; // 1 段あたりの濃さ
+const FACET_CONTRAST = 12; // 明暗の差を段に直す倍率
+const FACET_LIGHT = [-0.5, -0.6, 0.62]; // 光の向き（左上の手前から）
+const FACET_LIT_MIN_SLOPE = 0.35; // これより傾いた面だけ光らせる
+const FACET_ORBIT_SEC = 10; // 光が一周する時間。index.html の fc-facet-lit と同じ値にする
+const FALCON_FACETS = (() => {
+    let seed = 20261104;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    const cw = 160 / FACET_COLS;
+    const ch = 90 / FACET_ROWS;
+    const jitter = (size) => (rnd() - 0.5) * size * 0.7;
+    // 高さ: 大きなうねり 2 つに、頂点ごとのばらつきを足す
+    const height = (x, y) => 6 * Math.sin(x * 0.07 + y * 0.05 + 1) + 4 * Math.sin(y * 0.11 - x * 0.045 + 2.4) + (rnd() - 0.5) * 6;
+    // 外周の頂点はカードの外へ出して、縁に隙間を作らない
+    const verts = Array.from({ length: FACET_ROWS + 1 }, (_, r) => Array.from({ length: FACET_COLS + 1 }, (_, c) => {
+        const x = c === 0 ? -1 : c === FACET_COLS ? 161 : c * cw + jitter(cw);
+        const y = r === 0 ? -1 : r === FACET_ROWS ? 91 : r * ch + jitter(ch);
+        return [x, y, height(x, y)];
+    }));
+    const faces = new Map();
+    let lit = '';
+    const addTri = (a, b, c) => {
+        const d = `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}L${c[0].toFixed(1)} ${c[1].toFixed(1)}Z`;
+        // 面の向き（手前向きにそろえる）
+        const [ux, uy, uz] = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        const [vx, vy, vz] = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        const flip = ux * vy - uy * vx < 0 ? -1 : 1;
+        const [rawX, rawY, rawZ] = [flip * (uy * vz - uz * vy), flip * (uz * vx - ux * vz), flip * (ux * vy - uy * vx)];
+        const len = Math.hypot(rawX, rawY, rawZ);
+        const [nx, ny, nz] = [rawX / len, rawY / len, rawZ / len];
+        // 平らな面より明るいか暗いかで、白か黒を重ねる
+        const shade = nx * FACET_LIGHT[0] + ny * FACET_LIGHT[1] + nz * FACET_LIGHT[2] - FACET_LIGHT[2];
+        const level = Math.min(FACET_LEVELS, Math.round(Math.abs(shade) * FACET_CONTRAST));
+        const key = `${shade > 0 ? '#fff' : '#000'} ${(level * FACET_LEVEL_ALPHA).toFixed(2)}`;
+        faces.set(key, (faces.get(key) ?? '') + d);
+        const slope = Math.hypot(nx, ny);
+        if (slope > FACET_LIT_MIN_SLOPE) {
+            const turn = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5;
+            const strength = 0.45 + Math.min(1, (slope - FACET_LIT_MIN_SLOPE) / 0.4) * 0.55;
+            lit += `<path class="fc-lit" d="${d}" style="--o:${(-turn * FACET_ORBIT_SEC).toFixed(2)}s;--a:${strength.toFixed(2)}"/>`;
+        }
+    };
+    for (let r = 0; r < FACET_ROWS; r++) {
+        for (let c = 0; c < FACET_COLS; c++) {
+            const [tl, tr, bl, br] = [verts[r][c], verts[r][c + 1], verts[r + 1][c], verts[r + 1][c + 1]];
+            if (rnd() < 0.5) {
+                addTri(tl, tr, br);
+                addTri(tl, br, bl);
+            }
+            else {
+                addTri(tl, tr, bl);
+                addTri(tr, br, bl);
+            }
+        }
+    }
+    const paths = [...faces].map(([key, d]) => {
+        const [fill, alpha] = key.split(' ');
+        return `<path class="fc-face" fill="${fill}" fill-opacity="${alpha}" d="${d}"/>`;
+    });
+    return `<svg class="pc-facets" viewBox="0 0 160 90" aria-hidden="true">${paths.join('')}${lit}</svg>`;
+})();
+export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${FALCON_FACETS}${TALON_SCARS}${TALON_FRAME}${FALCON_FRAME}`;
 // 背景とフレームの見本（中身は空のカード）
 export const partSwatch = (bgId, frame) => `<span class="${baseClass(bgId, frame)}">${FRAME_PARTS}</span>`;

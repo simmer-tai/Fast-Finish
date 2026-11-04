@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { loftRings } from '../geometry.js?v=a8ad3029';
-import { addGlow, removeGlow } from '../fx/glow.js?v=a8ad3029';
-import { createFalconMats } from './skinFalconRifle.js?v=a8ad3029';
-import { MM, plate } from './skinTalon.js?v=a8ad3029';
-import { skinFx } from './skins.js?v=a8ad3029';
+import { loftRings } from '../geometry.js?v=e316db84';
+import { addGlow, removeGlow } from '../fx/glow.js?v=e316db84';
+import { createFalconMats } from './skinFalconRifle.js?v=e316db84';
+import { MM, plate } from './skinTalon.js?v=e316db84';
+import { skinFx } from './skins.js?v=e316db84';
 // ---- クナイのスキン: 隼 ----
 // ライフル・リボルバー・弓の隼と同じ白い陶器・黒い鋼・金のクナイ。長さと輪の位置は元のクナイのまま（回す軸・切っ先の当たりが変わらないように）、形は作り直す。
 //   刃: 菱形の断面の上塗りした黒い鋼。付け根は張り出さず、鍔からほぼまっすぐ出て切っ先へ細る。両側の刃先は細い金（刃は黒と金の 2 色だけ）

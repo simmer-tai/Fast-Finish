@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { trackAnisotropy } from './anisotropy.js?v=a8ad3029';
+import { trackAnisotropy } from './anisotropy.js?v=e316db84';
 // ---- 床の跡 ----
 // 衝撃波で入ったひびや、レーザーの焦げ跡を床に貼る。戦いの間ずっと残る（ステージを出るまで）。
 // 足跡のように life を渡したものは、だんだん薄くなって消える。多くなりすぎたら古いものから消す

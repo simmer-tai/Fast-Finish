@@ -77,6 +77,7 @@ export function renderOptions() {
   qualityNote.textContent = QUALITY_NOTES[options.quality];
   for (const b of cardButtons) b.classList.toggle('active', (b.dataset.card === 'on') === options.showCard);
   overlay.classList.toggle('card-on', options.showCard);
+  overlay.classList.toggle('low-quality', options.quality === 'low' || options.quality === 'lowest');
 }
 // 変わったら true
 function setRange(key: RangeKey, v: number) {

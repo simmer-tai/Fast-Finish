@@ -3,7 +3,7 @@ import { WEAPON_IDS, type WeaponId } from '../weapons/ids.js';
 import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '../mastery.js';
 import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js';
 import { OWNER, SKINS, skinUnlocked } from '../weapons/skins.js';
-import { BACKGROUNDS, FRAMES, FRAME_PARTS, baseClass } from './cardParts.js';
+import { BACKGROUNDS, FRAMES, FRAME_PARTS, NAME_COLORS, baseClass, type NameColor } from './cardParts.js';
 import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js';
 import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked, type Badge, type Honor } from './cardHonors.js';
 import { allBests } from '../records.js';
@@ -44,6 +44,8 @@ function partOpen(kind: Part, id: string) {
   const g = kind === 'frame' ? bonusGroupOf(id) : undefined;
   return g ? groupDone(g.id) >= g.bonus!.need : playerMastery().level >= cardPartLevel(kind, id);
 }
+// 名前の色は、対応するフレームか背景を解放すると選べる
+const nameColorOpen = (n: NameColor) => (n.frame ? partOpen('frame', n.frame) : !n.bg || partOpen('background', n.bg));
 const honorOpen = (h: Honor) => OWNER || unlocked(h.unlock);
 const titleOf = (id: string) => TITLES.find((t) => t.id === id);
 const badgeOf = (id: string) => BADGES.find((b) => b.id === id);
@@ -66,12 +68,14 @@ const STATS: Stat[] = [
   { id: 'totalXp', label: 'TOTAL XP', value: () => fmt(WEAPON_IDS.reduce((s, w) => s + loadXp(w), 0)) },
 ];
 
-interface CardData { name: string; title: string; emblem: Emblem; badges: string[]; bg: string; frame: string; stats: string[] }
-const DEFAULT_CARD: CardData = { name: 'PLAYER', title: 'rookie', emblem: 'player', badges: [], bg: 'plain', frame: 'standard', stats: ['totalLv', 'main', 'bestScore'] };
+// nameColor: 選んだ名前の色。空なら背景に合わせて白か黒
+interface CardData { name: string; nameColor: string; title: string; emblem: Emblem; badges: string[]; bg: string; frame: string; stats: string[] }
+const DEFAULT_CARD: CardData = { name: 'PLAYER', nameColor: '', title: 'rookie', emblem: 'player', badges: [], bg: 'plain', frame: 'standard', stats: ['totalLv', 'main', 'bestScore'] };
 const card: CardData = { ...DEFAULT_CARD };
 try {
   const saved = JSON.parse(localStorage.getItem(CARD_STORE) ?? '{}');
   if (typeof saved.name === 'string') card.name = saved.name.slice(0, NAME_MAX);
+  if (NAME_COLORS.some((n) => n.id === saved.nameColor)) card.nameColor = saved.nameColor;
   const title = titleOf(saved.title);
   if (title && honorOpen(title)) card.title = title.id;
   if (Array.isArray(saved.badges)) card.badges = saved.badges.filter((id: string) => { const b = badgeOf(id); return b && honorOpen(b); }).slice(0, BADGE_SLOTS);
@@ -111,6 +115,14 @@ const cardNo = (name: string) => {
 // バッジの絵（cardHonors.ts の icon）を六角形の台に載せる
 const badgeHtml = (b: Badge) => badgePlate(b);
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+const bgIsDark = (bgId: string) => !!BACKGROUNDS.find((b) => b.id === bgId)!.dark;
+// 実際に使う名前の色。選んでいないか、まだ解放していなければ、背景に合わせた白か黒
+function nameColorOf(c: CardData) {
+  const chosen = NAME_COLORS.find((n) => n.id === c.nameColor);
+  return chosen && nameColorOpen(chosen) ? chosen.id : bgIsDark(c.bg) ? 'white' : 'black';
+}
+// 名前の中身。FALCON の色は、縁を走る光の線の SVG を字の頭に重ねる（見た目は index.html の .nc-trace）
+const nameText = (colorId: string, text: string) => (colorId === 'falcon' ? `<svg class="nc-trace" aria-hidden="true"><text>${text}</text></svg>${text}` : text);
 function cardHtml(c: CardData = card) {
   const stats = c.stats.map((id) => STATS.find((s) => s.id === id)!);
   const title = c.title === 'none' ? undefined : titleOf(c.title);
@@ -120,7 +132,7 @@ function cardHtml(c: CardData = card) {
     <div class="pc-main">
       ${emblemHtml(c.emblem)}
       <div class="pc-id">
-        <b class="pc-name">${esc(c.name.trim() || 'PLAYER')}</b>
+        <b class="pc-name nc-${nameColorOf(c)}">${nameText(nameColorOf(c), esc(c.name.trim() || 'PLAYER'))}</b>
         <div class="pc-sub">
           ${title ? `<small class="pc-title"><span>${title.name}</span>${title.ja ? `<i class="pc-title-ja">${title.ja}</i>` : ''}</small>` : ''}
           <span class="pc-badges">${c.badges.map((id) => badgeHtml(badgeOf(id)!)).join('')}</span>
@@ -138,7 +150,8 @@ const lockerCard = overlay.querySelector<HTMLElement>('.lk-preview')!;
 // ロッカーで部品を変えたときの見本の動き。card は背景・フレームで、前のカードの上を斜めの線が左から右へ走り、線の左が新しいカードになる。
 // emblem はエンブレムの台が弾んで入れ替わり、stats は記録の欄が左から順に入る。title は称号が左から滑り込み、badge はバッジが弾んで入る。
 // 見た目は index.html の .pc-swap / .pc-pop / .pc-restat / .pc-retitle / .pc-rebadge
-type Swap = 'card' | 'emblem' | 'stats' | 'title' | 'badge';
+// name は名前が左から滑り込む。色によっては名前に CSS のアニメーション（ネオンの明滅など）があるので、class ではなく直接動かす
+type Swap = 'card' | 'emblem' | 'stats' | 'title' | 'badge' | 'name';
 const SWAP_CLASS: Partial<Record<Swap, string>> = { emblem: 'pc-pop', stats: 'pc-restat', title: 'pc-retitle', badge: 'pc-rebadge' };
 export function refreshCards(swap?: Swap) {
   const html = cardHtml();
@@ -150,6 +163,7 @@ export function refreshCards(swap?: Swap) {
     } else holder.innerHTML = html;
     if (holder === lockerCard && swap && SWAP_CLASS[swap]) holder.firstElementChild!.classList.add(SWAP_CLASS[swap]!);
   }
+  if (swap === 'name') lockerCard.querySelector('.pc-name')!.animate([{ opacity: 0, translate: '-2cqw 0' }, { opacity: 1, translate: '0 0' }], { duration: 260, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1)' });
 }
 
 // ---- ロッカー ----
@@ -183,6 +197,11 @@ pane('badge').innerHTML = BADGES.map(
 ).join('');
 pane('stats').innerHTML = STATS.map((s) => `<button type="button" class="lk-item lk-stat" data-stat="${s.id}"><em></em><b>${s.label}</b><small></small></button>`).join('');
 nameInput.maxLength = NAME_MAX;
+// 名前の色のパレット。A の字に色を付けて見本にする
+const palette = locker.querySelector<HTMLElement>('[data-name-colors]')!;
+palette.innerHTML = NAME_COLORS.map(
+  (n) => `<button type="button" class="lk-bg lk-nc" data-name-color="${n.id}"><span class="lk-nc-tile"><b class="nc-${n.id}">${nameText(n.id, 'A')}</b></span><small>${n.name}</small></button>`,
+).join('');
 
 // まだ触っていない部品に NEW を付け、それを含む種類のボタンと PLAY のタブ LOCKER にも付ける（ui/newMarks.ts）
 const items = [...locker.querySelectorAll<HTMLElement>('.lk-item')];
@@ -249,6 +268,13 @@ function renderLocker(swap?: Swap) {
     b.querySelector('em')!.textContent = i >= 0 ? String(i + 1) : '';
     b.querySelector('small')!.textContent = STATS.find((s) => s.id === b.dataset.stat)!.value();
   }
+  palette.classList.toggle('dark', bgIsDark(card.bg));
+  const usedColor = nameColorOf(card);
+  for (const b of palette.querySelectorAll<HTMLElement>('[data-name-color]')) {
+    const n = NAME_COLORS.find((c) => c.id === b.dataset.nameColor)!;
+    b.classList.toggle('active', n.id === usedColor);
+    b.classList.toggle('lk-nc-absent', !nameColorOpen(n));
+  }
   showLockerNew();
   refreshCards(swap);
 }
@@ -277,6 +303,11 @@ export function onLockerClick(target: HTMLElement) {
   if (cat) {
     if (!cat.classList.contains('active')) sfx.playUiHover();
     return showCat(cat.dataset.cat!);
+  }
+  const color = target.closest<HTMLElement>('[data-name-color]');
+  if (color) {
+    card.nameColor = color.dataset.nameColor!;
+    return changed('name');
   }
   const item = target.closest<HTMLElement>('.lk-item');
   if (!item) return;

@@ -5,10 +5,10 @@
 // 出しきって MASTERY_WAIT 秒たったら、左の記録と合計を武器の熟練度に入れ替え、稼いだ XP でゲージを伸ばす（ここは飛ばさない）。
 // 同時に、右のランクの枠をいちばん良かったキルの映像に入れ替える
 // 初めて達成した実績があれば、合計の下にそのバッジを並べる（熟練度に入れ替えても残す）
-import * as sfx from './audio.js?v=a8ad3029';
-import { masteryOf } from './mastery.js?v=a8ad3029';
-import { TIER_NAMES } from './challenges.js?v=a8ad3029';
-import { badgePlate } from './ui/cardHonors.js?v=a8ad3029';
+import * as sfx from './audio.js?v=e316db84';
+import { masteryOf } from './mastery.js?v=e316db84';
+import { TIER_NAMES } from './challenges.js?v=e316db84';
+import { badgePlate } from './ui/cardHonors.js?v=e316db84';
 export function fmtTime(t) {
     const cs = Math.floor(t * 100);
     return `${Math.floor(cs / 6000)}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}`;

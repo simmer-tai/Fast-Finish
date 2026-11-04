@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { addGlow, removeGlow } from '../fx/glow.js?v=a8ad3029';
-import { createFalconMats, ramp, sidePlates, slab } from './skinFalconRifle.js?v=a8ad3029';
-import { skinFx } from './skins.js?v=a8ad3029';
+import { addGlow, removeGlow } from '../fx/glow.js?v=e316db84';
+import { createFalconMats, ramp, sidePlates, slab } from './skinFalconRifle.js?v=e316db84';
+import { skinFx } from './skins.js?v=e316db84';
 // ---- リボルバーのスキン: 隼 ----
 // ライフルの隼と同じ白い陶器・黒い鋼・金の銃。元のフレームを丸ごと隠し、後ろの黒い翼から銃口へ下る 1 本の白い稜線で作り直す。
 // 飾りを足すのでなく、輪郭そのもので流れを作る。鋭い所は翼の先と銃口の 2 点に絞る。シリンダーは隠さず、稜線の下に浮かぶ艶黒の機関として見せる。

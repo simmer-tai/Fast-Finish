@@ -1,137 +1,138 @@
-import { snapshotState } from './game/resetState.js?v=a8ad3029';
-import { resetKunaiCombat } from './weapons/kunaiCombat.js?v=a8ad3029';
-import { resetSwordCombat } from './weapons/swordCombat.js?v=a8ad3029';
-import { resetAxeCombat } from './weapons/axeCombat.js?v=a8ad3029';
-import { resetBatCombat } from './weapons/batCombat.js?v=a8ad3029';
-import { resetSpearCombat } from './weapons/spearCombat.js?v=a8ad3029';
-import { resetBowCombat } from './weapons/bowCombat.js?v=a8ad3029';
-import { resetHandgunCombat } from './weapons/handgunCombat.js?v=a8ad3029';
-import { resetSickleCombat } from './weapons/sickleCombat.js?v=a8ad3029';
-import { resetRifleCombat } from './weapons/rifleCombat.js?v=a8ad3029';
-import { resetViewModelMotion } from './weapons/viewModelMotion.js?v=a8ad3029';
-import { enemyBullets } from './enemy/fire.js?v=a8ad3029';
-import { kick } from './game/state.js?v=a8ad3029';
-import { resetCameraEffects } from './fx/camera.js?v=a8ad3029';
-import { clearLockOn } from './player/lockOn.js?v=a8ad3029';
-import { clearRiseRipples } from './fx/riseRipples.js?v=a8ad3029';
+import { snapshotState } from './game/resetState.js?v=e316db84';
+import { resetKunaiCombat } from './weapons/kunaiCombat.js?v=e316db84';
+import { resetSwordCombat } from './weapons/swordCombat.js?v=e316db84';
+import { resetAxeCombat } from './weapons/axeCombat.js?v=e316db84';
+import { resetBatCombat } from './weapons/batCombat.js?v=e316db84';
+import { resetSpearCombat } from './weapons/spearCombat.js?v=e316db84';
+import { resetBowCombat } from './weapons/bowCombat.js?v=e316db84';
+import { resetHandgunCombat } from './weapons/handgunCombat.js?v=e316db84';
+import { resetSickleCombat } from './weapons/sickleCombat.js?v=e316db84';
+import { resetRifleCombat } from './weapons/rifleCombat.js?v=e316db84';
+import { resetViewModelMotion } from './weapons/viewModelMotion.js?v=e316db84';
+import { enemyBullets } from './enemy/fire.js?v=e316db84';
+import { kick } from './game/state.js?v=e316db84';
+import { resetCameraEffects } from './fx/camera.js?v=e316db84';
+import { clearLockOn } from './player/lockOn.js?v=e316db84';
+import { clearRiseRipples } from './fx/riseRipples.js?v=e316db84';
 import * as THREE from 'three';
-import { broadcastBossBreak, broadcastBossVictory, broadcastPartyDefeat, confirmRemoteHit, initMultiplayer, isMultiplayerGuest, latestAdds, latestBossSnapshot, latestMissiles, leaveMultiplayer, multiplayerLoadoutChanged, multiplayerPartyDown, multiplayerPartySize, multiplayerRole, multiplayerStage, refreshLobby, setLobbyStageListener, remotePlayers, returnToMultiplayerLobby, sendAddHit, sendAddKill, sendKunaiBossHit, setLobbyStage, startMultiplayer, updateMultiplayer } from './multiplayer/connectionTest.js?v=a8ad3029';
-import { applyBossSnapshot } from './multiplayer/bossSnapshot.js?v=a8ad3029';
-import { addSpawnId, applyAddSnapshot, markAddSpawn } from './multiplayer/enemySnapshot.js?v=a8ad3029';
-import { remoteMissileBlast, remoteMissileHurt, remoteMissileParry, remoteMissileShotDown, updateRemoteMissileEffects, updateRemoteMissiles } from './enemy/bossMissiles.js?v=a8ad3029';
-import * as sfx from './audio.js?v=a8ad3029';
-import { ensureAudio, playHit } from './audio.js?v=a8ad3029';
-import { resetScore, showKillScore, totalScore, updateScoreHud } from './score.js?v=a8ad3029';
-import { CLIP_ASPECT, noteReplayKill, playReplay, prepareReplayFrame, resetReplay, startReplay } from './fx/replayClip.js?v=a8ad3029';
-import { finalScore, fmtTime, killPar, scoreRank, showParkourResult, showResult, skipResult } from './result.js?v=a8ad3029';
-import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js?v=a8ad3029';
-import { buildStation } from './station.js?v=a8ad3029';
-import { buildTutorial } from './tutorialStage.js?v=a8ad3029';
-import { buildShip } from './ship.js?v=a8ad3029';
-import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, stopTutorial, updateTutorial } from './tutorial.js?v=a8ad3029';
-import { buildWarehouse } from './warehouse.js?v=a8ad3029';
-import { buildParking } from './parking.js?v=a8ad3029';
-import { buildLift } from './lift.js?v=a8ad3029';
-import { buildMall } from './mall.js?v=a8ad3029';
-import { buildRuins } from './ruins.js?v=a8ad3029';
-import { BOSS_LIMBS, boss, bossDangers, bossEntranceLeft, bossEntranceView, bossMeleeTarget, clearBoss, damageBoss, endBossEntrance, remoteBossImpact, remoteBossSlam, showRemoteBossBreak, spawnBoss, startBossEntrance, updateBoss, updateBossEntrance, updateRemoteBossDebris } from './enemy/boss.js?v=a8ad3029';
-import { updateQuake } from './fx/quake.js?v=a8ad3029';
-import { STAGE_TITLE_END, createStageTitle } from './stageTitle.js?v=a8ad3029';
-import { WEAPON_KEYS } from './weapons/ids.js?v=a8ad3029';
-import { updateMeleePull } from './weapons/meleePull.js?v=a8ad3029';
-import { ARROW_DMG_MAX, ARROW_HIT, ARROW_RICOCHET_DMG, BOW_RICOCHET_STOCK, bowState, gainRicochetArrow, updateBow } from './weapons/bowCombat.js?v=a8ad3029';
-import { BAT_ATTACKS, BAT_CHARGE_LIFT, BAT_SWING_1, batState, startBatAttack, updateBat } from './weapons/batCombat.js?v=a8ad3029';
-import { SPEAR_ATTACKS, SPEAR_GUARD_SLOW, SPEAR_TWIRL_1, spearHolds, spearState, spearThrow, startSpearAttack, updateSpear } from './weapons/spearCombat.js?v=a8ad3029';
-import { rand } from './random.js?v=a8ad3029';
-import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody, buildStrikerBody } from './enemy/body.js?v=a8ad3029';
-import { updateControlsHud } from './ui/controlsHud.js?v=a8ad3029';
-import { GROUND_REVEAL_ALL, groundReveal, riseOrigin, withGroundReveal } from './world/reveal.js?v=a8ad3029';
-import { seaRoot, setSea, updateSea } from './world/sea.js?v=a8ad3029';
-import { resetShipState, setShipProgress, updateShipState } from './world/shipState.js?v=a8ad3029';
-import { updateWaveHud } from './ui/waveHud.js?v=a8ad3029';
-import { RISE_BASE_HEIGHT, RISE_BASE_TIME, RISE_FILL_DONE, RISE_FILL_START, RISE_PULSE_TIME, RISE_SLAM_HEIGHT, RISE_WAVE, arenaRiseEnd, resetArenaRiseEnd, riseDelayAt, riseLines, riseMeshes, risers, } from './world/rise.js?v=a8ad3029';
-import { STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, boxMatrixFor, floorAt, gridMaterial, groundArea, octagonXGeo, octagonZGeo, rampMatrix, rampUpDir, ramps, wedgeGeo, } from './world/blocks.js?v=a8ad3029';
-import { castWorld } from './world/raycast.js?v=a8ad3029';
-import { addMover, cargoBlocksAhead, cargoContact, cargoSpawnPoints, clearMovers, hasCargo, inheritCargoVelocity, moverHazardAt, moverDocked, moverThreat, setMoversHurry, trainNeedsClear, trainOffset, updateMovers } from './world/movers.js?v=a8ad3029';
-import { collideTrain } from './world/trainCollision.js?v=a8ad3029';
-import { boardLedge, setShaft, shaftCopies, updateBoarding, updateShaft } from './world/shaft.js?v=a8ad3029';
-import { cargoJumpBlock, clearCargoJump, updateCargoEvade } from './enemy/cargoEvade.js?v=a8ad3029';
-import { liftDangers, setLiftTraps, updateLiftTraps } from './world/liftTraps.js?v=a8ad3029';
-import { updateDangerHud } from './ui/dangerHud.js?v=a8ad3029';
-import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, playBounds } from './world/arena.js?v=a8ad3029';
-import { HEAVY_FX, hitFxVisible, impact, initHitFx, screenCut, spawnFinaleFx, spawnHeadshotFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles, } from './fx/hitFx.js?v=a8ad3029';
-import { addSlashScar, clearScars, updateScars } from './fx/scars.js?v=a8ad3029';
-import { updateArcs } from './fx/arcs.js?v=a8ad3029';
-import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions } from './ui/options.js?v=a8ad3029';
-import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js?v=a8ad3029';
-import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js?v=a8ad3029';
-import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js?v=a8ad3029';
-import { buildParkour, parkourCourse } from './world/parkour.js?v=a8ad3029';
-import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js?v=a8ad3029';
-import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat } from './challenges.js?v=a8ad3029';
-import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js?v=a8ad3029';
-import { loadBest, saveBest } from './records.js?v=a8ad3029';
-import { addXp, loadXp } from './mastery.js?v=a8ad3029';
-import { env, initEnemyEnv } from './enemy/env.js?v=a8ad3029';
-import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, } from './enemy/state.js?v=a8ad3029';
-import { STRIKER_HP, STRIKER_STRIDE, poseStriker, refreshStrikerNav, resetStriker, resetStrikerNav, strikerRestPose, updateStrikerFace, updateStrikerMove, } from './enemy/striker.js?v=a8ad3029';
-import { SNIPER_HP, SNIPER_SPAWN_NEAR, attachSniperRifle, createSniperLaser, resetSniper, updateSniperAim, updateSniperFire, } from './enemy/sniper.js?v=a8ad3029';
-import { DUAL_HP, attachDualGuns, resetDual, updateDualFire } from './enemy/dual.js?v=a8ad3029';
-import { buildDroneBody, attachDroneGun, poseDrone } from './enemy/drone.js?v=a8ad3029';
-import { DRONE_HP, DRONE_HOVER, resetDrone, updateDrone, updateDroneFire } from './enemy/droneAI.js?v=a8ad3029';
-import { resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js?v=a8ad3029';
-import { breakDummy, clearRemains, leaveDebris, updateDebris, updateRemains } from './enemy/debris.js?v=a8ad3029';
-import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_STRIDE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, enemyCanStand, enemyCanStandAt, knockEnemy, launchEnemy, poseEnemyTumble, spikeEnemy, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js?v=a8ad3029';
-import { DEG, UP, wrapAngle } from './math.js?v=a8ad3029';
-import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, AIR_JUMP_SPEED, DASH_TIME, EYE_HEIGHT, PLAYER_GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_BOOST, WALLJUMP_MAX, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_HOLD_TIME, WALLRUN_MAX_FALL, WALLRUN_SPEED, } from './player/config.js?v=a8ad3029';
-import { dashDir, forward, lastWallNormal, lookEuler, player, position, right, velocity, wallNormal, wallProbe, wallTangent, wish, } from './player/state.js?v=a8ad3029';
-import { RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, findWall, initMovement, moveToward, underLowBox, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantleBox, tryStartWallRun, updateMantle, } from './player/movement.js?v=a8ad3029';
-import { keys, padMove, pressed } from './input.js?v=a8ad3029';
-import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js?v=a8ad3029';
-import { spawnRiseRipple, updateRiseRipples } from './fx/riseRipples.js?v=a8ad3029';
-import { ATTACKS, DASH_SLASH, SLASH_1, SLIDE_UP } from './weapons/kunaiAttacks.js?v=a8ad3029';
-import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js?v=a8ad3029';
-import { AXE_ATTACKS, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_KESA, AXE_LAUNCH, AXE_WHEEL_HIT, AXE_WHEEL_LIFT } from './weapons/axeAttacks.js?v=a8ad3029';
-import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY, camera, controls, renderer, scene } from './core.js?v=a8ad3029';
-import { DEFAULT_HIT_STOP, game, kickVel, STYLE_MULT, STYLE_NAMES } from './game/state.js?v=a8ad3029';
-import { axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, spearViewModel, sword, swordViewModel, rifleViewModel, viewModel, } from './weapons/viewModels.js?v=a8ad3029';
-import { AXE_SHOCK_HIT, applyAxePose, axeHitSource, axePoseAt, axePoweredHit, axeState, axeTrailPose, flingEnemy, poweredAxeHit, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js?v=a8ad3029';
-import { initGameHooks } from './game/hooks.js?v=a8ad3029';
-import { FOCUS_DIM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, swordPoseAt, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js?v=a8ad3029';
-import { BAT_RETURN_HIT, BULLET_HIT, BULLET_RANGE, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, isParryReturn, applyGunSpin, deadEyeMarks, endDeadEye, endGunDraw, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, startReload, updateBullets, updateCasings, updateDeadEye, updateGunDraw, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js?v=a8ad3029';
-import { GRAPPLE_STICK_HIT, HOOK_CHARGES, SICKLE_DAMAGE_SCALE, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT, SICKLE_PULL_HIT, SICKLE_PULL_LAST, sickleState, updateGrapple, updateGrapplePull, updateSickleMelee, } from './weapons/sickleCombat.js?v=a8ad3029';
-import * as sickleHits from './weapons/sickleCombat.js?v=a8ad3029';
-import { GUARD_HIT, PIN_HIT, RUSH_HIT, SKEWER_FIRST, SKEWER_GAP, SKEWER_HIT, YANK_SPEED } from './weapons/spearCombat.js?v=a8ad3029';
-import { THROW_HIT, RECALL_HITS, WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiState, startAttack, detachEnemyKunai, updateKunaiGrapple, recallKunai, clearThrown, toggleKunaiGrapple, releaseKunaiGrapple, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js?v=a8ad3029';
-import { THROW_RANGE } from './weapons/kunai.js?v=a8ad3029';
-import { ammoHud, ammoPips, updateWeaponHud } from './ui/weaponHud.js?v=a8ad3029';
-import { updateKunaiHud } from './ui/kunaiHud.js?v=a8ad3029';
-import { ENEMY_BRACE_TIME, ENEMY_FIRST_SHOT, attachEnemyGun, onPlayerShot, showRemoteBossParry, spawnRemoteBossShot, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js?v=a8ad3029';
-import { PARRY_INVERT_TIME, parryMono, parrySlowFactor, parryState } from './combat/parry.js?v=a8ad3029';
-import { rumble } from './player/rumble.js?v=a8ad3029';
-import { updateHudSway } from './ui/hudSway.js?v=a8ad3029';
-import { updateStyleHud } from './ui/styleHud.js?v=a8ad3029';
-import { updateBossHud } from './ui/bossHud.js?v=a8ad3029';
-import { setLetterbox } from './ui/letterbox.js?v=a8ad3029';
-import { updateHandCam } from './fx/handCam.js?v=a8ad3029';
-import { addTrauma, applyCameraOffset, cameraFx, onDash, onLand, onMantleEnd, onMantleStart, onSlideStart, onWallJump, onWallRunStart, restoreCameraOffset, savedQuat, updateCamera, updateKick, } from './fx/camera.js?v=a8ad3029';
-import { GAMEOVER_DELAY, downFall, downSlowFactor, isDown } from './player/down.js?v=a8ad3029';
-import { dashGauges, healPlayer as applyPlayerHeal, showPlayerDamage, updateBowHud, updateHookHud, updateHpHud } from './ui/hud.js?v=a8ad3029';
-import { drawWeapon, updateViewModel, updateWeaponSwitch, viewState } from './weapons/viewModelMotion.js?v=a8ad3029';
-import { aoPass, composer, fxaaPass, glowPass, postQuality, sharpenPass, hitFxRenderPass, impactFxPass, motionBlurPass, speedFxPass, updateSpeedFx } from './fx/post.js?v=a8ad3029';
-import { setAnisotropy } from './fx/anisotropy.js?v=a8ad3029';
-import { dynResScale, updateDynRes } from './fx/dynamicRes.js?v=a8ad3029';
-import { updateBlobShadows } from './fx/blobShadows.js?v=a8ad3029';
-import { overlay } from './ui/overlay.js?v=a8ad3029';
-import { turnView, zoomLookScale } from './player/look.js?v=a8ad3029';
-import { RIFLE_HIT, RIFLE_MAG, RIFLE_RANGE, RIFLE_SCOPED_BODY_BONUS, addRifleRounds, rifleState, updateRifle } from './weapons/rifleCombat.js?v=a8ad3029';
+import { broadcastBossBreak, broadcastBossVictory, broadcastPartyDefeat, confirmRemoteHit, initMultiplayer, isMultiplayerGuest, latestAdds, latestBossSnapshot, latestMissiles, leaveMultiplayer, multiplayerLoadoutChanged, multiplayerPartyDown, multiplayerPartySize, multiplayerRole, multiplayerStage, refreshLobby, setLobbyStageListener, remotePlayers, returnToMultiplayerLobby, sendAddHit, sendAddKill, sendKunaiBossHit, setLobbyStage, startMultiplayer, updateMultiplayer } from './multiplayer/connectionTest.js?v=e316db84';
+import { applyBossSnapshot } from './multiplayer/bossSnapshot.js?v=e316db84';
+import { addSpawnId, applyAddSnapshot, markAddSpawn } from './multiplayer/enemySnapshot.js?v=e316db84';
+import { remoteMissileBlast, remoteMissileHurt, remoteMissileParry, remoteMissileShotDown, updateRemoteMissileEffects, updateRemoteMissiles } from './enemy/bossMissiles.js?v=e316db84';
+import * as sfx from './audio.js?v=e316db84';
+import { ensureAudio, playHit } from './audio.js?v=e316db84';
+import { resetScore, showKillScore, totalScore, updateScoreHud } from './score.js?v=e316db84';
+import { CLIP_ASPECT, noteReplayKill, playReplay, prepareReplayFrame, resetReplay, startReplay } from './fx/replayClip.js?v=e316db84';
+import { finalScore, fmtTime, killPar, scoreRank, showParkourResult, showResult, skipResult } from './result.js?v=e316db84';
+import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js?v=e316db84';
+import { buildStation } from './station.js?v=e316db84';
+import { buildTutorial } from './tutorialStage.js?v=e316db84';
+import { buildShip } from './ship.js?v=e316db84';
+import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, stopTutorial, updateTutorial } from './tutorial.js?v=e316db84';
+import { buildWarehouse } from './warehouse.js?v=e316db84';
+import { buildParking } from './parking.js?v=e316db84';
+import { buildLift } from './lift.js?v=e316db84';
+import { buildMall } from './mall.js?v=e316db84';
+import { buildRuins } from './ruins.js?v=e316db84';
+import { BOSS_LIMBS, boss, bossDangers, bossEntranceLeft, bossEntranceView, bossMeleeTarget, clearBoss, damageBoss, endBossEntrance, remoteBossImpact, remoteBossSlam, showRemoteBossBreak, spawnBoss, startBossEntrance, updateBoss, updateBossEntrance, updateRemoteBossDebris } from './enemy/boss.js?v=e316db84';
+import { updateQuake } from './fx/quake.js?v=e316db84';
+import { STAGE_TITLE_END, createStageTitle } from './stageTitle.js?v=e316db84';
+import { WEAPON_KEYS } from './weapons/ids.js?v=e316db84';
+import { updateMeleePull } from './weapons/meleePull.js?v=e316db84';
+import { ARROW_DMG_MAX, ARROW_HIT, ARROW_RICOCHET_DMG, BOW_RICOCHET_STOCK, bowState, gainRicochetArrow, updateBow } from './weapons/bowCombat.js?v=e316db84';
+import { BAT_ATTACKS, BAT_CHARGE_LIFT, BAT_SWING_1, batState, startBatAttack, updateBat } from './weapons/batCombat.js?v=e316db84';
+import { SPEAR_ATTACKS, SPEAR_GUARD_SLOW, SPEAR_TWIRL_1, spearHolds, spearState, spearThrow, startSpearAttack, updateSpear } from './weapons/spearCombat.js?v=e316db84';
+import { rand } from './random.js?v=e316db84';
+import { DUMMY_ANKLE_Y, DUMMY_HEIGHT, DUMMY_LEG_X, DUMMY_RADIUS, buildEnemyBody, buildStrikerBody } from './enemy/body.js?v=e316db84';
+import { updateControlsHud } from './ui/controlsHud.js?v=e316db84';
+import { GROUND_REVEAL_ALL, groundReveal, riseOrigin, withGroundReveal } from './world/reveal.js?v=e316db84';
+import { seaRoot, setSea, updateSea } from './world/sea.js?v=e316db84';
+import { resetShipState, setShipProgress, updateShipState } from './world/shipState.js?v=e316db84';
+import { updateWaveHud } from './ui/waveHud.js?v=e316db84';
+import { RISE_BASE_HEIGHT, RISE_BASE_TIME, RISE_FILL_DONE, RISE_FILL_START, RISE_PULSE_TIME, RISE_SLAM_HEIGHT, RISE_WAVE, arenaRiseEnd, resetArenaRiseEnd, riseDelayAt, riseLines, riseMeshes, risers, } from './world/rise.js?v=e316db84';
+import { STRUCT_GRID, TERRAIN_GRID, addBoxes, addRamps, blocks, boxColor, boxGeo, boxMatrix, boxMatrixFor, floorAt, gridMaterial, groundArea, octagonXGeo, octagonZGeo, rampMatrix, rampUpDir, ramps, wedgeGeo, } from './world/blocks.js?v=e316db84';
+import { castWorld } from './world/raycast.js?v=e316db84';
+import { addMover, cargoBlocksAhead, cargoContact, cargoSpawnPoints, clearMovers, hasCargo, inheritCargoVelocity, moverHazardAt, moverDocked, moverThreat, setMoversHurry, trainNeedsClear, trainOffset, updateMovers } from './world/movers.js?v=e316db84';
+import { collideTrain } from './world/trainCollision.js?v=e316db84';
+import { boardLedge, setShaft, shaftCopies, updateBoarding, updateShaft } from './world/shaft.js?v=e316db84';
+import { cargoJumpBlock, clearCargoJump, updateCargoEvade } from './enemy/cargoEvade.js?v=e316db84';
+import { liftDangers, setLiftTraps, updateLiftTraps } from './world/liftTraps.js?v=e316db84';
+import { updateDangerHud } from './ui/dangerHud.js?v=e316db84';
+import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, playBounds } from './world/arena.js?v=e316db84';
+import { HEAVY_FX, hitFxVisible, impact, initHitFx, screenCut, spawnFinaleFx, spawnHeadshotFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles, } from './fx/hitFx.js?v=e316db84';
+import { addSlashScar, clearScars, updateScars } from './fx/scars.js?v=e316db84';
+import { updateArcs } from './fx/arcs.js?v=e316db84';
+import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions } from './ui/options.js?v=e316db84';
+import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js?v=e316db84';
+import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js?v=e316db84';
+import { closeFeedbackTab, onFeedbackClick, openFeedbackTab } from './ui/feedbackTab.js?v=e316db84';
+import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js?v=e316db84';
+import { buildParkour, parkourCourse } from './world/parkour.js?v=e316db84';
+import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js?v=e316db84';
+import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat } from './challenges.js?v=e316db84';
+import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js?v=e316db84';
+import { loadBest, saveBest } from './records.js?v=e316db84';
+import { addXp, loadXp } from './mastery.js?v=e316db84';
+import { env, initEnemyEnv } from './enemy/env.js?v=e316db84';
+import { DEFAULT_KNOCK, ENEMY_HIT_RECOVER, RESPAWN_RISE_TIME, RESPAWN_TIME, en, enemies, hitDir, hitLook, setEn, } from './enemy/state.js?v=e316db84';
+import { STRIKER_HP, STRIKER_STRIDE, poseStriker, refreshStrikerNav, resetStriker, resetStrikerNav, strikerRestPose, updateStrikerFace, updateStrikerMove, } from './enemy/striker.js?v=e316db84';
+import { SNIPER_HP, SNIPER_SPAWN_NEAR, attachSniperRifle, createSniperLaser, resetSniper, updateSniperAim, updateSniperFire, } from './enemy/sniper.js?v=e316db84';
+import { DUAL_HP, attachDualGuns, resetDual, updateDualFire } from './enemy/dual.js?v=e316db84';
+import { buildDroneBody, attachDroneGun, poseDrone } from './enemy/drone.js?v=e316db84';
+import { DRONE_HP, DRONE_HOVER, resetDrone, updateDrone, updateDroneFire } from './enemy/droneAI.js?v=e316db84';
+import { resetDummyStagger, spring, staggerDummy, updateDummyStagger } from './enemy/stagger.js?v=e316db84';
+import { breakDummy, clearRemains, leaveDebris, updateDebris, updateRemains } from './enemy/debris.js?v=e316db84';
+import { AIR_TILT_KICK, ENEMY_SPIKE_BOUNCE, ENEMY_STRIDE, ENEMY_WAIT_MAX, ENEMY_WAIT_MIN, enemyCanStand, enemyCanStandAt, knockEnemy, launchEnemy, poseEnemyTumble, spikeEnemy, updateEnemyAir, updateEnemyGait, updateEnemyKnock, updateEnemyMove, updateEnemyTumble, } from './enemy/motion.js?v=e316db84';
+import { DEG, UP, wrapAngle } from './math.js?v=e316db84';
+import { AIR_ACCEL, AIR_TURN_RATE, BASE_FOV, DASH_CHARGES, DASH_COOLDOWN, DASH_EXIT_SPEED, DASH_RECHARGE, DASH_SPEED, AIR_JUMP_SPEED, DASH_TIME, EYE_HEIGHT, PLAYER_GRAVITY, GROUND_ACCEL, GROUND_FRICTION, GROUND_TURN_RATE, JUMP_SPEED, OVERSPEED_DECAY, PLAYER_RADIUS, SLIDE_BOOST, SLIDE_BOOST_COOLDOWN, SLIDE_BOOST_MAX, SLIDE_END_SPEED, SLIDE_FRICTION, SLIDE_START_SPEED, SLIDE_TURN_RATE, SPRINT_SPEED, WALK_SPEED, WALLJUMP_BOOST, WALLJUMP_MAX, WALLJUMP_OUT, WALLJUMP_UP, WALLRUN_ACCEL, WALLRUN_GRAVITY, WALLRUN_HOLD_TIME, WALLRUN_MAX_FALL, WALLRUN_SPEED, } from './player/config.js?v=e316db84';
+import { dashDir, forward, lastWallNormal, lookEuler, player, position, right, velocity, wallNormal, wallProbe, wallTangent, wish, } from './player/state.js?v=e316db84';
+import { RAMP_SLIDE_GRAVITY, canKeepWallRun, collideBox, collideCylinder, collideRamp, endWallRun, findWall, initMovement, moveToward, underLowBox, rotateHorizontalToward, setHorizontalSpeed, steerHorizontal, tryMantleBox, tryStartWallRun, updateMantle, } from './player/movement.js?v=e316db84';
+import { keys, padMove, pressed } from './input.js?v=e316db84';
+import { easeInOutCubic, easeOutCubic, easeOutQuart } from './ease.js?v=e316db84';
+import { spawnRiseRipple, updateRiseRipples } from './fx/riseRipples.js?v=e316db84';
+import { ATTACKS, DASH_SLASH, SLASH_1, SLIDE_UP } from './weapons/kunaiAttacks.js?v=e316db84';
+import { SWORD_ATTACKS, SWORD_CHARGE_SLASH, SWORD_ISSEN, SWORD_KESA, SWORD_SWEEP, SWORD_THRUST, } from './weapons/swordAttacks.js?v=e316db84';
+import { AXE_ATTACKS, AXE_DRIVE, AXE_DRIVE_LIFT, AXE_DRIVE_SPEED, AXE_FLING_LIFT, AXE_FLING_SPEED, AXE_KESA, AXE_LAUNCH, AXE_WHEEL_HIT, AXE_WHEEL_LIFT } from './weapons/axeAttacks.js?v=e316db84';
+import { HEMI_GROUND, HEMI_WITH_SUN, SUN_DIR, SUN_INTENSITY, camera, controls, renderer, scene } from './core.js?v=e316db84';
+import { DEFAULT_HIT_STOP, game, kickVel, STYLE_MULT, STYLE_NAMES } from './game/state.js?v=e316db84';
+import { axeViewModel, batViewModel, bowViewModel, gunViewModel, heldAxeModel, kunai, leftViewModel, sickleViewModel, spearViewModel, sword, swordViewModel, rifleViewModel, viewModel, } from './weapons/viewModels.js?v=e316db84';
+import { AXE_SHOCK_HIT, applyAxePose, axeHitSource, axePoseAt, axePoweredHit, axeState, axeTrailPose, flingEnemy, poweredAxeHit, spawnAxeShock, startAxeAttack, updateAxeAttack, updateAxeShocks, } from './weapons/axeCombat.js?v=e316db84';
+import { initGameHooks } from './game/hooks.js?v=e316db84';
+import { FOCUS_DIM, LOCK_HEIGHT, applySwordPose, chargeFocus, startSwordAttack, swordPoseAt, swordState, swordTrailPose, updateChargeDash, updateRush, updateSwordAttack, } from './weapons/swordCombat.js?v=e316db84';
+import { BAT_RETURN_HIT, BULLET_HIT, BULLET_RANGE, DEADEYE_HIT, GUN_AMMO, GUN_RELOAD_TIME, MUZZLE_FLASH_LIFE, PARRY_RETURN_HIT, RELOAD_EVENTS, isParryReturn, applyGunSpin, deadEyeMarks, endDeadEye, endGunDraw, endReload, endSlideSpin, endTwirl, evalReloadPose, fireGun, gunCylinder, gunReady, gunState, muzzleFlash, placeDeadEyeMarks, poseReloadParts, startReload, updateBullets, updateCasings, updateDeadEye, updateGunDraw, updateSlideSpin, updateTwirl, } from './weapons/handgunCombat.js?v=e316db84';
+import { GRAPPLE_STICK_HIT, HOOK_CHARGES, SICKLE_DAMAGE_SCALE, SICKLE_DASH_HIT, SICKLE_DASH_LAST, SICKLE_KESA_HIT, SICKLE_PULL_HIT, SICKLE_PULL_LAST, sickleState, updateGrapple, updateGrapplePull, updateSickleMelee, } from './weapons/sickleCombat.js?v=e316db84';
+import * as sickleHits from './weapons/sickleCombat.js?v=e316db84';
+import { GUARD_HIT, PIN_HIT, RUSH_HIT, SKEWER_FIRST, SKEWER_GAP, SKEWER_HIT, YANK_SPEED } from './weapons/spearCombat.js?v=e316db84';
+import { THROW_HIT, RECALL_HITS, WORLD_SLOW_RING_TIME, WORLD_SLOW_SCALE, applyLunge, applyPose, attackPoseAt, kunaiState, startAttack, detachEnemyKunai, updateKunaiGrapple, recallKunai, clearThrown, toggleKunaiGrapple, releaseKunaiGrapple, tmpPose, updateAttack, updateKunaiPose, updateThrow, worldSlowFactor, } from './weapons/kunaiCombat.js?v=e316db84';
+import { THROW_RANGE } from './weapons/kunai.js?v=e316db84';
+import { ammoHud, ammoPips, updateWeaponHud } from './ui/weaponHud.js?v=e316db84';
+import { updateKunaiHud } from './ui/kunaiHud.js?v=e316db84';
+import { ENEMY_BRACE_TIME, ENEMY_FIRST_SHOT, attachEnemyGun, onPlayerShot, showRemoteBossParry, spawnRemoteBossShot, updateDummyAim, updateEnemyBullets, updateEnemyFire } from './enemy/fire.js?v=e316db84';
+import { PARRY_INVERT_TIME, parryMono, parrySlowFactor, parryState } from './combat/parry.js?v=e316db84';
+import { rumble } from './player/rumble.js?v=e316db84';
+import { updateHudSway } from './ui/hudSway.js?v=e316db84';
+import { updateStyleHud } from './ui/styleHud.js?v=e316db84';
+import { updateBossHud } from './ui/bossHud.js?v=e316db84';
+import { setLetterbox } from './ui/letterbox.js?v=e316db84';
+import { updateHandCam } from './fx/handCam.js?v=e316db84';
+import { addTrauma, applyCameraOffset, cameraFx, onDash, onLand, onMantleEnd, onMantleStart, onSlideStart, onWallJump, onWallRunStart, restoreCameraOffset, savedQuat, updateCamera, updateKick, } from './fx/camera.js?v=e316db84';
+import { GAMEOVER_DELAY, downFall, downSlowFactor, isDown } from './player/down.js?v=e316db84';
+import { dashGauges, healPlayer as applyPlayerHeal, showPlayerDamage, updateBowHud, updateHookHud, updateHpHud } from './ui/hud.js?v=e316db84';
+import { drawWeapon, updateViewModel, updateWeaponSwitch, viewState } from './weapons/viewModelMotion.js?v=e316db84';
+import { aoPass, composer, fxaaPass, glowPass, postQuality, sharpenPass, hitFxRenderPass, impactFxPass, motionBlurPass, speedFxPass, updateSpeedFx } from './fx/post.js?v=e316db84';
+import { setAnisotropy } from './fx/anisotropy.js?v=e316db84';
+import { dynResScale, updateDynRes } from './fx/dynamicRes.js?v=e316db84';
+import { updateBlobShadows } from './fx/blobShadows.js?v=e316db84';
+import { overlay } from './ui/overlay.js?v=e316db84';
+import { turnView, zoomLookScale } from './player/look.js?v=e316db84';
+import { RIFLE_HIT, RIFLE_MAG, RIFLE_RANGE, RIFLE_SCOPED_BODY_BONUS, addRifleRounds, rifleState, updateRifle } from './weapons/rifleCombat.js?v=e316db84';
 const RIFLE_GAIN_FLASH = 0.45; // 倒して増えた弾を光らせる時間
-import { updateScopeOverlay } from './ui/scopeOverlay.js?v=a8ad3029';
-import { padState, updatePad } from './player/padControls.js?v=a8ad3029';
-import { beginPerfFrame, endPerfFrame, perfSpan } from './ui/perfHud.js?v=a8ad3029';
-import { restartAnim } from './ui/restartAnim.js?v=a8ad3029';
-import { hudUnit } from './ui/hudUnit.js?v=a8ad3029';
-import { localDev } from './localDev.js?v=a8ad3029';
+import { updateScopeOverlay } from './ui/scopeOverlay.js?v=e316db84';
+import { padState, updatePad } from './player/padControls.js?v=e316db84';
+import { beginPerfFrame, endPerfFrame, perfSpan } from './ui/perfHud.js?v=e316db84';
+import { restartAnim } from './ui/restartAnim.js?v=e316db84';
+import { hudUnit } from './ui/hudUnit.js?v=e316db84';
+import { localDev } from './localDev.js?v=e316db84';
 // ---- 基本セットアップ ----
 // レンダラー・シーン・カメラは core.ts、武器や演出をまたいで共有している値は game/state.ts
 // ---- ライト ----
@@ -269,7 +270,7 @@ function pauseGame() {
     padPlaying = false;
     setPlaying(false);
 }
-const PANELS = ['options'];
+const PANELS = ['options', 'patch-notes'];
 function showPanel(name) {
     for (const n of PANELS) {
         overlay.classList.toggle(`show-${n}`, n === name);
@@ -392,7 +393,7 @@ function setPlaySelect(on) {
 // PLAY の上のタブ。ステージ選択（SINGLE PLAYER）・チャレンジ・マルチプレイの入口・ロッカー・ロードマップを行き来する。
 // 部屋を作る・参加する流れに入ったあとは、切り替えると抜けてしまうので受け付けない（タブも隠れている）
 const multiplayerFlow = overlay.querySelector('.multiplayer [data-flow]');
-const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap'];
+const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap', 'feedback'];
 // マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ（localDev.ts）
 const PLAY_TABS = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi');
 if (!localDev)
@@ -408,6 +409,8 @@ function currentPlayTab() {
         return 'locker';
     if (overlay.classList.contains('select-roadmap'))
         return 'roadmap';
+    if (overlay.classList.contains('select-feedback'))
+        return 'feedback';
     return null;
 }
 function switchPlayTab(tab) {
@@ -429,6 +432,8 @@ function switchPlayTab(tab) {
         closeLocker();
     else if (cur === 'roadmap')
         closeRoadmapTab();
+    else if (cur === 'feedback')
+        closeFeedbackTab();
     if (tab === 'single')
         return setStageSelect(true);
     showPanel(null);
@@ -444,9 +449,13 @@ function switchPlayTab(tab) {
         openLocker();
         overlayPrompt.textContent = 'LOCKER';
     }
-    else {
+    else if (tab === 'roadmap') {
         openRoadmapTab(selectedLoadout());
         overlayPrompt.textContent = 'ROADMAP';
+    }
+    else {
+        openFeedbackTab();
+        overlayPrompt.textContent = 'FEEDBACK';
     }
 }
 // LB / RB で隣のタブへ（端より先へは進まない）
@@ -767,6 +776,18 @@ overlay.addEventListener('click', (e) => {
     // 結果の演出の途中なら、どこを押しても最後まで飛ばす
     if (overlay.classList.contains('result') && skipResult())
         return;
+    if (target.closest('[data-action="options-close"]'))
+        return togglePanel('options');
+    if (overlay.classList.contains('show-options') && target.closest('.menu button:not([data-action="options"])'))
+        showPanel(null);
+    if (target.closest('[data-action="patch-notes"]'))
+        return togglePanel('patch-notes');
+    if (overlay.classList.contains('show-patch-notes')) {
+        // CLOSE か、窓の外を押したら閉じる
+        if (target.closest('[data-action="patch-close"]') || !target.closest('.pn-win'))
+            togglePanel('patch-notes');
+        return;
+    }
     if (target.closest('[data-action="multiplayer-lobby"]') && multiplayerRun) {
         sfx.playUiSelect();
         return returnToLobby();
@@ -806,6 +827,13 @@ overlay.addEventListener('click', (e) => {
             if (!target.closest('[data-action="roadmap-back"]'))
                 return onRoadmapClick(target);
             closeRoadmapTab();
+            overlayPrompt.textContent = 'SELECT MODE';
+            return sfx.playUiBack();
+        }
+        if (overlay.classList.contains('select-feedback')) {
+            if (!target.closest('[data-action="feedback-back"]'))
+                return onFeedbackClick(target);
+            closeFeedbackTab();
             overlayPrompt.textContent = 'SELECT MODE';
             return sfx.playUiBack();
         }
@@ -868,7 +896,7 @@ overlay.addEventListener('click', (e) => {
 // 項目に乗ったら小さく鳴らす（同じ項目の中を動いている間は鳴らさない。選べない項目は鳴らさない）
 let hoveredButton = null;
 overlay.addEventListener('mouseover', (e) => {
-    const button = e.target.closest('.menu button, .play-tabs button, .si-diff button, .sw-slot, .sw-rows button, .sw-win .menu button, .opt button, .locker button, .challenge button');
+    const button = e.target.closest('.menu button, .play-tabs button, .si-diff button, .sw-slot, .sw-rows button, .sw-win .menu button, .opt button, .options-close, .locker button, .challenge button, .feedback button, .pn-open, .pn-close');
     if (button === hoveredButton)
         return;
     hoveredButton = button;
@@ -927,7 +955,17 @@ window.addEventListener('keydown', (e) => {
     }
     if (overlay.classList.contains('show-options'))
         return onOptionsKey(e);
-    // LB / RB で PLAY のタブ（SINGLE PLAYER / CHALLENGE / MULTIPLAYER / LOCKER / ROADMAP）を切り替える
+    // パッチノート: 上下でスクロールし、A / B で閉じる
+    if (overlay.classList.contains('show-patch-notes')) {
+        const scroll = { ArrowUp: -80, ArrowDown: 80 }[e.code];
+        if (scroll)
+            overlay.querySelector('.pn-body').scrollBy(0, scroll);
+        else if (e.code === 'Enter' || e.code === 'Escape')
+            togglePanel('patch-notes');
+        e.preventDefault();
+        return;
+    }
+    // LB / RB で PLAY のタブ（SINGLE PLAYER / CHALLENGE / MULTIPLAYER / LOCKER / ROADMAP / FEEDBACK）を切り替える
     if ((e.code === 'PageUp' || e.code === 'PageDown') && overlay.classList.contains('title') && !pickerOpen() && currentPlayTab()) {
         e.preventDefault();
         return stepPlayTab(e.code === 'PageDown' ? 1 : -1);
@@ -941,6 +979,11 @@ window.addEventListener('keydown', (e) => {
         if (e.code === 'Escape' || e.code === 'KeyQ')
             return overlay.querySelector('[data-action="roadmap-back"]')?.click();
         return onRoadmapKey(e);
+    }
+    if (overlay.classList.contains('select-feedback')) {
+        if (e.code === 'Escape')
+            return overlay.querySelector('[data-action="feedback-back"]')?.click();
+        return onPadMenuKey(e, '.feedback button');
     }
     if (overlay.classList.contains('select-locker')) {
         if (e.code === 'Escape')
@@ -1001,7 +1044,7 @@ window.addEventListener('keydown', (e) => {
         overlay.querySelector('[data-action="play-back"]').click();
     }
     else if (overlay.classList.contains('title') || overlay.classList.contains('pause')) {
-        onPadMenuKey(e, !overlay.classList.contains('title') ? '.main button' : overlay.classList.contains('select-play') ? '.play button' : '.modes button');
+        onPadMenuKey(e, !overlay.classList.contains('title') ? '.main button' : overlay.classList.contains('select-play') ? '.play button, .pn-open' : '.modes button, .pn-open');
     }
 });
 // 訓練場へ入るときは、タイトルをすぐには消さずに払い出す。切り替えの帯で覆いきったら（switchToStage）、
