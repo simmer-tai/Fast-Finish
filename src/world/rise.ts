@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '../random.js';
 import { riseOrigin } from './reveal.js';
 import type { Block, Ramp } from './blocks.js';
+import { LINE_SCALE_GLSL, lineScale } from './lineScale.js';
 
 // ---- ステージのせり上がり ----
 // 訓練場に入ると、始めの位置から床のグリッドが円く広がり、グリッドが届いたところから箱が組み上がる。箱はそれぞれ
@@ -58,6 +59,7 @@ export function withRiseBuild<T extends THREE.Material>(mat: T): T {
   mat.side = THREE.DoubleSide;
   mat.onBeforeCompile = (shader, r) => {
     prev.call(mat, shader, r);
+    shader.uniforms.uLineK = lineScale;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -73,7 +75,7 @@ export function withRiseBuild<T extends THREE.Material>(mat: T): T {
         vBuildUv = uv;`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vFill;\nvarying float vPulse;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;')
+      .replace('#include <common>', `#include <common>\n${LINE_SCALE_GLSL}\nvarying float vFill;\nvarying float vPulse;\nvarying vec3 vBuildPos;\nvarying vec3 vBuildNormal;\nvarying vec2 vBuildUv;`)
       .replace(
         '#include <clipping_planes_fragment>',
         `#include <clipping_planes_fragment>
@@ -86,7 +88,7 @@ export function withRiseBuild<T extends THREE.Material>(mat: T): T {
           // 縁の線は太めに、面のグリッドは 1 ピクセルで
           float line = 1.0 - min(min(min(gd.x, gd.y), min(ed.x, ed.y) * 0.4), 1.0);
           if (line < 0.5) discard;
-          buildMark = 1.0;
+          buildMark = uLineK; // 面が無いので透かせない。色を薄くして細く見せる
         } else if (vBuildPos.y > vFill - 0.08) {
           buildMark = 1.0;
         } else {
@@ -94,8 +96,8 @@ export function withRiseBuild<T extends THREE.Material>(mat: T): T {
           buildMark = 0.35 * ink * ink;
         }
         if (vPulse > 0.0) {
-          // 縁の太さは 1 + 5 * 濃さ ピクセル
-          float rim = 1.0 - clamp(min(ed.x, ed.y) / (1.0 + 5.0 * vPulse), 0.0, 1.0);
+          // 縁の太さは（解像度を落としていなければ）1 + 5 * 濃さ ピクセル
+          float rim = 1.0 - clamp(min(ed.x, ed.y) / max(1.0, (1.0 + 5.0 * vPulse) * uLineK), 0.0, 1.0);
           buildMark = max(buildMark, rim * vPulse);
         }`,
       )

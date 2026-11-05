@@ -104,6 +104,11 @@
       /* タイトルではモードの選択（GAME / OPTIONS）を出し、一時停止では元のメニューを出す。
          GAME を押すと（select-play）、PLAY / TRAINING に入れ替える */
       #overlay .menu.modes, #overlay .menu.play { display: none; }
+      /* 読み込み中: JS が動くまではボタンが効かないので、薄くして押せないようにする（main.ts の最後で booting を外す）。
+         ボタンの opacity は入場のアニメーションが握っているので、親のメニューを薄くする */
+      #overlay .menu.modes { transition: opacity 0.2s; }
+      #overlay.booting { pointer-events: none; }
+      #overlay.booting .menu.modes { opacity: 0.35; }
       #overlay.title .menu.main { display: none; }
       #overlay.title .menu.modes { display: flex; }
       #overlay.title.select-play .menu.modes { display: none; }
@@ -111,7 +116,7 @@
       /* PLAY の上のタブ: ステージ選択とマルチプレイをすぐ切り替える。部屋に入ったら（切り替えると抜けてしまうので）隠す */
       /* 1 本の帯として見せる: 下に見出しの .rule と同じ消えていく線を引き、タブの間は斜めの細線で区切る。
          選んでいるタブだけ FINISH と同じ斜めの黒帯に白抜きにし、ほかは枠を付けずに文字だけにする */
-      #overlay .play-tabs { display: none; position: absolute; z-index: 1; left: calc(80 * var(--u)); top: calc(26 * var(--u)); align-items: stretch; padding-bottom: calc(6 * var(--u)); animation: ov-fade .3s ease-out both; }
+      #overlay .play-tabs { display: none; position: absolute; z-index: 1; left: calc(80 * var(--u)); top: calc(18 * var(--u)); align-items: stretch; padding-bottom: calc(6 * var(--u)); animation: ov-fade .3s ease-out both; }
       #overlay .play-tabs::after {
         content: ""; position: absolute; left: calc(-10 * var(--u)); bottom: 0; width: min(calc(1100 * var(--u)), 80vw); height: 1px; pointer-events: none;
         background: linear-gradient(90deg, rgba(51, 51, 51, .55), rgba(51, 51, 51, 0));
@@ -120,17 +125,17 @@
       #overlay.select-multiplayer:has(.multiplayer [data-flow]:not([hidden])) .play-tabs, #overlay.pick-weapon .play-tabs { display: none; }
       #overlay .play-tabs button {
         position: relative; isolation: isolate; display: flex; align-items: center; border: 0; background: none; cursor: pointer;
-        padding: calc(8 * var(--u)) calc(26 * var(--u)); font: inherit; font-weight: 600; font-size: max(13px, calc(22 * var(--u))); letter-spacing: .18em; color: rgba(51, 51, 51, .5);
+        padding: calc(9 * var(--u)) calc(31 * var(--u)); font: inherit; font-weight: 600; font-size: max(15px, calc(26 * var(--u))); letter-spacing: .18em; color: rgba(51, 51, 51, .5);
         transition: color .12s;
       }
       /* アイコンだけ並べ、名前は選んでいるタブにだけ出す。ほかのタブの名前は title のツールチップで見る */
-      #overlay .play-tabs button svg { flex: none; width: max(18px, calc(28 * var(--u))); height: max(18px, calc(28 * var(--u))); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay .play-tabs button svg { flex: none; width: max(21px, calc(34 * var(--u))); height: max(21px, calc(34 * var(--u))); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
       /* 切り替えたら、前のタブの名前は畳み、新しいタブの名前は幅を広げながら出す。黒帯は横に伸び、アイコンは少し跳ねる */
       #overlay .play-tabs button span {
         display: flex; align-items: baseline; gap: calc(10 * var(--u)); max-width: 0; margin-left: 0; overflow: hidden; white-space: nowrap; opacity: 0;
         transition: max-width .3s cubic-bezier(.2, .8, .2, 1), margin-left .3s cubic-bezier(.2, .8, .2, 1), opacity .16s;
       }
-      #overlay .play-tabs button small { font-size: max(8px, calc(11 * var(--u))); letter-spacing: .26em; opacity: .7; }
+      #overlay .play-tabs button small { font-size: max(9px, calc(13 * var(--u))); letter-spacing: .26em; opacity: .7; }
       #overlay.select-stage .play-tabs [data-tab="single"] span, #overlay.select-challenge .play-tabs [data-tab="challenge"] span, #overlay.select-multiplayer .play-tabs [data-tab="multi"] span, #overlay.select-locker .play-tabs [data-tab="locker"] span, #overlay.select-roadmap .play-tabs [data-tab="roadmap"] span, #overlay.select-feedback .play-tabs [data-tab="feedback"] span {
         max-width: 18em; margin-left: calc(12 * var(--u)); opacity: 1; transition: max-width .3s cubic-bezier(.2, .8, .2, 1), margin-left .3s cubic-bezier(.2, .8, .2, 1), opacity .2s .08s;
       }
@@ -370,12 +375,8 @@
       #overlay .pcard.bg-scan {
         background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 0.8cqw), radial-gradient(120% 90% at 85% 10%, #4a4a4a, #222 70%);
       }
-      #overlay .pcard .pc-tag, #overlay .pcard .pc-no { position: absolute; top: 3.2cqw; font-size: 2cqw; line-height: 1; letter-spacing: 0.32em; color: var(--sub); }
-      #overlay .pcard .pc-tag { left: 7cqw; display: flex; align-items: center; gap: 1.4cqw; }
-      #overlay .pcard .pc-tag::before { content: ""; width: 0.7cqw; height: 2cqw; background: var(--fg); transform: skewX(-24deg); }
-      #overlay .pcard .pc-no { right: 9cqw; letter-spacing: 0.16em; font-variant-numeric: tabular-nums; }
       #overlay .pcard .pc-main { display: flex; align-items: center; gap: 4.5cqw; margin-top: 3cqw; min-width: 0; }
-      #overlay .pcard .pc-plate { flex: none; width: 21cqw; --cut: 4cqw; --cell: 2.4cqw; }
+      #overlay .pcard .pc-plate { flex: none; width: 23cqw; --cut: 4cqw; --cell: 2.4cqw; }
       #overlay .pcard.dark .pc-plate { box-shadow: inset 0 0 0 1px rgba(242, 242, 242, 0.25); }
       #overlay .pc-plate .pc-mark { position: absolute; left: 22%; top: 20%; width: 56%; height: 60%; fill: #f2f2f2; filter: drop-shadow(0.03em 0.05em 0 rgba(0, 0, 0, 0.35)); }
       /* TALON のエンブレム: 台を黒く沈め、縁に赤をにじませる。爪は黒い機械の板で、内側の縁だけ赤く光らせ、フレームの TALON と同じくたまに明滅させる */
@@ -400,7 +401,6 @@
       #overlay :is(.pcard, .lk-palette):not(.dark) .nc-white { -webkit-text-stroke: 0.04em #333; paint-order: stroke fill; }
       #overlay :is(.pcard, .lk-palette).dark .nc-black { color: #111; -webkit-text-stroke: 0.04em rgba(242, 242, 242, 0.85); paint-order: stroke fill; }
       #overlay .nc-rededge { color: #e52828; }
-      /* TALON: 黒い字に赤いネオンの縁。周期はフレームの赤い帯（tl-flicker）と同じで、一緒にまたたく */
       #overlay .nc-talon {
         --nc-glow: 0 0 0.06em #ff2a2a, 0 0 0.2em rgba(255, 40, 40, 0.75);
         color: #0c0c0c; -webkit-text-stroke: 0.05em #ff3b30; paint-order: stroke fill; text-shadow: var(--nc-glow); animation: nc-talon 5.3s linear infinite;
@@ -502,6 +502,10 @@
       #overlay .pcard .c.br { right: 2.2cqw; bottom: 2.2cqw; border-width: 0 1px 1px 0; }
       #overlay .pcard:is(.fr-standard, .fr-bracket) .c { display: block; }
       #overlay .pcard.fr-none .pc-frame { display: none; }
+      #overlay .pcard .pc-violet { display: none; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #overlay .pcard.fr-violet { clip-path: polygon(2.3% 0, 97.7% 0, 100% 4.1%, 100% 95.9%, 97.7% 100%, 2.3% 100%, 0 95.9%, 0 4.1%); }
+      #overlay .pcard.fr-violet .pc-frame { display: none; }
+      #overlay .pcard.fr-violet .pc-violet { display: block; }
       /* BOLD: 字と同じ色の太い縁 */
       #overlay .pcard.fr-bold .pc-frame { --edge: var(--fg); --w: 0.9cqw; }
       /* BRACKET: 細い縁に、太く長いかぎ括弧 */
@@ -520,6 +524,40 @@
       #overlay .pcard.fr-rededge .pc-frame { --edge: #e52828; box-shadow: inset 0 0 0 1px var(--line), inset 1.4cqw 0 0 #e52828; }
       #overlay .pcard.fr-rededge .pc-frame::before, #overlay .pcard.fr-rededge .pc-frame::after { height: 0.6cqw; margin-top: -0.3cqw; }
       /* TALON: 爪のスキンの意匠（SVG は playerCard.ts の TALON_FRAME）。背景の色によらず黒い機械の枠に赤い光の帯 */
+      /* The holographic mesh sits above the background and below the card text. */
+      #overlay .pcard .pc-hologram { display: none; position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; pointer-events: none; fill: none; stroke: #137582; stroke-width: 0.24; stroke-linejoin: round; }
+      #overlay .pcard.fr-eclipse .pc-hologram { display: block; }
+      #overlay .pc-hologram-base { opacity: 0.10; }
+      #overlay .pcard.dark .pc-hologram { stroke: #a1faff; }
+      #overlay .pcard.dark .pc-hologram-base { opacity: 0.12; }
+      #overlay .pcard .pc-hologram-wave {
+        fill: #49b9c4; stroke: none; opacity: 0.18;
+        -webkit-mask-image: linear-gradient(105deg, transparent 18%, rgba(0, 0, 0, 0.3) 36%, #000 50%, rgba(0, 0, 0, 0.3) 64%, transparent 82%);
+        mask-image: linear-gradient(105deg, transparent 18%, rgba(0, 0, 0, 0.3) 36%, #000 50%, rgba(0, 0, 0, 0.3) 64%, transparent 82%);
+        -webkit-mask-size: 400% 100%; mask-size: 400% 100%;
+        animation: ec-hologram-sweep 9s linear infinite;
+      }
+      #overlay .pcard.dark .pc-hologram-wave { fill: #83e9ee; stroke: none; opacity: 0.16; }
+      @keyframes ec-hologram-sweep { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+      #overlay.low-quality .lk-bg .pc-hologram-wave, #overlay .lk-bg[data-bg] .pc-hologram-wave { display: none; }
+      @media (prefers-reduced-motion: reduce) { #overlay .pcard .pc-hologram-wave { display: none; } }
+      /* ECLIPSE: dark armor and a cool edge light. */
+      #overlay .pcard .pc-eclipse { display: none; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #overlay .pcard.fr-eclipse .pc-eclipse { display: block; }
+      #overlay .pcard.fr-eclipse .pc-frame { display: none; }
+      #overlay .pc-eclipse .ec-rim { fill: #111b24; stroke: #496474; stroke-width: 0.4; }
+      #overlay .pc-eclipse .ec-armor { fill: #1d2a33; stroke: #506b77; stroke-width: 0.3; stroke-linejoin: round; }
+      #overlay .pc-eclipse .ec-bevel { fill: #40555e; }
+      #overlay .pc-eclipse .ec-crown { fill: #101a20; stroke: #597681; stroke-width: 0.25; }
+      #overlay .pc-eclipse .ec-slot { fill: #67dbe2; }
+      #overlay .pc-eclipse .ec-inner { fill: none; stroke: #73949b; stroke-width: 0.24; opacity: 0.65; }
+      #overlay .pc-eclipse :is(.ec-rail, .ec-detail, .ec-glint) { fill: none; stroke: #83e8f2; stroke-width: 0.4; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay .pc-eclipse .ec-detail { stroke: #d5fbff; stroke-width: 0.6; }
+      #overlay .pc-eclipse .ec-glint { stroke: #e7ffff; stroke-width: 0.7; stroke-dasharray: 5 95; filter: drop-shadow(0 0 1px #57dce9); animation: ec-glint 6s linear infinite; }
+      @keyframes ec-glint { to { stroke-dashoffset: -100; } }
+      #overlay.low-quality .lk-bg .pc-eclipse .ec-glint { animation: none; }
+      @media (prefers-reduced-motion: reduce) { #overlay .pc-eclipse .ec-glint { animation: none; } }
+      /* TALON: 黒い字に赤いネオンの縁。周期はフレームの赤い帯（tl-flicker）と同じで、一緒にまたたく */
       #overlay .pcard .pc-talon { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
       #overlay .pcard.fr-talon .pc-talon { display: block; }
       #overlay .pcard.fr-talon .pc-frame { display: none; }
@@ -584,8 +622,6 @@
       #overlay .lk-bg[data-bg] .pc-scars .ts-core { animation: none; }
       #overlay .lk-bg[data-bg] :is(.pc-scars .ts-flare, .pc-scars .ts-surge, .pc-scars .ts-wash, .pc-talon .tl-surge) { display: none; }
       @media (prefers-reduced-motion: reduce) { #overlay .pc-talon :is(.tl-red, .tl-zap > *, .tl-surge > *) { animation: none; } #overlay .pc-scars :is(.ts-core, .ts-flare, .ts-surge, .ts-wash) { animation: none; } }
-      /* 上の爪の下に札の文字が入らないよう、少し下げる */
-      #overlay .pcard.fr-talon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
       /* FALCON: 隼のスキンの意匠（SVG は cardParts.ts の FALCON_FRAME）。背景の色によらず白い陶器の縁・黒い鋼の翼・金の羽根 */
       #overlay .pcard .pc-falcon { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
       #overlay .pcard.fr-falcon .pc-falcon { display: block; }
@@ -623,8 +659,6 @@
       #overlay.low-quality .lk-bg .pcard :is(.pc-talon *, .pc-scars *, .pc-falcon *, .pc-facets *) { animation: none; }
       #overlay.low-quality .lk-bg .pcard .fc-glint { display: none; }
       @media (prefers-reduced-motion: reduce) { #overlay .pc-falcon :is(.fc-gold, .fc-core, .fc-glint) { animation: none; } #overlay .pc-falcon .fc-glint { display: none; } #overlay .pc-facets .fc-lit { animation: none; } }
-      /* 上の翼の下に札の文字が入らないよう、少し下げる */
-      #overlay .pcard.fr-falcon :is(.pc-tag, .pc-no) { top: 4.8cqw; }
       /* HAZARD: 上下に斜めの縞の帯 */
       #overlay .pcard.fr-hazard .pc-frame i {
         display: block; inset: 0;
@@ -634,7 +668,7 @@
       }
       /* タイトルの右下: 下端を左のメニューの下端（上から約 683u）に、右端を左の余白と同じ 80u に揃え、中央へ向けて少し傾ける。ほかの画面を出している間は隠す */
       #overlay .title-card {
-        display: none; position: absolute; right: calc(80 * var(--u)); top: calc(683 * var(--u)); width: calc(480 * var(--u)); pointer-events: none;
+        display: none; position: absolute; right: calc(80 * var(--u)); top: calc(683 * var(--u)); width: calc(600 * var(--u)); pointer-events: none;
         transform: translateY(-100%) perspective(calc(1200 * var(--u))) rotateY(-6deg); transform-origin: 100% 50%;
       }
       #overlay.title.card-on:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .title-card { display: block; }
@@ -2210,6 +2244,10 @@
       #hud > #total { transform-origin: 100% 0; transform: rotateX(calc(var(--hud-pitch) * -1)) rotateY(calc(var(--hud-yaw) * -1)); }
       #hud > #remain { transform-origin: 50% 100%; transform: rotateX(var(--hud-pitch)); }
       #hud > #boss { transform-origin: 50% 0; transform: rotateX(calc(var(--hud-pitch) * -1)); }
+      /* 最低画質: HUD の 3D の傾きと、描き直しが重い影を切る */
+      body.fx-lowest #hud { perspective: none; }
+      body.fx-lowest #hud > :not(#tutorial-guide) { transform: none !important; }
+      body.fx-lowest #crosshair svg { filter: none; }
       /* ボスの体力: 画面の中央上の帯 1 本。
          明るい床にも暗い影にも埋もれないよう、帯は白で縁取り、文字には白いにじみを付ける。削れた分は赤く残って少し遅れて減る。
          本体は 4 つの部位がすべて故障するまでダメージが通らないので、その間は部位 4 つの体力の合計を装甲の帯で手前に重ねる。
@@ -3094,7 +3132,7 @@
       </div>
     </div>
     <div id="transition"><div class="cover"></div><div class="label">TRAINING</div></div>
-    <div id="overlay" class="title">
+    <div id="overlay" class="title booting">
       <div class="frame">
         <div class="kicker">FIRST-PERSON BLADE ACTION</div>
         <h1 class="logo">
@@ -3712,7 +3750,7 @@
           <p class="note"></p>
         </section>
         <section class="sec">
-          <h3>TITLE<span class="jp">タイトル画面</span></h3>
+          <h3>SCREENS<span class="jp">タイトルと結果の画面</span></h3>
           <div class="opt" data-opt="card">
             <span class="name">PLAYER CARD<small>タイトルにカードを出す</small></span>
             <div class="seg">
@@ -3720,10 +3758,17 @@
               <button type="button" data-card="off">OFF</button>
             </div>
           </div>
+          <div class="opt" data-opt="replay">
+            <span class="name">REPLAY<small>結果でハイライトを流す</small></span>
+            <div class="seg">
+              <button type="button" data-replay="on">ON</button>
+              <button type="button" data-replay="off">OFF</button>
+            </div>
+          </div>
         </section>
       </div>
       <div class="foot">
-        <span class="prompt">SELECT MODE</span>
+        <span class="prompt">LOADING</span>
       </div>
       <button type="button" class="pn-open" data-action="patch-notes" title="PATCH NOTES — パッチノート" aria-label="パッチノート"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 11.5h7M9 15h7M9 18.5h4"/></svg></button>
       <!-- パッチノート。更新を足すときは .pn-entry を .pn-body の先頭に足す（新しい順） -->
@@ -3790,7 +3835,7 @@
       if (new URLSearchParams(location.search).has('new') && !window.__freshStorageReady) {
         throw new Error('Could not isolate storage for ?new');
       }
-      import('./dist/main.js?v=e316db84');
+      import('./dist/main.js?v=6145a5ab');
     </script>
   </body>
 </html>

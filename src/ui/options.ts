@@ -7,6 +7,7 @@ import * as sfx from '../audio.js';
 // 音量は 0〜1 で、音の出口に掛ける（audio.ts の setMasterVolume）。
 // 画質は解像度・影・アンチエイリアスをまとめて切り替える（main.ts の applyQuality）。重いときは、どの画質でも解像度を自動で下げる（fx/dynamicRes.ts）。
 // PLAYER CARD はタイトルの右にプレイヤーカードを出すかどうか（overlay の card-on）。次に開いたときのために覚えておく
+// REPLAY は結果の画面でハイライトを流すかどうか。切っている間は録画もしない（main.ts が fx/replayClip.ts を呼ばない）
 const OPTIONS_STORE = 'fast-finish.options';
 const RANGES = {
   mouseSens: { min: 0.1, max: 3, step: 0.1 },
@@ -21,13 +22,13 @@ export type Quality = (typeof QUALITIES)[number];
 type RangeKey = keyof typeof RANGES;
 const isRangeKey = (k: string | undefined): k is RangeKey => !!k && k in RANGES;
 const QUALITY_NOTES: Record<Quality, string> = {
-  lowest: '遊ぶのに要らない物を全部切る。LOW から、光のにじみ・画面端のブラー・縁の処理を外し、火花や破片をさらに減らす。いちばん軽い',
+  lowest: '遊ぶのに要らない物を全部切る。LOW から、光のにじみ・画面端のブラー・縁の処理を外し、当たりの光・火花・破片・スキンの演出を大きく減らす。普通の当たりでは画面を暗くせず、閃光も短く小さくする。切り跡・残骸・HUD の揺れ・速さの演出・結果のハイライトを切り、音の残響も切る。120m より遠くは描かない。いちばん軽い',
   low: '解像度を 2/3 にし、影とカメラのブラーを切って、火花や破片を減らす。縁は FXAA でならし、輪郭を立てる',
   medium: '等倍の解像度に、粗めの影と軽めのアンチエイリアス',
   high: '高解像度（最大 1.5 倍）に、細かい影と 4x アンチエイリアス',
   ultra: '画面の画素どおりの解像度（最大 2 倍）に、さらに細かい影と 8x アンチエイリアス。隅や足元に暗がり（AO）を入れ、光のにじみも細かく描く。重い',
 };
-export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, motionBlur: 1, volume: 1, quality: 'high' as Quality, showCard: true };
+export const options = { mouseSens: 1, padSens: 1, padVibration: 1, brightness: 1, motionBlur: 1, volume: 1, quality: 'high' as Quality, showCard: true, replay: true };
 try {
   const saved = JSON.parse(localStorage.getItem(OPTIONS_STORE) ?? '{}');
   for (const k of Object.keys(RANGES) as RangeKey[]) {
@@ -35,6 +36,7 @@ try {
   }
   if (QUALITIES.includes(saved.quality)) options.quality = saved.quality;
   if (typeof saved.showCard === 'boolean') options.showCard = saved.showCard;
+  if (typeof saved.replay === 'boolean') options.replay = saved.replay;
 } catch {
   // 読めなければ初期値のまま
 }
@@ -62,6 +64,7 @@ const optionRows = [...overlay.querySelectorAll<HTMLElement>('.options .opt')];
 const qualityButtons = [...overlay.querySelectorAll<HTMLElement>('.options [data-quality]')];
 const qualityNote = overlay.querySelector('.options .note')!;
 const cardButtons = [...overlay.querySelectorAll<HTMLElement>('.options [data-card]')];
+const replayButtons = [...overlay.querySelectorAll<HTMLElement>('.options [data-replay]')];
 let optionIndex = 0;
 export function renderOptions() {
   optionRows.forEach((row, i) => {
@@ -76,6 +79,7 @@ export function renderOptions() {
   for (const b of qualityButtons) b.classList.toggle('active', b.dataset.quality === options.quality);
   qualityNote.textContent = QUALITY_NOTES[options.quality];
   for (const b of cardButtons) b.classList.toggle('active', (b.dataset.card === 'on') === options.showCard);
+  for (const b of replayButtons) b.classList.toggle('active', (b.dataset.replay === 'on') === options.replay);
   overlay.classList.toggle('card-on', options.showCard);
   overlay.classList.toggle('low-quality', options.quality === 'low' || options.quality === 'lowest');
 }
@@ -106,11 +110,20 @@ function setShowCard(on: boolean) {
   renderOptions();
   return true;
 }
+function setReplay(on: boolean) {
+  if (on === options.replay) return false;
+  options.replay = on;
+  saveOptions();
+  renderOptions();
+  return true;
+}
 function stepOption(row: HTMLElement, dir: number) {
   const key = row.dataset.opt;
   const changed =
     key === 'card'
       ? setShowCard(dir < 0)
+      : key === 'replay'
+      ? setReplay(dir < 0)
       : key === 'quality'
       ? setQuality(QUALITIES[THREE.MathUtils.clamp(QUALITIES.indexOf(options.quality) + dir, 0, QUALITIES.length - 1)])
       : setRange(key as RangeKey, options[key as RangeKey] + dir * RANGES[key as RangeKey].step);
@@ -124,9 +137,11 @@ export function onOptionsClick(target: HTMLElement) {
   const step = target.closest<HTMLElement>('[data-step]');
   const quality = target.closest<HTMLElement>('[data-quality]');
   const card = target.closest<HTMLElement>('[data-card]');
+  const replay = target.closest<HTMLElement>('[data-replay]');
   if (step) stepOption(row, Number(step.dataset.step));
   else if (quality && setQuality(quality.dataset.quality as Quality)) sfx.playUiSelect();
   else if (card && setShowCard(card.dataset.card === 'on')) sfx.playUiSelect();
+  else if (replay && setReplay(replay.dataset.replay === 'on')) sfx.playUiSelect();
   renderOptions();
 }
 export function onOptionsKey(e: KeyboardEvent) {

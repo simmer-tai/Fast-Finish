@@ -8,7 +8,8 @@ import { options, type Quality } from '../ui/options.js';
 // life を省いた破片は、ステージを出るまで床に残る。画質ごとの数（CHUNK_LIMIT）を超えたら、古いものから縮んで消える。
 // 床に落ちている破片も、プレイヤーが歩いて蹴ったり、ボスの足や体・攻撃の風圧や衝撃波で跳ね飛ばされたりする
 const MAX_CHUNKS = 500;
-const CHUNK_LIMIT: Record<Quality, number> = { lowest: 60, low: 100, medium: 300, high: MAX_CHUNKS, ultra: MAX_CHUNKS };
+const CHUNK_LIMIT: Record<Quality, number> = { lowest: 30, low: 100, medium: 300, high: MAX_CHUNKS, ultra: MAX_CHUNKS };
+const LOWEST_SPAWN = 0.4; // 最低画質で一度に飛ばす数の割合
 const GRAVITY = 22;
 const BOUNCE = 0.35; // 跳ね返るときに残す縦の速さの割合
 const SKID = 0.6; // 跳ね返るときに残す横の速さの割合
@@ -140,7 +141,8 @@ export function scatterRubble(minX: number, maxX: number, minZ: number, maxZ: nu
 }
 const tmpDir = new THREE.Vector3();
 export function spawnChunks(at: THREE.Vector3, o: ChunkSpawn) {
-  for (let k = 0; k < o.count; k++) {
+  const count = options.quality === 'lowest' ? Math.ceil(o.count * LOWEST_SPAWN) : o.count;
+  for (let k = 0; k < count; k++) {
     if (chunks.length >= MAX_CHUNKS) chunks.shift();
     tmpDir.set(Math.random() * 2 - 1, Math.random() * 0.6, Math.random() * 2 - 1).normalize();
     if (o.dir) tmpDir.add(o.dir).normalize();

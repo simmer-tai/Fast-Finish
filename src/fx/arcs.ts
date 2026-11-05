@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rand } from '../random.js';
 import { camera } from '../core.js';
-import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, spawnCutLine, spawnHologramChains, spawnLeaves, spawnGleam } from './hitFx.js';
+import { HEAVY_FX, SWING_MIN_SIDE, fxScene, hitFxTint, skinFxCount, spawnCutLine, spawnHologramChains, spawnLeaves, spawnGleam } from './hitFx.js';
 import { DUMMY_HEIGHT, DUMMY_RADIUS } from '../enemy/body.js';
 import { en, hitDir, hitPoint } from '../enemy/state.js';
 import type { Skin } from '../weapons/skins.js';
@@ -284,7 +284,7 @@ export function spawnArcs(
   normal.y = 0;
   normal.normalize();
   around.crossVectors(UP, normal);
-  const crawl = Math.round((1.5 + fx) * rand(0.8, 1.2));
+  const crawl = skinFxCount(Math.round((1.5 + fx) * rand(0.8, 1.2)));
   for (let i = 0; i < crawl; i++) {
     const a = Math.random() * Math.PI * 2;
     boltDir.copy(around).multiplyScalar(Math.cos(a)).addScaledVector(UP, Math.sin(a));
@@ -301,7 +301,7 @@ export function spawnArcs(
     );
   }
   // 体から攻撃の向きへ遠く伸びる稲妻。向きのばらつきは小さくし、目に刺さる向きは避ける
-  const count = heavy ? 2 : 1;
+  const count = skinFxCount(heavy ? 2 : 1);
   for (let i = 0; i < count; i++) {
     for (let tries = 0; tries < 4; tries++) {
       boltDir.randomDirection().multiplyScalar(0.3).add(flow).normalize();
@@ -310,14 +310,14 @@ export function spawnArcs(
     addBolt(at, boltDir, rand(0.9, 1.8) * Math.sqrt(fx) * size, size, rand(0.08, 0.13) * (heavy ? 1.4 : 1), -rand(0, 0.02), 1, look);
   }
   // 稲妻と同時に、放射状に飛ぶ光の筋。画面に沿った向きへ散らし、攻撃の向きへ少し寄せる
-  const rayCount = Math.round(rand(7, 10) * (heavy ? 1.4 : 1));
+  const rayCount = skinFxCount(Math.round(rand(7, 10) * (heavy ? 1.4 : 1)));
   for (let i = 0; i < rayCount; i++) {
     const a = ((i + Math.random() * 0.7) / rayCount) * Math.PI * 2; // 全周にむらなく
     boltDir.copy(camRight).multiplyScalar(Math.cos(a)).addScaledVector(camUp, Math.sin(a)).addScaledVector(flow, 0.35).normalize();
     addRay(at, boltDir, rand(7, 14) * Math.sqrt(fx) * size, rand(0.25, 0.5) * size, 0.8 * size, rand(0.12, 0.2) * (heavy ? 1.3 : 1), look);
   }
   // 遅れて、当たった所のまわりの体の上に短い放電を残す
-  const after = heavy ? 2 : 1;
+  const after = skinFxCount(heavy ? 2 : 1);
   for (let i = 0; i < after; i++) {
     scatter.randomDirection().multiplyScalar(0.12 * size).add(at);
     boltDir.randomDirection();
@@ -335,7 +335,7 @@ export function spawnWallArcs(at: THREE.Vector3, n: THREE.Vector3, swing: THREE.
   // 面に沿った 2 つの向き
   wallSide.crossVectors(Math.abs(n.y) > 0.9 ? X_AXIS : UP, n).normalize();
   wallUp.crossVectors(n, wallSide);
-  const crawl = Math.round((1 + fx) * rand(0.8, 1.2));
+  const crawl = skinFxCount(Math.round((1 + fx) * rand(0.8, 1.2)));
   for (let i = 0; i < crawl; i++) {
     const a = Math.random() * Math.PI * 2;
     boltDir.copy(wallSide).multiplyScalar(Math.cos(a)).addScaledVector(wallUp, Math.sin(a));
@@ -343,7 +343,7 @@ export function spawnWallArcs(at: THREE.Vector3, n: THREE.Vector3, swing: THREE.
     boltDir.addScaledVector(n, 0.08); // 面に埋もれないよう少しだけ浮かせる
     addBolt(at, boltDir, rand(0.3, 0.7) * Math.sqrt(fx) * size, 0.8 * size, rand(0.07, 0.12), -rand(0, 0.03), Math.random() < 0.5 ? 0 : 1, look);
   }
-  const rayCount = Math.round(rand(4, 6));
+  const rayCount = skinFxCount(Math.round(rand(4, 6)));
   for (let i = 0; i < rayCount; i++) {
     const a = ((i + Math.random() * 0.7) / rayCount) * Math.PI * 2;
     boltDir.copy(wallSide).multiplyScalar(Math.cos(a)).addScaledVector(wallUp, Math.sin(a)).addScaledVector(n, 0.5).normalize();
@@ -360,7 +360,7 @@ export function spawnMuzzleArcs(muzzle: THREE.Object3D, look: ArcLook) {
   muzzle.updateWorldMatrix(true, false);
   muzzle.getWorldPosition(muzzleAt);
   muzzleFwd.set(0, 0, -1).transformDirection(muzzle.matrixWorld);
-  const count = Math.round(rand(3, 5));
+  const count = skinFxCount(Math.round(rand(3, 5)));
   for (let i = 0; i < count; i++) {
     boltDir.randomDirection().addScaledVector(muzzleFwd, 0.9).normalize();
     addBolt(

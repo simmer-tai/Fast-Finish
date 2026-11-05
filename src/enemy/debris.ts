@@ -13,7 +13,7 @@ import { player, position, velocity } from '../player/state.js';
 // 画質ごとの数（REMAINS_LIMIT）を超えたら古いものから縮んで消える
 export const DEBRIS_GRAVITY = 18;
 export const DEBRIS_BOUNCE = 0.3;
-const REMAINS_LIMIT: Record<Quality, number> = { lowest: 50, low: 80, medium: 240, high: 420, ultra: 420 };
+const REMAINS_LIMIT: Record<Quality, number> = { lowest: 0, low: 80, medium: 240, high: 420, ultra: 420 };
 const REMAINS_SHRINK = 0.4; // 数を超えて消すときに縮む時間
 // 歩いて残骸を蹴る。足もとからこの距離（と部品の大きさ）に入った部品を、プレイヤーの速さに掛けた速さで蹴る
 const KICK_REACH = 0.3;

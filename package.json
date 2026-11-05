@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "node node_modules/typescript/bin/tsc && node scripts/stamp.mjs",
-    "watch": "node node_modules/typescript/bin/tsc --watch"
+    "build": "node node_modules/typescript/bin/tsc --noEmit && node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
+    "esbuild": "0.28.2",
+    "three": "0.186.1",
     "typescript": "^5.9.3"
   }
 }

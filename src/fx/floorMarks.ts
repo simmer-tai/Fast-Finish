@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { trackAnisotropy } from './anisotropy.js';
+import { options } from '../ui/options.js';
 
 // ---- 床の跡 ----
 // 衝撃波で入ったひびや、レーザーの焦げ跡を床に貼る。戦いの間ずっと残る（ステージを出るまで）。
 // 足跡のように life を渡したものは、だんだん薄くなって消える。多くなりすぎたら古いものから消す
 const MAX_MARKS = 260;
+const MAX_MARKS_LOWEST = 60; // 跡は 1 枚ごとに描画が 1 回増えるので、最低画質では少なくする
 const MARK_Y = 0.012; // 床から浮かせる高さ（重なった跡どうしがちらつかないよう、跡ごとに少しずつずらす）
 const MARK_Y_STEP = 0.0004;
 const MARK_Y_LAYERS = 20;
@@ -97,7 +99,12 @@ export function attachFloorMarks(parent: THREE.Object3D) {
 
 function addMark(mat: THREE.MeshBasicMaterial, x: number, z: number, sx: number, sz: number, yaw: number, life: number) {
   if (!parentObj) return;
-  if (marks.length >= MAX_MARKS) marks.shift()!.mesh.removeFromParent();
+  const limit = options.quality === 'lowest' ? MAX_MARKS_LOWEST : MAX_MARKS;
+  while (marks.length >= limit) {
+    const old = marks.shift()!;
+    old.mesh.removeFromParent();
+    if (old.life < Infinity) (old.mesh.material as THREE.Material).dispose(); // 薄くしていく跡のマテリアルは跡ごとの複製
+  }
   const fading = life < Infinity;
   const mesh = new THREE.Mesh(plane, fading ? mat.clone() : mat);
   mesh.position.set(x, MARK_Y + MARK_Y_STEP * (layer++ % MARK_Y_LAYERS), z);

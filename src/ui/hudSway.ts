@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { cameraFx, landShakeAmount } from '../fx/camera.js';
 import { forward, right, velocity } from '../player/state.js';
+import { options } from './options.js';
 
 // ---- HUD の慣性 ----
 // 画面の HUD を、体に付けた板がばねで吊ってあるように動かす。動いた向きの逆へ遅れてずれ、
@@ -31,7 +32,17 @@ export function hudImpulse(x: number, y: number, z = 0) {
 }
 
 // dt は実時間（スロー中も同じ速さでばねを戻す）
+let swayStopped = false;
 export function updateHudSway(dt: number) {
+  // 毎フレームの書き換えは、キルの揺れの間ずっと HUD 全体を合成し直させるので、最低画質では動かさない
+  if (options.quality === 'lowest') {
+    if (swayStopped) return;
+    swayStopped = true;
+    hudLayer.style.translate = hudLayer.style.scale = hudLayer.style.rotate = hudLayer.style.perspectiveOrigin = '';
+    scoreLayer.style.translate = '';
+    return;
+  }
+  swayStopped = false;
   if (dt <= 0) return;
   // 速さを、今向いている向きの横・前・上に分ける
   const lateral = velocity.x * right.x + velocity.z * right.z;

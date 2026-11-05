@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { rand } from '../random.js';
 import { options, type Quality } from '../ui/options.js';
-import { spawnGold, updateGoldShards } from './goldShards.js';
 
 // ---- 当たりの光の演出 ----
 // 中心の閃光・放射状に伸びる光線・斬撃に沿った光の線・光の粒を、加算で重ねる。
@@ -63,8 +62,15 @@ interface Beam {
   color: THREE.Color;
 }
 // 軽い画質では、火花・破片・光線の数を減らす（キルで一度に数百出るので、弱い PC ではその瞬間に引っかかる）
-const FX_AMOUNT: Record<Quality, number> = { lowest: 0.25, low: 0.4, medium: 1, high: 1, ultra: 1 };
+const FX_AMOUNT: Record<Quality, number> = { lowest: 0.15, low: 0.4, medium: 1, high: 1, ultra: 1 };
 const fxCount = (n: number) => (n > 0 ? Math.max(1, Math.round(n * FX_AMOUNT[options.quality])) : 0);
+// 最低画質だけで減らすもの。スキンの演出（ホログラム・葉・金粉・稲妻）は、見分けがつくよう普通の火花より多めに残す
+const SKIN_FX_LOWEST = 0.35;
+const FLARE_SIZE_LOWEST = 0.5;
+export const fxLowest = () => options.quality === 'lowest';
+const lowestOnly = (n: number, k: number) => (fxLowest() && n > 0 ? Math.max(1, Math.round(n * k)) : n);
+export const fxLowestCount = (n: number) => lowestOnly(n, FX_AMOUNT.lowest);
+export const skinFxCount = (n: number) => lowestOnly(n, SKIN_FX_LOWEST);
 const BEAM_MAX = 192;
 const beams: Beam[] = [];
 const beamPool: Beam[] = [];
@@ -121,8 +127,8 @@ beamMesh.count = 0;
 beamMesh.frustumCulled = false;
 fxScene.add(beamMesh);
 
-export function addBeam(origin: THREE.Vector3, dir: THREE.Vector3, opts: Partial<Omit<Beam, 'origin' | 'dir' | 'color'>> & { color: THREE.Color }) {
-  if (Math.random() > FX_AMOUNT[options.quality]) return; // まとめて出す光線を、軽い画質では間引く
+export function addBeam(origin: THREE.Vector3, dir: THREE.Vector3, opts: Partial<Omit<Beam, 'origin' | 'dir' | 'color'>> & { color: THREE.Color; keep?: boolean }) {
+  if (!opts.keep && Math.random() > FX_AMOUNT[options.quality]) return; // まとめて出す光線を、軽い画質では間引く（keep は間引かない）
   if (beams.length >= BEAM_MAX) beamPool.push(beams.shift()!);
   const b = beamPool.pop() ?? {
     origin: new THREE.Vector3(), dir: new THREE.Vector3(), color: new THREE.Color(),
@@ -260,6 +266,7 @@ export const flares = makeBursts(4, /* glsl */ `
 `);
 
 export function fireBurst(list: Burst[], at: THREE.Vector3, size: number, life: number, power: number, stretch = 1) {
+  if (fxLowest()) size *= FLARE_SIZE_LOWEST; // 大きな閃光は画面全体を塗るので、最低画質では小さくする
   const b = list.reduce((a, c) => (c.age > a.age ? c : a)); // いちばん古いものを使い回す
   b.mesh.position.copy(at);
   b.mat.uniforms.uRot.value = Math.random() * Math.PI;
@@ -532,6 +539,7 @@ function nextHolo(look: HologramLook) {
 // 振っている刃から剥がれ落ちるホログラム。命中のものより小さく遅く、振りの向きへ少し流れてすぐ消える。
 // swing: 刃のその点の速さ（m/s）
 export function spawnHologramShed(at: THREE.Vector3, swing: THREE.Vector3, look: HologramLook) {
+  if (fxLowest() && Math.random() > SKIN_FX_LOWEST) return;
   const h = nextHolo(look);
   h.pos.copy(at);
   h.vel.randomDirection().multiplyScalar(rand(0.2, 0.7)).addScaledVector(swing, 0.12);
@@ -541,7 +549,7 @@ export function spawnHologramShed(at: THREE.Vector3, swing: THREE.Vector3, look:
 }
 
 export function spawnHologramChains(at: THREE.Vector3, hitDir: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: HologramLook) {
-  const count = Math.max(1, Math.round(look.count * Math.sqrt(fx)));
+  const count = skinFxCount(Math.max(1, Math.round(look.count * Math.sqrt(fx))));
   for (let i = 0; i < count; i++) {
     const h = nextHolo(look);
     h.pos.copy(at).addScaledVector(hitDir, rand(-0.03, 0.04));
@@ -652,7 +660,7 @@ fxScene.add(leafMesh);
 const leafSwing = new THREE.Vector3();
 
 export function spawnLeaves(at: THREE.Vector3, hitDir: THREE.Vector3, swing: THREE.Vector3 | undefined, fx: number, look: LeafLook) {
-  const count = Math.max(1, Math.round(look.count * Math.sqrt(fx)));
+  const count = skinFxCount(Math.max(1, Math.round(look.count * Math.sqrt(fx))));
   for (let i = 0; i < count; i++) {
     if (leaves.length >= LEAF_MAX) leafPool.push(leaves.shift()!);
     const l = leafPool.pop() ?? {
@@ -1008,9 +1016,9 @@ export function spawnGleam(at: THREE.Vector3, hitDir: THREE.Vector3, fx: number,
 
   // 横一文字の筋（わずかに傾ける）。締めの技は長く太くし、傾けた細い筋を重ねる
   addStreak(at, rand(-2, 2) * DEG, look.len * k * (heavy ? 1.6 : rand(0.85, 1.1)), 0.09 * k * (heavy ? 1.4 : 1), heavy ? 0.55 : 0.38);
-  if (heavy) addStreak(at, rand(8, 14) * DEG * (Math.random() < 0.5 ? -1 : 1), look.len * k * 0.8, 0.035 * k, 0.4);
+  if (heavy && !fxLowest()) addStreak(at, rand(8, 14) * DEG * (Math.random() < 0.5 ? -1 : 1), look.len * k * 0.8, 0.035 * k, 0.4);
 
-  const count = Math.round(look.dust * Math.sqrt(fx) * (heavy ? 1.8 : 1));
+  const count = skinFxCount(Math.round(look.dust * Math.sqrt(fx) * (heavy ? 1.8 : 1)));
   for (let i = 0; i < count; i++) {
     if (motes.length >= MOTE_MAX) motePool.push(motes.shift()!);
     const m = motePool.pop() ?? { pos: new THREE.Vector3(), vel: new THREE.Vector3(), age: 0, life: 0, size: 0, twinkle: 0, phase: 0 };
@@ -1159,7 +1167,8 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
   // 刃の向きがわかるときは実際に振った向きへ線を引き、斬り抜けた側へ長く、振り始めの側は短くする
   const slash = flow ? Math.atan2(flow.dot(camUp), flow.dot(camRight)) / DEG : def.slash ?? 0;
   const jitter = flow ? (heavy ? 4 : 10) : heavy ? 8 : 22;
-  const lines = (def.slash === undefined && !flow) || heavy || Math.random() < 0.6 ? 1 : 2; // ときどき 2 本に割る
+  const lowest = fxLowest();
+  const lines = lowest || (def.slash === undefined && !flow) || heavy || Math.random() < 0.6 ? 1 : 2; // ときどき 2 本に割る
   for (let l = 0; l < lines; l++) {
     const a = (slash + (Math.random() - 0.5) * jitter) * DEG;
     rayDir.copy(camRight).multiplyScalar(Math.cos(a)).addScaledVector(camUp, Math.sin(a));
@@ -1173,7 +1182,8 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
       const ahead = flow ? (sign > 0 ? SWING_AHEAD : SWING_BEHIND) : 1;
       const len = baseLen * ahead * (heavy ? 1 : rand(0.45, 1.1));
       const life = (def.slash === undefined ? 0.24 : 0.2) * lifeK * rand(0.8, 1.1);
-      addBeam(lineOrigin, lineDir, { color: tint, len, width: rand(0.07, 0.12) * thin, tail: 0.5, reach: 3, life });
+      // 最低画質でも、どこを斬ったかわかるよう斬撃の線だけは必ず出す
+      addBeam(lineOrigin, lineDir, { color: tint, len, width: rand(0.07, 0.12) * thin, tail: 0.5, reach: 3, life, keep: lowest });
       addBeam(lineOrigin, lineDir, { color: HIT_CORE, len: len * 0.85, width: 0.035 * thin, tail: 0.5, reach: 3, life: life * 0.8 });
     }
   }
@@ -1210,8 +1220,8 @@ export function spawnHitFx(at: THREE.Vector3, hitDir: THREE.Vector3, def: HitFxD
 
   impact.age = 0;
   impact.hold = def.hitStop ?? env.hitStop.normal;
-  // 遠くの当たりで画面全体が暗くならないよう、離れるほど弱める
-  impact.power = fx * THREE.MathUtils.clamp(HIT_FX_REF_DIST / dist, 0.2, 1);
+  // 遠くの当たりで画面全体が暗くならないよう、離れるほど弱める。最低画質では普通の当たりで暗くしない（全画面の処理を動かさない）
+  impact.power = lowest ? 0 : fx * THREE.MathUtils.clamp(HIT_FX_REF_DIST / dist, 0.2, 1);
 }
 // とどめ: 体じゅうから破片を噴き出させ、大きな閃光・全方向への長い光線・腰の高さに広がる光の輪を重ねる
 const killCenter = new THREE.Vector3();
@@ -1232,7 +1242,7 @@ export function spawnKillFx(root: THREE.Vector3, dir: THREE.Vector3) {
 
   // 閃光を 2 枚: 大きく長いものと、鋭く短いもの
   fireBurst(flares, killCenter, 5, 0.45, 2.6, 1);
-  fireBurst(flares, killCenter, 2.4, 0.2, 2, rand(1.6, 2.2));
+  if (!fxLowest()) fireBurst(flares, killCenter, 2.4, 0.2, 2, rand(1.6, 2.2));
 
   // 全方向への長い光線（目に刺さる向きは避ける）
   for (let i = 0; i < 28; i++) {
@@ -1281,7 +1291,7 @@ const headUp = new THREE.Vector3();
 export function spawnHeadshotFx(at: THREE.Vector3, dir: THREE.Vector3, kill: boolean) {
   const k = kill ? 1 : 0.5;
   fireBurst(flares, at, kill ? 3.2 : 1.8, 0.22, 2.6, rand(2, 2.6));
-  fireBurst(flares, at, 1.2, 0.08, 3, 1);
+  if (!fxLowest()) fireBurst(flares, at, 1.2, 0.08, 3, 1);
   spawnSparks(at, dir, Math.round(60 * k), 1.6, 1.2);
   spawnShards(at, dir, Math.round(30 * k), 1.8, 1.3);
   for (let i = 0; i < 18 * k; i++) {
@@ -1316,16 +1326,14 @@ export function spawnHeadshotFx(at: THREE.Vector3, dir: THREE.Vector3, kill: boo
     }
   }
   impact.age = 0;
-  impact.power = Math.max(impact.power, 2 * k + 1);
+  if (!fxLowest()) impact.power = Math.max(impact.power, 2 * k + 1); // 最低画質では、キルの暗転だけを残す
 }
 
-// ライフルの命中: 金色の破片と火花を、弾の抜けた向きへ散らす。遠くの当たりでも見えるよう、離れるほど大きくする
+// ライフルの命中: 金色の火花を、弾の抜けた向きへ散らす。遠くの当たりでも見えるよう、離れるほど大きくする
 const GOLD_SPARK = new THREE.Color(0xffa018);
-export function spawnGoldShards(at: THREE.Vector3, dir: THREE.Vector3, kill: boolean) {
+export function spawnGoldSparks(at: THREE.Vector3, dir: THREE.Vector3, kill: boolean) {
   const size = THREE.MathUtils.clamp(Math.sqrt(at.distanceTo(env.camera.position) / HIT_FX_REF_DIST), HIT_FX_MIN_SCALE, HIT_FX_MAX_SCALE);
-  const k = kill ? 1.6 : 1;
-  spawnGold(at, dir, fxCount(32 * k), size);
-  spawnSparks(at, dir, Math.round(18 * k), 1.4, size, undefined, GOLD_SPARK);
+  spawnSparks(at, dir, Math.round(18 * (kill ? 1.6 : 1)), 1.4, size, undefined, GOLD_SPARK);
 }
 
 // 最後の 1 体: とどめの演出に重ねて、天へ伸びる光の柱・時間差で広がる 3 重の輪・さらに大きな閃光を足す
@@ -1377,7 +1385,7 @@ export function spawnFinaleFx(root: THREE.Vector3, dir: THREE.Vector3) {
   }
   spawnSparks(killCenter, dir, 120, 3.2, 2.2);
   fireBurst(flares, killCenter, 9, 0.9, 3, 1);
-  fireBurst(flares, killCenter, 4, 0.4, 2.4, rand(2.4, 3));
+  if (!fxLowest()) fireBurst(flares, killCenter, 4, 0.4, 2.4, rand(2.4, 3));
   impact.hold = env.hitStop.finale;
   impact.power = 4;
 }
@@ -1386,12 +1394,11 @@ const lineOrigin = new THREE.Vector3();
 const lineDir = new THREE.Vector3();
 
 // 粒と光を進める
-export function updateHitParticles(dt: number) {
+export function updateHitParticles(dt: number, flareDt = dt) {
   updateBeams(dt);
-  updateBursts(dt);
+  updateBursts(flareDt);
   updateSparks(dt);
   updateShards(dt);
-  updateGoldShards(dt);
   updateHologramChains(dt);
   updateLeaves(dt);
   updateCutLines(dt);

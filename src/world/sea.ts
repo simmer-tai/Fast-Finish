@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { StageSea } from '../stage.js';
 import { groundReveal, riseOrigin } from './reveal.js';
 import { shipState } from './shipState.js';
+import { LINE_SCALE_GLSL, lineScale } from './lineScale.js';
 
 // ---- 海（SHIP） ----
 // 地面の代わりに、うねる海面を視点のまわりにだけ敷く。色は灰色の濃淡で、波の山ほど明るく、谷ほど暗い。
@@ -56,7 +57,7 @@ const commonGlsl = /* glsl */ `
 
 export const seaMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
 seaMaterial.onBeforeCompile = (shader) => {
-  Object.assign(shader.uniforms, uniforms, { uReveal: groundReveal, uRiseOrigin: riseOrigin });
+  Object.assign(shader.uniforms, uniforms, { uReveal: groundReveal, uRiseOrigin: riseOrigin, uLineK: lineScale });
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>\n${commonGlsl}`)
     .replace(
@@ -78,6 +79,7 @@ seaMaterial.onBeforeCompile = (shader) => {
       '#include <common>',
       `#include <common>
       ${commonGlsl}
+      ${LINE_SCALE_GLSL}
       uniform vec4 uHull;
       uniform float uStern;
       uniform float uReveal;
@@ -137,7 +139,7 @@ seaMaterial.onBeforeCompile = (shader) => {
         vec2 g1 = abs(fract(g - 0.5) - 0.5) / fwidth(g);
         vec2 g5 = abs(fract(g / 5.0 - 0.5) - 0.5) / fwidth(g / 5.0);
         float line = max((1.0 - min(min(g1.x, g1.y), 1.0)) * 0.1, (1.0 - min(min(g5.x, g5.y), 1.0)) * 0.2);
-        l *= 1.0 - line * (1.0 - foam);
+        l *= 1.0 - line * uLineK * (1.0 - foam);
         diffuseColor.rgb = seaGray(l);
       }`,
     );

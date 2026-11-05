@@ -2,7 +2,7 @@
 
 ## コードの構成
 
-three.js の一人称アクション。`src/` の TypeScript を `npm run build`（tsc）で `dist/` に書き出す。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。ビルドではキャッシュ対策として読み込み先に共通の `?v=` を付ける。
+three.js の一人称アクション。`npm run build` で TypeScript の型を検査し、esbuild で `src/main.ts` を `dist/main.js` にまとめる。開発用プレビューは `dist/devPreviews.js` にまとめ、それぞれのソースマップも出力する。three 本体は importmap の CDN から読み、addons はバンドルする。`dist/` は GitHub Pages で配るのでコミットする。`src` を変えたらビルドして、`dist` も一緒にコミットする。キャッシュ対策として `index.html` の main.js 読み込みに内容のハッシュを `?v=` で付ける。
 
 ### フォルダーの役割
 

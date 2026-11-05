@@ -106,12 +106,6 @@ const emblemHtml = (e: Emblem) =>
     : e === 'talon'
     ? `<span class="sw-plate pc-plate pc-plate-talon"><svg class="pc-mark pc-mark-talon" viewBox="0 0 24 24" aria-hidden="true">${TALON_MARK}</svg></span>`
     : `<span class="sw-plate pc-plate"><span class="ic">${weaponIcon(e)}</span></span>`;
-// 名前から決まるカードの番号（飾り）
-const cardNo = (name: string) => {
-  let h = 7;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 10000;
-  return String(h).padStart(4, '0');
-};
 // バッジの絵（cardHonors.ts の icon）を六角形の台に載せる
 const badgeHtml = (b: Badge) => badgePlate(b);
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -128,7 +122,6 @@ function cardHtml(c: CardData = card) {
   const title = c.title === 'none' ? undefined : titleOf(c.title);
   return `<div class="${baseClass(c.bg, c.frame)}">
     ${FRAME_PARTS}
-    <span class="pc-tag">PLAYER CARD</span><span class="pc-no">No.${cardNo(c.name)}</span>
     <div class="pc-main">
       ${emblemHtml(c.emblem)}
       <div class="pc-id">

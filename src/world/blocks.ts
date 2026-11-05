@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LINE_SCALE_GLSL, lineScale } from './lineScale.js';
 import type { StageBox, StageRamp } from '../stage.js';
 import { INSTANCE_NORMAL, addRiser, withRiseBuild } from './rise.js';
 
@@ -159,6 +160,7 @@ export const gridMaterial = (body: string, origin?: { x: number; y: number; z: n
   const key = `grid|${body}|${o}|${local}`;
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uLineK = lineScale;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGridPos;\nvarying vec3 vGridNormal;\nvarying vec2 vEdgeUv;')
       .replace(
@@ -172,6 +174,7 @@ export const gridMaterial = (body: string, origin?: { x: number; y: number; z: n
       .replace(
         '#include <common>',
         `#include <common>
+        ${LINE_SCALE_GLSL}
         varying vec3 vGridPos;
         varying vec3 vGridNormal;
         varying vec2 vEdgeUv;
@@ -199,7 +202,7 @@ export const gridMaterial = (body: string, origin?: { x: number; y: number; z: n
           vec2 edgeD = min(vEdgeUv, 1.0 - vEdgeUv) / max(fwidth(vEdgeUv), vec2(1e-6));
           float edge = 1.0 - clamp(min(edgeD.x, edgeD.y) - ${EDGE_PX.toFixed(2)}, 0.0, 1.0);
           edge *= 1.0 - smoothstep(${EDGE_FADE_NEAR.toFixed(1)}, ${EDGE_FADE_FAR.toFixed(1)}, length(vViewPosition));
-          diffuseColor.rgb *= 1.0 - edge * ${EDGE_DARK.toFixed(2)};
+          diffuseColor.rgb *= 1.0 - edge * uLineK * ${EDGE_DARK.toFixed(2)};
         }`,
       );
   };
@@ -219,7 +222,7 @@ export const STRUCT_GRID = `
   vec2 g10 = abs(fract(q10 - 0.5) - 0.5) / fwidth(q10);
   float l2 = 1.0 - min(min(g2.x, g2.y), 1.0);
   float l10 = 1.0 - min(min(g10.x, g10.y), 1.0);
-  diffuseColor.rgb *= (1.0 - l2 * 0.1) * (1.0 - l10 * 0.18);
+  diffuseColor.rgb *= (1.0 - l2 * 0.1 * uLineK) * (1.0 - l10 * 0.18 * uLineK);
 `;
 // 箱をまとめて 1 つのメッシュにして parent に置き、せり上がりに加える。箱ごとの黒さを持たせるので、形はメッシュごとに分ける。
 // geo を渡すと、箱の代わりにその形（0..1 の立方体に収めたもの）を箱の範囲に引き伸ばして置く

@@ -16,7 +16,7 @@ import {
   AXE_WHEEL_SWISH, type AxeAttackDef,
 } from './axeAttacks.js';
 import { axeRest, heldAxeModel } from './viewModels.js';
-import { HIT_TINT, addBeam, fireBurst, flares, spawnShards, spawnSparks } from '../fx/hitFx.js';
+import { HIT_TINT, addBeam, fireBurst, flares, fxLowest, fxLowestCount, spawnShards, spawnSparks } from '../fx/hitFx.js';
 import { AXE_RIBBON, AXE_SLAM_RIBBON, Ribbon, TRAIL_STEP, makeRibbonMaterial, tintRibbon } from '../fx/ribbons.js';
 import { hitWithArcs } from '../fx/arcs.js';
 import { onSkinChange, skinFx, skinOf } from './skins.js';
@@ -408,7 +408,7 @@ export function spawnAxeShock(at: THREE.Vector3, radius: number, power: number) 
   // 足元の閃光: 横に潰して、地面を叩いた形にする
   const flash = fireBurst(flares, axeShockAt.set(at.x, at.y + 0.15, at.z), 3 + 2.5 * power, 0.3, 2.2, 2.6);
   flash.mat.uniforms.uRot.value = 0;
-  fireBurst(flares, axeShockAt, 1.4 + power, 0.14, 2.5, 1);
+  if (!fxLowest()) fireBurst(flares, axeShockAt, 1.4 + power, 0.14, 2.5, 1);
 
   // 地を這う光線
   const rays = 30 + Math.round(14 * power);
@@ -442,7 +442,7 @@ export function spawnAxeShock(at: THREE.Vector3, radius: number, power: number) 
     });
   }
   // 床のかけらと火花を、足元の輪から外へ跳ね上げる
-  const chunks = 16 + Math.round(16 * power);
+  const chunks = fxLowestCount(16 + Math.round(16 * power)); // 1 個ずつ出すので、spawnShards の中では減らない
   for (let i = 0; i < chunks; i++) {
     const a = Math.random() * Math.PI * 2;
     const d = rand(0.3, 1.2);
@@ -450,8 +450,9 @@ export function spawnAxeShock(at: THREE.Vector3, radius: number, power: number) 
     hitLook.set(Math.cos(a), rand(0.6, 1.4), Math.sin(a));
     spawnShards(axeShockAt, hitLook, 1, rand(0.8, 1.3), rand(0.8, 1.4) * (1 + 0.4 * power), undefined, AXE_CHUNK_TINT);
   }
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2;
+  const sparkRing = fxLowest() ? 3 : 16;
+  for (let i = 0; i < sparkRing; i++) {
+    const a = (i / sparkRing) * Math.PI * 2;
     axeShockAt.set(at.x + Math.cos(a) * 0.6, at.y + 0.1, at.z + Math.sin(a) * 0.6);
     hitLook.set(-Math.cos(a), 0.3, -Math.sin(a));
     spawnSparks(axeShockAt, hitLook, 1 + Math.round(power), 0.9, 0.8);

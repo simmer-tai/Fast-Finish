@@ -4,6 +4,7 @@ import { trackAnisotropy } from './anisotropy.js';
 import type { HitKind } from '../audio.js';
 import { rand } from '../random.js';
 import { HIT_CORE, SWING_MIN_SIDE } from './hitFx.js';
+import { options } from '../ui/options.js';
 
 // ---- 切り跡 ----
 // 刀とクナイで斬った所に、斬った向きの細い傷を敵の装甲へ貼る。斬った瞬間は白く灼けていて、すぐ黒い傷へ冷める。
@@ -64,10 +65,12 @@ const scarB = new THREE.Vector3();
 const scarC = new THREE.Vector3();
 const scarRight = new THREE.Vector3();
 const scarCamUp = new THREE.Vector3();
+const scarSphere = new THREE.Sphere();
 
 export function addSlashScar(
   en: ScarTarget, camera: THREE.Camera, at: THREE.Vector3, hitDir: THREE.Vector3, def: ScarDef, kind: HitKind, swing?: THREE.Vector3,
 ) {
+  if (options.quality === 'lowest') return; // 当たりの瞬間に形を切り出す重い処理なので、最低画質では貼らない
   en.root.updateMatrixWorld(true);
   camera.updateMatrixWorld();
   scarRight.setFromMatrixColumn(camera.matrixWorld, 0);
@@ -111,7 +114,12 @@ export function addSlashScar(
   });
   const scar: Scar = { meshes: [], mat, age: 0 };
   // 傷が部品の境目をまたいでも切れないよう、近くの部品すべてへ貼る
+  const reach = scarSize.length() / 2;
   for (const part of en.parts) {
+    // 傷の箱に届かない部品は、重い切り出しをしない
+    if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
+    scarSphere.copy(part.geometry.boundingSphere!).applyMatrix4(part.matrixWorld);
+    if (scarSphere.center.distanceTo(hit.point) > scarSphere.radius + reach) continue;
     const geo = new DecalGeometry(part, hit.point, scarEuler, scarSize);
     if (!keepFrontFaces(geo, scarView)) {
       geo.dispose();

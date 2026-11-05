@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { PAD, pollPad } from '../gamepad.js';
 import { keys, padMove, pressed } from '../input.js';
 import { DEG } from '../math.js';
-import { controls } from '../core.js';
+import { camera, controls } from '../core.js';
 import { type WeaponId } from '../weapons/ids.js';
 import { axeState } from '../weapons/axeCombat.js';
 import { swordState } from '../weapons/swordCombat.js';
@@ -15,12 +15,13 @@ import { spearThrow } from '../weapons/spearCombat.js';
 import { viewState } from '../weapons/viewModelMotion.js';
 import { options } from '../ui/options.js';
 import { overlay } from '../ui/overlay.js';
-import { ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget, isAssistWeaponActive } from './aimAssist.js';
+import { ASSIST_CHEST, ASSIST_PULL, ASSIST_SLOW, ASSIST_SNAP, findAssistTarget, isAssistWeaponActive } from './aimAssist.js';
 import { turnView, zoomLookScale } from './look.js';
 import { game } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
 import { assistMeleeAttack, clearLockOn, updateLockOn } from './lockOn.js';
 import { isDown } from './down.js';
+import { type Enemy } from '../enemy/state.js';
 
 // ---- ゲームパッドの割り当て ----
 // ボタンはキーに置き換えて keys / pressed に入れ、キーボードと同じ処理を通す
@@ -115,6 +116,9 @@ export function updatePadDebug(dt: number, stamp: number) {
 
 let padThrowHeld = false;
 let padLookEdgeTime = 0;
+let trackedEnemy: Enemy | null = null;
+let trackedYaw = 0;
+let trackedPitch = 0;
 
 export function updatePad(dt: number) {
   const pad = pollPad();
@@ -128,10 +132,11 @@ export function updatePad(dt: number) {
   if (pad.up[PAD.LT]) { kunaiState.grappleHeld = false; if (kunaiState.grapple) releaseKunaiGrapple(); }
   padMove.x = padMove.y = 0;
   padState.padSprint = false;
-  if (!pad.connected) { padLookEdgeTime = 0; if (padThrowHeld) game.throwHeld = padThrowHeld = false; clearLockOn(); return; }
+  if (!pad.connected) { padLookEdgeTime = 0; trackedEnemy = null; if (padThrowHeld) game.throwHeld = padThrowHeld = false; clearLockOn(); return; }
 
   if (!controls.isLocked) {
     padLookEdgeTime = 0;
+    trackedEnemy = null;
     clearLockOn();
     if (overlay.classList.contains('hidden') || overlay.classList.contains('leaving')) return;
     for (const [b, code] of PAD_MENU_KEYS) if (pad.down[b]) return sendPadKey(code);
@@ -184,18 +189,37 @@ export function updatePad(dt: number) {
   let slow = 1;
   if (target) {
     const near = 1 - target.angle / target.size; // 範囲の端で 0、胸の真上で 1
-    slow = 1 - (1 - ASSIST_SLOW) * near;
+    slow = 1 - (1 - ASSIST_SLOW) * Math.sqrt(near);
     const active = Math.min(1, Math.max(m, Math.hypot(pad.lx, pad.ly)));
-    const pull = 1 - Math.exp(-ASSIST_PULL * active * dt);
-    if (pull > 0) turnView(target.yaw * pull, -target.pitch * pull);
-  }
+    const enemy = target.enemy!;
+    // 見た目のよろめきではなく敵の基準位置の移動を追う。
+    const dx = enemy.root.position.x - camera.position.x;
+    const dz = enemy.root.position.z - camera.position.z;
+    const spineY = (enemy.spine.userData.origin as THREE.Vector3).y;
+    const neckY = (enemy.neck.userData.origin as THREE.Vector3).y;
+    const dy = enemy.root.position.y + THREE.MathUtils.lerp(spineY, neckY, ASSIST_CHEST) - camera.position.y;
+    const yaw = Math.atan2(dx, -dz);
+    const pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    if (trackedEnemy === enemy && active > 0) {
+      const yawDelta = Math.atan2(Math.sin(yaw - trackedYaw), Math.cos(yaw - trackedYaw));
+      const follow = 0.65 * active * near;
+      turnView(THREE.MathUtils.clamp(yawDelta * follow, -1.5 * dt, 1.5 * dt),
+        -THREE.MathUtils.clamp((pitch - trackedPitch) * follow, -1.5 * dt, 1.5 * dt));
+    }
+    trackedEnemy = enemy;
+    trackedYaw = yaw;
+    trackedPitch = pitch;
+    // スティックを大きく倒せば補助から抜けやすい。ライフルの上下は頭を狙う操作を優先する。
+    const pull = 1 - Math.exp(-ASSIST_PULL * active * (1 - 0.75 * Math.min(1, m) ** 2) * dt);
+    if (pull > 0) turnView(target.yaw * pull, game.shownWeapon === 'rifle' ? 0 : -target.pitch * pull);
+  } else trackedEnemy = null;
   if (padAssistEl) {
     padAssistEl.textContent = !game.usingPad
       ? 'アシスト  切（マウス操作中）'
       : !isAssistWeaponActive()
         ? 'アシスト  切（射撃・投げの構え以外）'
         : target
-          ? `アシスト  ● 捕捉中  ずれ ${(target.angle / DEG).toFixed(1)}° / 範囲 ${(target.size / DEG).toFixed(1)}°  速さ ×${slow.toFixed(2)}${target.angle < target.size * ASSIST_SNAP ? '  弾補正' : ''}`
+          ? `アシスト  ● 捕捉中  ずれ ${(target.angle / DEG).toFixed(1)}° / 範囲 ${(target.size / DEG).toFixed(1)}°  速さ ×${slow.toFixed(2)}${game.shownWeapon !== 'rifle' && target.angle < target.size * ASSIST_SNAP ? '  弾補正' : ''}`
           : 'アシスト  ○ 範囲外';
   }
   if (m > 0) {

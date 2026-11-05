@@ -3,6 +3,7 @@ import { camera, controls } from '../core.js';
 import { THROW_RANGE } from '../weapons/kunai.js';
 import { ARROW_FLY_MAX, ARROW_SPEED_MIN, ARROW_SPEED_MAX, BOW_VOLLEY_SPEED, bowState } from '../weapons/bowCombat.js';
 import { SPEAR_THROW_RANGE, spearThrow } from '../weapons/spearCombat.js';
+import { RIFLE_RANGE } from '../weapons/rifleCombat.js';
 import { enemies, type Enemy } from '../enemy/state.js';
 import { castWorld } from '../world/raycast.js';
 import { game } from '../game/state.js';
@@ -10,17 +11,17 @@ import { game } from '../game/state.js';
 // ---- エイムアシスト（パッドで、射撃武器や投げ槍を構えているとき） ----
 // 照準の近くにいる敵の胸を探し、視点を遅くする / 寄せる / 撃った弾を向ける。
 // 効く範囲は敵の周りの半径 (m) で決めるので、近い敵ほど画面上で広く、遠い敵ほど狭くなる
-export const ASSIST_RADIUS = 1.1; // 視点を遅くし、寄せ始める範囲（胸からの半径, m）
-export const ASSIST_SNAP = 0.55; // 撃った弾を胸へ向ける範囲（ASSIST_RADIUS に対する割合）
+export const ASSIST_RADIUS = 1.35; // 視点を遅くし、寄せ始める範囲（胸からの半径, m）
+export const ASSIST_SNAP = 0.72; // 撃った弾を胸へ向ける範囲（ASSIST_RADIUS に対する割合）
 export const ASSIST_SLOW = 0.3; // 胸の真上にいるときの視点の速さの倍率（範囲の端では 1）
-export const ASSIST_PULL = 6; // スティックを倒しきっている間、胸とのずれを 1 秒にどれだけ詰めるか (1/s)
+export const ASSIST_PULL = 8; // スティックを倒しきっている間、胸とのずれを 1 秒にどれだけ詰めるか (1/s)
 export const ASSIST_CHEST = 0.55; // 胸の高さ（腰の骨から首の骨までの割合）
 export const assistTarget = { point: new THREE.Vector3(), angle: 0, size: 0, yaw: 0, pitch: 0, enemy: null as Enemy | null };
 export const assistNeck = new THREE.Vector3();
 export const assistDir = new THREE.Vector3();
 export const assistInv = new THREE.Quaternion();
 export function isAssistWeaponActive() {
-  return game.shownWeapon === 'kunai' || game.shownWeapon === 'handgun'
+  return game.shownWeapon === 'kunai' || game.shownWeapon === 'handgun' || game.shownWeapon === 'rifle'
     || (game.shownWeapon === 'bow' && bowState.drawing)
     || (game.shownWeapon === 'spear' && spearThrow.phase === 'windup');
 }
@@ -29,7 +30,7 @@ export function findAssistTarget(): typeof assistTarget | null {
   if (!game.usingPad || !controls.isLocked || !isAssistWeaponActive()) return null;
   const range = game.shownWeapon === 'bow'
     ? THREE.MathUtils.lerp(ARROW_SPEED_MIN, ARROW_SPEED_MAX, bowState.draw ** 2) * ARROW_FLY_MAX * (bowState.shot === 'volley' ? BOW_VOLLEY_SPEED : 1)
-    : game.shownWeapon === 'spear' ? SPEAR_THROW_RANGE : THROW_RANGE;
+    : game.shownWeapon === 'spear' ? SPEAR_THROW_RANGE : game.shownWeapon === 'rifle' ? RIFLE_RANGE : THROW_RANGE;
   let best: typeof assistTarget | null = null;
   let bestScore = 1;
   assistInv.copy(camera.quaternion).invert();

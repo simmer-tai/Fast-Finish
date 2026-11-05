@@ -3,7 +3,7 @@ import { camera, controls } from '../core.js';
 import { enemies, type Enemy } from '../enemy/state.js';
 import { game } from '../game/state.js';
 import { castWorld } from '../world/raycast.js';
-import { enemyChest } from './aimAssist.js';
+import { ASSIST_CHEST, enemyChest } from './aimAssist.js';
 import { isDown } from './down.js';
 import { spearThrow } from '../weapons/spearCombat.js';
 import { turnView } from './look.js';
@@ -13,6 +13,7 @@ const ACQUIRE_ANGLE = Math.PI / 3;
 const point = new THREE.Vector3();
 const direction = new THREE.Vector3();
 const projected = new THREE.Vector3();
+const followPoint = new THREE.Vector3();
 const inverse = new THREE.Quaternion();
 const viewAngles = new THREE.Euler(0, 0, 0, 'YXZ');
 let locked: Enemy | null = null;
@@ -22,7 +23,7 @@ marker.style.cssText = 'position:fixed;z-index:10;width:24px;height:24px;border:
 document.body.appendChild(marker);
 
 export function isMeleeLockWeapon() {
-  return game.shownWeapon !== 'handgun' && game.shownWeapon !== 'bow'
+  return game.shownWeapon !== 'handgun' && game.shownWeapon !== 'bow' && game.shownWeapon !== 'rifle'
     && !(game.shownWeapon === 'spear' && spearThrow.phase === 'windup');
 }
 
@@ -60,6 +61,7 @@ function findTarget() {
 // 攻撃の押し始めだけ、近くの敵へ視点を少し寄せる。
 export function assistMeleeAttack() {
   if (!game.usingPad || !isMeleeLockWeapon() || isDown()) return;
+  if (locked && visible(locked)) return; // ロック中は別の視点補正を重ねない
   inverse.copy(camera.quaternion).invert();
   let best: Enemy | null = null;
   let bestScore = Infinity;
@@ -98,6 +100,12 @@ export function updateLockOn(dt: number, lookInput: number): boolean {
   if (locked && !visible(locked)) clearLockOn();
   if (!locked) findTarget();
   if (!locked || !visible(locked)) return false;
+  // 被弾時に骨を揺らす演出は視点に伝えず、体の基準位置を追う。
+  const spineOrigin = locked.spine.userData.origin as THREE.Vector3;
+  const neckOrigin = locked.neck.userData.origin as THREE.Vector3;
+  followPoint.copy(locked.root.position);
+  followPoint.y += THREE.MathUtils.lerp(spineOrigin.y, neckOrigin.y, ASSIST_CHEST);
+  direction.subVectors(followPoint, camera.position);
   // 背後にいる敵も、ワールド座標の方角から水平・垂直を別々に求める。
   // カメラ基準の上下角は、敵が背後へ回ったとき上下が反転してしまう。
   viewAngles.setFromQuaternion(camera.quaternion);
@@ -106,7 +114,8 @@ export function updateLockOn(dt: number, lookInput: number): boolean {
   const yaw = Math.atan2(Math.sin(viewAngles.y - targetYaw), Math.cos(viewAngles.y - targetYaw));
   const pitch = viewAngles.x - targetPitch;
   const pull = 1 - Math.exp(-5 * dt);
-  turnView(yaw * pull, pitch * pull);
+  // 敵がすぐ横を通ると方角が急変するので、1 秒あたりの回転量を制限する。
+  turnView(THREE.MathUtils.clamp(yaw * pull, -4 * dt, 4 * dt), THREE.MathUtils.clamp(pitch * pull, -3 * dt, 3 * dt));
   camera.updateMatrixWorld();
   projected.copy(point).project(camera);
   marker.style.display = projected.z < 1 ? 'block' : 'none';

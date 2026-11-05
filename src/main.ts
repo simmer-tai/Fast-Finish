@@ -65,9 +65,10 @@ import { boardLedge, setShaft, shaftCopies, updateBoarding, updateShaft } from '
 import { cargoJumpBlock, clearCargoJump, updateCargoEvade } from './enemy/cargoEvade.js';
 import { liftDangers, setLiftTraps, updateLiftTraps } from './world/liftTraps.js';
 import { updateDangerHud } from './ui/dangerHud.js';
+import { setLineScale } from './world/lineScale.js';
 import { BORDER_HEIGHT, arenaRoot, borderMat, borderUniforms, groundLineMat, playBounds } from './world/arena.js';
 import {
-  HEAVY_FX, hitFxVisible, impact, initHitFx, screenCut, spawnFinaleFx, spawnHeadshotFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles,
+  HEAVY_FX, fxLowest, fxScene, hitFxVisible, impact, initHitFx, screenCut, spawnFinaleFx, spawnHeadshotFx, spawnHitFx, spawnKillFx, spawnSparks, updateHitParticles,
 } from './fx/hitFx.js';
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
 import { updateArcs } from './fx/arcs.js';
@@ -183,7 +184,7 @@ import { RIFLE_HIT, RIFLE_MAG, RIFLE_RANGE, RIFLE_SCOPED_BODY_BONUS, addRifleRou
 const RIFLE_GAIN_FLASH = 0.45; // 倒して増えた弾を光らせる時間
 import { updateScopeOverlay } from './ui/scopeOverlay.js';
 import { padState, updatePad } from './player/padControls.js';
-import { beginPerfFrame, endPerfFrame, perfSpan } from './ui/perfHud.js';
+import { beginPerfFrame, endPerfFrame, notePerfKill, perfSpan } from './ui/perfHud.js';
 import { restartAnim } from './ui/restartAnim.js';
 import { hudUnit } from './ui/hudUnit.js';
 import { localDev } from './localDev.js';
@@ -1160,6 +1161,7 @@ function downPlayer() {
 function dropPlayerInput() {
   keys.clear();
   pressed.clear();
+
   game.attackPressed = game.attackHeld = game.throwHeld = sickleState.throwPressed = swordState.focusPressed = axeState.axeLaunchPressed = axeState.axeDrivePressed = gunState.deadEyePressed = bowState.aimPressed = bowState.volleyHeld = spearThrow.pressed = spearThrow.aimPressed = rifleState.spinHeld = false;
   gunState.reloadQueued = false;
   padMove.x = padMove.y = 0;
@@ -1470,6 +1472,7 @@ function update(dt: number) {
   if (player.onGround && !wasOnGround) onLand(player.landImpact);
 
   pressed.clear();
+  updateScoreSpeed(dt);
 
   for (let i = 0; i < dashGauges.length; i++) {
     // 使える分は満タン、回復中の 1 本は進み具合、それ以外は空
@@ -1621,7 +1624,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   }
   playHit(fx, kind);
   spawnHitFx(at, hitDir, def, swing);
-  if (!remote && scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) addSlashScar(en, camera, at, hitDir, def, kind, swing);
+  if (!remote && scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) perfSpan('scar', () => addSlashScar(en, camera, at, hitDir, def, kind, swing));
 
   // 結果に出すヘッドショット率は、自分で狙って当てた弾と矢だけで数える（デッドアイと跳ね返した弾は除く）
   if (!remote && stageRun?.running && (def === BULLET_HIT || def === ARROW_HIT || def === RIFLE_HIT)) {
@@ -1638,6 +1641,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
     if (!remote) {
       if (def === RIFLE_HIT && headshot && rifleState.scopedShot) addRifleRounds(3); // ライフルはスコープを覗いて頭でとどめを刺したときだけ弾が入る
       countChain(); countMulti(def);
+      if (def === RIFLE_HIT) rifleState.shotKills++;
       if (def === ARROW_HIT && bowState.volleyKills) bowState.volleyKills.count++;
       const bonuses = killBonuses(def, headshot);
       noteKillFeats(bonuses, def);
@@ -1669,10 +1673,12 @@ function highlightWeight(def: HitDef, kind: HitKind) {
 }
 // 倒した点数を、今持っている武器の熟練度の XP として貯め、結果で流すハイライトの候補にする（ステージだけ。訓練場では入らない）。
 // 貯めた XP はクリアして結果を出すときにまとめて足す（倒されたり途中でやめたりしたら入らない）。
+// 録画は描き込み先を 100 枚以上 GPU に持ち、毎フレームの描画にも足されるので、最低画質では録らない
+const replayOn = () => options.replay && options.quality !== 'lowest';
 // ハイライトは点数 × weight でいちばん大きいキルを選ぶ
 function scoreKill(pts: number, weight = 1) {
   if (!stageRun) return;
-  noteReplayKill(pts * weight);
+  if (replayOn()) noteReplayKill(pts * weight);
   if (multiplayerRun) return; // 協力戦の共有点を、ホスト個人の武器熟練度には加えない
   stageRun.xp += Math.round(pts); // 保存する値と結果に出す値をそろえるため、整数で足す
 }
@@ -2028,6 +2034,7 @@ function applyBossHit(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossP
 function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts = true, headAt?: THREE.Vector3, scoped = false) {
   en.alive = false;
   en.deadTime = 0;
+  notePerfKill();
   const killSoundChain = remote ? 1 : showKillChain();
   sinceKill = 0;
   finale = counts && !!stageRun?.running && !stageRun.boss && stageRun.kills + 1 >= stageRun.quota;
@@ -2209,10 +2216,29 @@ const DEADEYE_STEP = 0.5; // デッドアイで 2 体目から 1 体ごとに DE
 const DEADEYE_BONUS_MAX = 2;
 const SPEED_KILL_MIN = 20; // 倒した瞬間の水平の速さがこれ以上なら速さの加点
 const SPEED_KILL_HIGH = 30; // これ以上なら加点を倍にする
+const SPEED_KILL_HOLD = 0.12; // 速さをこの時間保ってから評価する（直前にダッシュを押すだけでは付けない）
+let scoreSpeedTime = 0;
+let scoreHighSpeedTime = 0;
+function updateScoreSpeed(dt: number) {
+  const speed = Math.hypot(velocity.x, velocity.z);
+  // 低フレーム時に 1 フレームだけで条件を満たさないようにする
+  const elapsed = Math.min(dt, 1 / 30);
+  scoreSpeedTime = speed >= SPEED_KILL_MIN ? Math.min(SPEED_KILL_HOLD, scoreSpeedTime + elapsed) : 0;
+  scoreHighSpeedTime = speed >= SPEED_KILL_HIGH ? Math.min(SPEED_KILL_HOLD, scoreHighSpeedTime + elapsed) : 0;
+}
+function scoreSpeed() {
+  const speed = Math.hypot(velocity.x, velocity.z);
+  if (scoreSpeedTime < SPEED_KILL_HOLD) return 0;
+  return scoreHighSpeedTime >= SPEED_KILL_HOLD ? speed : Math.min(speed, SPEED_KILL_HIGH - 0.01);
+}
 const killAt = new THREE.Vector3();
 function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   const out: KillBonus[] = [];
-  if (headshot) out.push({ label: 'HEADSHOT', add: 1 });
+  if (def === RIFLE_HIT) out.push({ label: 'RIFLE', add: 1 });
+  if (headshot) out.push({ label: 'HEADSHOT', add: def === RIFLE_HIT ? 2 : 1 });
+  if (def === RIFLE_HIT && rifleState.shotKills >= 2) {
+    out.push({ label: 'PENETRATION', detail: `×${rifleState.shotKills}`, add: Math.min(3, (rifleState.shotKills - 1) * 1.5) });
+  }
   if (multiKill > 1) out.push({ label: 'MULTI KILL', detail: `×${multiKill}`, add: Math.min(MULTI_MAX, (multiKill - 1) * MULTI_STEP) });
   if (en.weapons.size >= 2) out.push({ label: 'SWITCH', detail: `${en.weapons.size} WEAPONS`, add: 1 });
   if (isParryReturn(def)) out.push({ label: 'PARRY KILL', add: 2 });
@@ -2236,7 +2262,13 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   }
   speedBonus(out);
   if (killChain > 1) {
-    out.push({ label: 'CHAIN', detail: `×${killChain}`, add: Math.min(CHAIN_MAX, (killChain - 1) * CHAIN_STEP) });
+    const add = Math.min(CHAIN_MAX, (killChain - 1) * CHAIN_STEP);
+    out.push({ label: 'CHAIN', detail: `×${killChain}`, add: def === RIFLE_HIT ? add + Math.min(1, (killChain - 1) * 0.25) : add });
+  }
+  if (def === RIFLE_HIT) {
+    for (const bonus of out) {
+      if (bonus.label === 'SLIDE KILL' || bonus.label === 'WALL RUN' || bonus.label === 'AERIAL' || bonus.label === 'SPEED KILL' || bonus.label === 'SKY SHOT') bonus.add *= 1.5;
+    }
   }
   return out;
 }
@@ -2244,7 +2276,7 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
 const EMPTY_BOSS_BONUS_STATE: BossBonusState = { sliding: false, wallRunning: false, aerial: false, speed: 0, deadEyeKills: 0 };
 function currentBossBonusState(): BossBonusState {
   return { sliding: player.sliding, wallRunning: player.wallRunning, aerial: !player.onGround && player.mantleTime < 0,
-    speed: Math.hypot(velocity.x, velocity.z), deadEyeKills: game.deadEyeKills, cleave: spearState.cleaveHitting };
+    speed: scoreSpeed(), deadEyeKills: game.deadEyeKills, cleave: spearState.cleaveHitting };
 }
 function bossBonuses(def: HitDef, state: BossBonusState, part: BossPart): KillBonus[] {
   const out: KillBonus[] = [];
@@ -2273,7 +2305,7 @@ function moveBonuses(def: HitDef, out: KillBonus[], sliding = player.sliding, de
   if (def === BODY_SLAM_HIT) out.push({ label: 'BODY SLAM', add: 1 });
   if (def === FLOOR_SLAM_HIT) out.push({ label: 'GROUND SLAM', add: 1 });
 }
-function speedBonus(out: KillBonus[], speed = Math.hypot(velocity.x, velocity.z)) {
+function speedBonus(out: KillBonus[], speed = scoreSpeed()) {
   if (speed >= SPEED_KILL_MIN) {
     out.push({ label: 'SPEED KILL', detail: `${Math.round(speed)}M/S`, add: speed >= SPEED_KILL_HIGH ? 1 : 0.5 });
   }
@@ -2732,7 +2764,7 @@ function showStageResult(run: StageRun) {
       mastery: mission ? undefined : masteryResult(run),
       mission: missionResult,
       feats,
-      clip: startReplay() ? { aspect: CLIP_ASPECT, play: playReplay } : undefined,
+      clip: replayOn() && startReplay() ? { aspect: CLIP_ASPECT, play: playReplay } : undefined,
     },
     () => (overlayPrompt.textContent = ''),
   );
@@ -3531,12 +3563,13 @@ initHitFx({
   hitStop: { normal: DEFAULT_HIT_STOP, kill: KILL_HIT_STOP, finale: FINALE_HIT_STOP },
 });
 
-function updateHitFx(dt: number) {
-  updateAxeShocks(dt);
-  updateHitParticles(dt);
+// fxDt: 閃光と暗転を進める時間。スローの時間で進めると、画面全体を塗る光と処理が 4 倍長く続くので、最低画質では実時間で進める。火花や破片はスローのまま見せる
+function updateHitFx(dt: number, fxDt = dt) {
+  updateAxeShocks(dt); // 衝撃波の輪は当たりの広がりと合わせてあるので、ゲームの時間のまま
+  updateHitParticles(dt, fxDt);
   updateArcs(dt);
 
-  impact.age += dt;
+  impact.age += fxDt;
   const u = impactFxPass.uniforms;
   // ヒットストップの間は暗いまま保ち、明けてから戻す
   const after = Math.max(0, impact.age - impact.hold);
@@ -4564,6 +4597,19 @@ function getStagePreview(id: StageId) {
   return p;
 }
 
+// 光の演出と暗転のシェーダーは初めて描くときに作られ、最初の当たりやキルで引っかかる。タイトルの間に先に作っておく。
+// 色の変換の有無でシェーダーが別物になるので、本番と同じく描き込み先を指定して作る
+function warmHitFxShaders() {
+  renderer.setRenderTarget(composer.renderTarget1);
+  renderer.compile(fxScene, camera);
+  const from = new THREE.WebGLRenderTarget(1, 1);
+  const to = new THREE.WebGLRenderTarget(1, 1);
+  impactFxPass.render(renderer, to, from, 0, false);
+  renderer.setRenderTarget(null);
+  from.dispose();
+  to.dispose();
+}
+
 // 初めて選んだときに組むと引っかかるので、タイトルを見ている間の空き時間に 1 つずつ組んでおく
 function prebuildStagePreviews() {
   const ids = stageButtons.map((b) => b.dataset.stage).filter((id): id is StageId => !!id && id in STAGE_BUILDERS);
@@ -4828,6 +4874,7 @@ function resetRun() {
   parryState.parryFxAge = Infinity;
   keys.clear(); pressed.clear();
   sinceKill = Infinity; killChain = multiKill = 1; lastKillDef = null; lastAnyHitAt = -Infinity;
+  scoreSpeedTime = scoreHighSpeedTime = 0;
   hitCount = 0; lastHitAt = -Infinity; hitsEl.classList.remove('show');
   finale = false; headSlow = false; realShake = false; killSlowTime = Infinity; sharedBossBreakTime = Infinity;
   introT = riseT = titleT = titleRiserT = -1; transitionFx.classList.remove('on');
@@ -4898,6 +4945,7 @@ if (debugAttack) {
     setInterval(next, 3500);
   }
   setupTitleStage();
+  warmHitFxShaders();
   prebuildStagePreviews();
   restoreChallengeReturn();
   if (debugParams.has('parkour')) {
@@ -4976,7 +5024,7 @@ if (debugAttack) {
     }
     updateDummyShake();
     updateBlobShadows(!shadowsOn, enemyFeet());
-    perfSpan('hitFx', () => updateHitFx(dt)); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
+    perfSpan('hitFx', () => updateHitFx(dt, fxLowest() ? realFrame : dt)); // 光の演出はヒットストップ中も動かして、止まった画に勢いを残す
     updateSpeedFx(dt);
     updateHpHud(realFrame);
     updateStyleHud(!!stageRun);
@@ -4993,7 +5041,7 @@ if (debugAttack) {
     applyCameraOffset();
     updateFinishMark();
     placeDeadEyeMarks();
-    prepareReplayFrame(realFrame, !!stageRun && (stageRun.running || stageRun.clearedT >= 0));
+    prepareReplayFrame(realFrame, replayOn() && !!stageRun && (stageRun.running || stageRun.clearedT >= 0));
     perfSpan('render', () => composer.render(dt));
     camera.quaternion.copy(savedQuat);
   });
@@ -5002,21 +5050,26 @@ if (debugAttack) {
 // ---- 画質 ----
 // maxRatio: 描画の解像度（画面の画素に対する倍率の上限）、msaa: アンチエイリアスのサンプル数、
 // fxaa: MSAA の代わりに縁をならすか、sharpen: 輪郭を立てる強さ（0 で切る）、glowScale: 光のにじみを描く画面の縮小率（0 で切る）、motionBlur: カメラの動きのブラー、
-// ao: 隅や足元の暗がり（fx/ao.ts）、anisotropy: 床や壁に貼る跡の異方性フィルタ（1 で切る。fx/anisotropy.ts）
-const QUALITY_PRESETS: Record<Quality, { maxRatio: number; shadows: boolean; shadowMap: number; msaa: number; fxaa: boolean; sharpen: number; glowScale: number; motionBlur: boolean; ao: boolean; anisotropy: number }> = {
+// ao: 隅や足元の暗がり（fx/ao.ts）、anisotropy: 床や壁に貼る跡の異方性フィルタ（1 で切る。fx/anisotropy.ts）、viewFar: 描く距離 (m)
+const VIEW_FAR = camera.far;
+const FOG_FAR = (scene.fog as THREE.Fog).far;
+// 背景と霧は同じ色なので、霧が濃くなりきる所で切れば切れ目は見えない。狙撃手は 160m から撃ってくるが、照準線は霧を受けないので見える
+const LOWEST_VIEW_FAR = 120;
+const QUALITY_PRESETS: Record<Quality, { maxRatio: number; shadows: boolean; shadowMap: number; msaa: number; fxaa: boolean; sharpen: number; glowScale: number; motionBlur: boolean; ao: boolean; anisotropy: number; viewFar: number }> = {
   // lowest は遊ぶのに要らない物を全部切る（光のにじみ・周辺ブラー・縁の処理）。解像度はこれより下げると粗さが目立つので low と同じ
-  lowest: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: false, sharpen: 0, glowScale: 0, motionBlur: false, ao: false, anisotropy: 1 },
-  low: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: true, sharpen: 0.6, glowScale: 6, motionBlur: false, ao: false, anisotropy: 1 },
-  medium: { maxRatio: 1, shadows: true, shadowMap: 1024, msaa: 2, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1 },
-  high: { maxRatio: 1.5, shadows: true, shadowMap: 2048, msaa: 4, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1 },
+  lowest: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: false, sharpen: 0, glowScale: 0, motionBlur: false, ao: false, anisotropy: 1, viewFar: LOWEST_VIEW_FAR },
+  low: { maxRatio: 0.67, shadows: false, shadowMap: 1024, msaa: 0, fxaa: true, sharpen: 0.6, glowScale: 6, motionBlur: false, ao: false, anisotropy: 1, viewFar: VIEW_FAR },
+  medium: { maxRatio: 1, shadows: true, shadowMap: 1024, msaa: 2, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1, viewFar: VIEW_FAR },
+  high: { maxRatio: 1.5, shadows: true, shadowMap: 2048, msaa: 4, fxaa: false, sharpen: 0, glowScale: 4, motionBlur: true, ao: false, anisotropy: 1, viewFar: VIEW_FAR },
   // サンプル数が GPU の上限を超える分は three.js が上限に合わせる
-  ultra: { maxRatio: 2, shadows: true, shadowMap: 4096, msaa: 8, fxaa: false, sharpen: 0, glowScale: 2, motionBlur: true, ao: true, anisotropy: 16 },
+  ultra: { maxRatio: 2, shadows: true, shadowMap: 4096, msaa: 8, fxaa: false, sharpen: 0, glowScale: 2, motionBlur: true, ao: true, anisotropy: 16, viewFar: VIEW_FAR },
 };
 const MIN_RATIO = 0.5; // 自動で下げるときも、これより粗くはしない（画質の上限がこれより低ければそちらに合わせる）
 // 解像度だけを決め直す。重いときの自動調整（fx/dynamicRes.ts）で段が変わるたびにも呼ぶ
 function applyRatio() {
   const base = Math.min(window.devicePixelRatio, QUALITY_PRESETS[options.quality].maxRatio);
   const ratio = Math.min(base, Math.max(base * dynResScale(), MIN_RATIO));
+  setLineScale(ratio, window.devicePixelRatio);
   if (ratio === renderer.getPixelRatio()) return;
   renderer.setPixelRatio(ratio);
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -5040,7 +5093,14 @@ function applyQuality() {
   setAnisotropy(q.anisotropy);
   glowPass.enabled = q.glowScale > 0;
   if (q.glowScale > 0) glowPass.scale = q.glowScale;
-  postQuality.radialBlur = options.quality !== 'lowest';
+  const lowest = options.quality === 'lowest';
+  postQuality.radialBlur = !lowest;
+  postQuality.speedFx = !lowest;
+  sfx.setLiteAudio(lowest);
+  document.body.classList.toggle('fx-lowest', lowest); // HUD の傾きと影を切る（index.html）
+  camera.far = q.viewFar;
+  camera.updateProjectionMatrix();
+  (scene.fog as THREE.Fog).far = Math.min(FOG_FAR, q.viewFar);
   applyRatio();
   composer.setSize(window.innerWidth, window.innerHeight); // にじみの縮小率を描き込み先に反映する
   if (sun.shadow.mapSize.x !== q.shadowMap) {
@@ -5061,3 +5121,7 @@ window.addEventListener('resize', () => {
   impactFxPass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
   menuRedraw = true; // 大きさを変えるとキャンバスが消えるので、止まっている画面でも描き直す
 });
+
+// ここまで来れば準備ができている。読み込み中の見た目を外して、ボタンを押せるようにする（index.html の .booting）
+overlay.classList.remove('booting');
+if (overlayPrompt.textContent === 'LOADING') overlayPrompt.textContent = 'SELECT MODE';

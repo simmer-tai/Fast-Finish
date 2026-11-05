@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lineScale } from './lineScale.js';
 import { mulberry32 } from '../random.js';
 import { PLAYER_RADIUS } from '../player/config.js';
 import { STRUCT_GRID, TERRAIN_GRID, addBoxes, blocks, gridMaterial, type Block } from './blocks.js';
@@ -16,7 +17,7 @@ export const BORDER_FADE_FAR = 7; // この距離で見えなくなる
 export const borderUniforms = { uPlayer: { value: new THREE.Vector3(0, 1e4, 0) } };
 // 境界の壁: 普段は見えず、近づくとプレイヤーの周りだけグリッドが浮かび上がる
 export const borderMat = new THREE.ShaderMaterial({
-  uniforms: { uPlayer: borderUniforms.uPlayer, uColor: { value: new THREE.Color(0x333333) } },
+  uniforms: { uPlayer: borderUniforms.uPlayer, uColor: { value: new THREE.Color(0x333333) }, uLineK: lineScale },
   vertexShader: /* glsl */ `
     varying vec3 vWorld;
     void main() {
@@ -28,6 +29,7 @@ export const borderMat = new THREE.ShaderMaterial({
   fragmentShader: /* glsl */ `
     uniform vec3 uPlayer;
     uniform vec3 uColor;
+    uniform float uLineK;
     varying vec3 vWorld;
     void main() {
       // 壁はどれも X か Z が一定なので、横方向の座標は x + z で取れる
@@ -36,7 +38,7 @@ export const borderMat = new THREE.ShaderMaterial({
       float line = 1.0 - min(min(g.x, g.y), 1.0);
       float d = distance(vWorld, uPlayer);
       float near = 1.0 - smoothstep(${BORDER_FADE_NEAR.toFixed(1)}, ${BORDER_FADE_FAR.toFixed(1)}, d);
-      float a = line * near * 0.75 + near * near * 0.06; // 線に加えて、ごく薄く面も見せる
+      float a = line * uLineK * near * 0.75 + near * near * 0.06; // 線に加えて、ごく薄く面も見せる
       if (a < 0.004) discard;
       gl_FragColor = vec4(uColor, a);
     }

@@ -25,6 +25,8 @@ export const FRAMES: Frame[] = [
   { id: 'hazard', name: 'HAZARD' },
   { id: 'talon', name: 'TALON' },
   { id: 'falcon', name: 'FALCON', pending: true },
+  { id: 'eclipse', name: 'ECLIPSE', pending: true },
+  { id: 'violet', name: 'VIOLET', pending: true },
 ];
 // 名前の色。見た目は index.html の .nc-<id> に書く。白と黒はいつでも選べる。
 // frame / bg のあるものは、そのフレームか背景を解放すると選べる（付けていなくてもよい。解放していなければ一覧にも出さない）
@@ -228,6 +230,42 @@ const FALCON_FACETS = (() => {
   });
   return `<svg class="pc-facets" viewBox="0 0 160 90" aria-hidden="true">${paths.join('')}${lit}</svg>`;
 })();
-export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${FALCON_FACETS}${TALON_SCARS}${TALON_FRAME}${FALCON_FRAME}`;
+// A shared hexagonal mesh; the moving light is a separate layer under the card text.
+const eclipseHex = (inset: number) => {
+  const spacing = 6;
+  const r = spacing - inset;
+  const h = Math.sqrt(3) * r / 2;
+  const stepY = Math.sqrt(3) * spacing;
+  let path = '';
+  for (let col = -1; col <= 18; col++) {
+    for (let row = -1; row <= 9; row++) {
+      const x = col * 1.5 * spacing;
+      const y = (row + (col % 2 === 0 ? 0 : 0.5)) * stepY;
+      path += 'M' + (x - r).toFixed(2) + ' ' + y.toFixed(2) + 'l' + (r / 2).toFixed(2) + ' ' + (-h).toFixed(2) + 'h' + r.toFixed(2) + 'l' + (r / 2).toFixed(2) + ' ' + h.toFixed(2) + 'l' + (-r / 2).toFixed(2) + ' ' + h.toFixed(2) + 'h-' + r.toFixed(2) + 'Z';
+    }
+  }
+  return path;
+};
+const ECLIPSE_HOLOGRAM =
+  '<svg class="pc-hologram pc-hologram-base" viewBox="0 0 160 90" aria-hidden="true"><path d="' + eclipseHex(0) + '"/></svg>' +
+  '<svg class="pc-hologram pc-hologram-wave" viewBox="0 0 160 90" aria-hidden="true"><path d="' + eclipseHex(0.45) + '"/></svg>';
+// ECLIPSE: layered armor and a cool edge light.
+const ECLIPSE_HALF =
+  '<path class="ec-armor" d="M0 0H49L43 3H24L20 5H9L5 9V19L3 23V32L0 36Z"/>' +
+  '<path class="ec-bevel" d="M2 2H44L40 3.1H22L19 5H8L4 9V20L2 24Z"/>' +
+  '<path class="ec-slot" d="M9 6H19L17 7.2H9ZM6 10H7.2V18L6 19Z"/>' +
+  '<path class="ec-detail" d="M25 2L23 3.3M29 2L27 3.3M33 2L31 3.3M2 27L3.3 25M2 31L3.3 29"/>' +
+  '<path class="ec-rail" d="M48 2.4H68M2.4 38V69M122 2.4H148L157.6 12V29"/>' +
+  '<path class="ec-detail" d="M126 1.5L124.5 3.3M130 1.5L128.5 3.3M134 1.5L132.5 3.3M151 6L155 10"/>' +
+  '<path class="ec-slot" d="M157.2 16H158.5V25H157.2Z"/>';
+const ECLIPSE_FRAME =
+  '<svg class="pc-eclipse" viewBox="0 0 160 90" aria-hidden="true">' +
+  '<path class="ec-rim" fill-rule="evenodd" d="M-1 -1H149.4L161 10.6V91H10.6L-1 79.4ZM3 3H148L157 12V87H12L3 78Z"/>' +
+  '<path class="ec-inner" d="M4.1 35V8L8 4.1H148L155.9 12V55M155.9 55V82L152 85.9H12L4.1 78V35"/>' +
+  '<g>' + ECLIPSE_HALF + '</g><g transform="rotate(180 80 45)">' + ECLIPSE_HALF + '</g>' +
+  '<path class="ec-crown" d="M68 0H92L89 4H83.5L80 6L76.5 4H71Z"/>' +
+  '<path class="ec-glint" pathLength="100" d="M4.1 4.1H148L155.9 12V85.9H12L4.1 78Z"/>' +
+  '</svg>';
+export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${ECLIPSE_HOLOGRAM}${FALCON_FACETS}${TALON_SCARS}${TALON_FRAME}${FALCON_FRAME}${ECLIPSE_FRAME}<img class="pc-violet" src="./eclipse-frame-concept.svg" alt="" aria-hidden="true">`;
 // 背景とフレームの見本（中身は空のカード）
 export const partSwatch = (bgId: string, frame: string) => `<span class="${baseClass(bgId, frame)}">${FRAME_PARTS}</span>`;

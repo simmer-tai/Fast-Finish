@@ -4,7 +4,7 @@ import { camera, scene } from '../core.js';
 import { DEG } from '../math.js';
 import { DASH_ATTACK_WINDOW, game, kickVel } from '../game/state.js';
 import { hooks } from '../game/hooks.js';
-import { HEAVY_FX, spawnGleam, spawnGoldShards, spawnSparks } from '../fx/hitFx.js';
+import { HEAVY_FX, spawnGleam, spawnGoldSparks, spawnSparks } from '../fx/hitFx.js';
 import { hitWithArcs, spawnMuzzleArcs } from '../fx/arcs.js';
 import { addGlow } from '../fx/glow.js';
 import { isDown } from '../player/down.js';
@@ -69,6 +69,7 @@ export const rifleState = {
   spin: false, // 乱射の途中
   spinT: 0, // 今の 1 回転に入ってからの時間
   scopedShot: false, // 最後の 1 発をスコープを覗ききって撃ったか（頭でとどめを刺したときに弾が入るのはこのときだけ）
+  shotKills: 0, // 今の 1 発で倒した数（貫通の加点用）
   equipT: Infinity, // 取り出し始めてからの時間（取り出していないときは Infinity）
 };
 
@@ -174,18 +175,18 @@ function onRifleHit(at: THREE.Vector3, dir: THREE.Vector3, enemy: Enemy | null, 
   void part; // 頭は共通の命中位置の高さで判定する
   // 稲妻を出すスキン（爪）は、当てた所から体に稲妻を走らせる
   const fx = RIFLE_HIT.fx ?? 1;
-  // 金粉を漂わせるスキンは、金色の破片の代わりに金粉を見せる（破片は出さない）
+  // 金粉を漂わせるスキンは、金色の火花の代わりに金粉を見せる（火花は出さない）
   const gleam = skinOf('rifle').gleam;
   if (!enemy && boss) {
     hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.hitBoss(RIFLE_HIT, at, 'bullet', boss, dir), at);
-    if (!gleam) spawnGoldShards(at, dir, false);
+    if (!gleam) spawnGoldSparks(at, dir, false);
   } else if (enemy) {
     setEn(enemy);
     hitDir.set(dir.x, 0, dir.z);
     if (hitDir.lengthSq() < 1e-6) hitDir.set(en.root.position.x - position.x, 0, en.root.position.z - position.z);
     hitDir.normalize();
     hitWithArcs(skinOf('rifle'), fx, dir, () => hooks.applyHit(RIFLE_HIT, at, 'bullet'), at);
-    if (!gleam) spawnGoldShards(at, dir, !enemy.alive); // 倒した 1 発は多めに散らす
+    if (!gleam) spawnGoldSparks(at, dir, !enemy.alive); // 倒した 1 発は多めに散らす
     else if (!enemy.alive) spawnGleam(at, dir, HEAVY_FX, gleam); // 倒した 1 発は光の筋を長く 2 本にし、金粉を増やす
   } else {
     spawnSparks(at, dir, 6 + Math.floor(Math.random() * 4), 0.6, 0.5);
@@ -324,6 +325,7 @@ function fireRifle(spun = false) {
   const arc = skinOf('rifle').arc;
   if (arc && rifleState.scope < SCOPE_VIEW_ON) spawnMuzzleArcs(rifleMuzzle, arc);
 
+  rifleState.shotKills = 0;
   for (const hit of hits) onRifleHit(hit.at, aimDir.clone(), hit.enemy, hit.part, hit.boss);
 
   // 反動: 拳銃より大きく視点を蹴り上げる。覗いているときはさらに強く跳ねて見える（視野が狭いので）

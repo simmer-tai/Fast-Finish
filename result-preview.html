@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <title>result preview</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&family=Noto+Sans+JP:wght@500&display=swap" />
+    <script type="importmap">
+      { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js" } }
+    </script>
   </head>
   <body style="background: linear-gradient(160deg, #9a9a9a, #d0d0d0)">
     <!-- 結果の画面だけを確かめる。index.html の CSS と #overlay をそのまま借りて、result.js で出す。
@@ -16,8 +19,7 @@
       overlay.className = 'pause result';
       document.body.append(overlay);
       await document.fonts.load('800 100px "Barlow Condensed"');
-      const { showResult, skipResult } = await import('./dist/result.js');
-      const audio = await import('./dist/audio.js');
+      const { showResult, skipResult, ensureUiAudio } = await import('./dist/devPreviews.js');
       const p = new URLSearchParams(location.search);
       const perKill = { S: 400, A: 260, B: 180, C: 120 }[p.get('rank') ?? 'S'];
       const run = () =>
@@ -28,7 +30,7 @@
       run();
       if (p.has('skip')) setTimeout(skipResult, Number(p.get('skip')) * 1000);
       const again = () => {
-        audio.ensureUiAudio();
+        ensureUiAudio();
         if (!skipResult()) run();
       };
       addEventListener('pointerdown', again);

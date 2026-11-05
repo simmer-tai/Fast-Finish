@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { boxGeo, gridMaterial } from '../world/blocks.js';
+import { options } from '../ui/options.js';
 
 // ---- 床が波打つ ----
 // 重い物が床を叩くと、そこから輪になって広がる波に合わせて、床のグリッドのマス（1m 角）が持ち上がって沈む。
@@ -8,6 +9,7 @@ const CELL = 1; // 床のグリッドの目と同じ
 const MAX_TILES = 2400;
 const MIN_LIFT = 0.01; // これより低いマスは描かない
 const WAVE_WIDTH = 2.4; // 波の山の幅 (m)
+const WAVE_WIDTH_LOWEST = 1.2; // 最低画質では輪を細くしてマスを減らす。届く範囲と速さは衝撃波の当たりと合わせてあるので変えない
 const TILE_DEPTH = 0.5; // 床の下へ伸ばす分（持ち上がったときに側面が床から生えて見える）
 
 interface Wave {
@@ -70,17 +72,18 @@ const m = new THREE.Matrix4();
 export function updateQuake(dt: number) {
   if (!mesh.parent) return;
   lift.clear();
+  const waveWidth = options.quality === 'lowest' ? WAVE_WIDTH_LOWEST : WAVE_WIDTH;
   for (let w = waves.length - 1; w >= 0; w--) {
     const wave = waves[w];
     wave.t += dt;
     const r = wave.t * wave.speed; // 波の先頭
-    if (r - WAVE_WIDTH > wave.range) {
+    if (r - waveWidth > wave.range) {
       waves.splice(w, 1);
       continue;
     }
     // 波の山にかかるマスだけを調べる
     const outer = Math.min(r, wave.range);
-    const inner = Math.max(0, r - WAVE_WIDTH);
+    const inner = Math.max(0, r - waveWidth);
     const x0 = Math.floor((wave.x - outer) / CELL);
     const x1 = Math.floor((wave.x + outer) / CELL);
     const z0 = Math.floor((wave.z - outer) / CELL);
@@ -90,7 +93,7 @@ export function updateQuake(dt: number) {
         const d = Math.hypot((ix + 0.5) * CELL - wave.x, (iz + 0.5) * CELL - wave.z);
         if (d > outer || d < inner) continue;
         // 山の形: 先頭で跳ね上がって、後ろへゆっくり沈む。遠くほど低い
-        const u = (r - d) / WAVE_WIDTH;
+        const u = (r - d) / waveWidth;
         const crest = Math.sin(Math.PI * Math.pow(u, 0.6));
         const fall = 1 - d / wave.range;
         const h = wave.amp * crest * fall * fall * jitter(ix, iz);

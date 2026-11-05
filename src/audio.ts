@@ -5,6 +5,25 @@
 
 let ctx: AudioContext | null = null;
 let noiseBuffer: AudioBuffer;
+// 最低画質の音: 残響を切り、重なる音を減らす（残響の計算と、音ごとの部品作りが弱い CPU では重い）
+let liteAudio = false;
+let reverbConv: ConvolverNode | null = null;
+let hallConvNode: ConvolverNode | null = null;
+export function setLiteAudio(on: boolean) {
+  if (on === liteAudio) return;
+  liteAudio = on;
+  routeReverb();
+}
+function routeReverb() {
+  if (!reverbConv || !hallConvNode) return;
+  if (liteAudio) {
+    reverbIn.disconnect();
+    hallIn.disconnect();
+  } else {
+    reverbIn.connect(reverbConv);
+    hallIn.connect(hallConvNode);
+  }
+}
 let bus: GainNode; // すべての音の入り口（ここから先は共通の加工）
 let reverbIn: GainNode; // 残響へ送る入り口
 let reverbReturn: GainNode;
@@ -76,6 +95,9 @@ export function ensureAudio() {
     const hallReturn = ctx.createGain();
     hallReturn.gain.value = 0.6;
     hallIn.connect(hallConv).connect(hallReturn).connect(boomBus); // 大きな一撃の響きなので、潰さずに出す
+    reverbConv = conv;
+    hallConvNode = hallConv;
+    if (liteAudio) routeReverb();
 
     startLoops(ctx);
     loadBank(ctx);
@@ -201,12 +223,12 @@ function sample(group: string, o: Layer = {}) {
   const p = ctx.createStereoPanner();
   p.pan.value = o.pan ?? rand(-0.12, 0.12);
   node.connect(g).connect(p).connect(o.out ?? bus);
-  if (o.reverb) {
+  if (o.reverb && !liteAudio) {
     const s = ctx.createGain();
     s.gain.value = o.reverb;
     p.connect(s).connect(reverbIn);
   }
-  if (o.hall) {
+  if (o.hall && !liteAudio) {
     // 響きへは cut で絞る前の音量のまま送る（絞った後も響きの尾は長く残る）
     const s = ctx.createGain();
     s.gain.value = o.hall * level;
@@ -725,8 +747,9 @@ export function playKill(chain = 1) {
   if (!ctx) return;
   const pitch = killPitch(chain);
   sample('thud_heavy', { gain: 0.9, rate: 0.6 * pitch, reverb: 0.15 });
-  sample('gun_sub', { gain: 0.6, rate: 0.9 * pitch });
   sample('glass', { gain: 0.45, rate: 0.55 * pitch, lp: 5000, cut: 0.5 });
+  if (liteAudio) return;
+  sample('gun_sub', { gain: 0.6, rate: 0.9 * pitch });
   sample('glass', { gain: 0.3, rate: 0.8 * pitch, lp: 7000, delay: 0.03, cut: 0.35 });
   noise('lowpass', 1800, 300, 0.35, 0.3, { attack: 0.003 });
   tone(95 * pitch, 30 * pitch, 0.9, 0.45, { attack: 0.004 });

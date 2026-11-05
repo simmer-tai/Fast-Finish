@@ -107,7 +107,8 @@ composer.addPass(sharpenPass);
 composer.addPass(new OutputPass());
 
 // 画質で切り替える物（main.ts の applyQuality が書き換える）。radialBlur: 速いときに画面の端を中心へぼかすか（集中線とビネットは残す）
-export const postQuality = { radialBlur: true };
+// speedFx: 速いときの集中線とビネット。キルの加速でも動き出すので、最低画質では全画面の処理ごと切る
+export const postQuality = { radialBlur: true, speedFx: true };
 
 let speedFx = 0;
 export function updateSpeedFx(dt: number) {
@@ -118,7 +119,7 @@ export function updateSpeedFx(dt: number) {
   speedFx += (target - speedFx) * Math.min(1, dt * (target > speedFx ? 12 : 4));
   if (target === 0 && speedFx < 0.002) speedFx = 0;
   // 効果が無いときは全画面の処理（ブラーの 10 回読み）ごと飛ばす
-  speedFxPass.enabled = speedFx > 0;
+  speedFxPass.enabled = speedFx > 0 && postQuality.speedFx;
 
   const u = speedFxPass.uniforms;
   u.uTime.value += dt;

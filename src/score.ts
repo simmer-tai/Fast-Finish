@@ -4,6 +4,7 @@
 // とどめのヒットストップやスローに関係なく、実時間で進める
 import * as sfx from './audio.js';
 import { restartAnim } from './ui/restartAnim.js';
+import { options } from './ui/options.js';
 
 export interface KillBonus {
   label: string;
@@ -125,8 +126,10 @@ export function showKillScore(bonuses: KillBonus[], base = KILL_BASE): number {
 }
 
 export function updateScoreHud(realDt: number) {
+  // 最低画質では数字を転がさず、すぐ目標の値にする（毎フレーム文字を書き換えると配置と描き直しが走る）
+  const lowest = options.quality === 'lowest';
   if (totalShown !== total) {
-    totalShown += (total - totalShown) * Math.min(1, realDt * TOTAL_RATE);
+    totalShown = lowest ? total : totalShown + (total - totalShown) * Math.min(1, realDt * TOTAL_RATE);
     if (Math.abs(total - totalShown) < 0.5) totalShown = total;
     totalEl.textContent = fmt(totalShown);
   }
@@ -136,6 +139,12 @@ export function updateScoreHud(realDt: number) {
   while (queue.length && queue[0].at <= time) queue.shift()!.run();
   if (!queue.length) time = Infinity;
 
+  if (lowest) {
+    if (pts === ptsTarget) return;
+    pts = ptsTarget;
+    ptsEl.textContent = fmt(pts);
+    return;
+  }
   pts += (ptsTarget - pts) * Math.min(1, realDt * COUNT_RATE);
   if (Math.abs(ptsTarget - pts) < 0.5) pts = ptsTarget;
   ptsEl.textContent = fmt(pts);
