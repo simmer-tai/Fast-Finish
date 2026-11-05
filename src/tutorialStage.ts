@@ -74,8 +74,7 @@ export function buildTutorial(): StageLayout {
   box(decor, -HALF - 0.5, -3.8, -121.4, -89.6, 22, 22.4, LIGHT_FRAME);
 
   // ---- 武器の練習場 ----
-  // 奥と両脇を高い壁で囲み、的の立つ所に枠を引く
-  box(decor, -HALF - 0.6, HALF + 0.6, -152.6, -152, TOP, TOP + 6, LIGHT_RAIL);
+  // 両脇を高い壁で囲み、的の立つ所に枠を引く
   for (const s of [-1, 1]) box(decor, ...side(s, 0.6), -152, -126, TOP, TOP + 6, LIGHT_RAIL);
   for (const z of [-134, -142]) lines.push({ x: 0, y: TOP + 0.03, z, w: 8, d: 0.25 });
   for (const x of [-4, 4]) lines.push({ x, y: TOP + 0.03, z: -138, w: 0.25, d: 8 });
@@ -101,4 +100,12 @@ export function buildTutorial(): StageLayout {
     start: { x: 0, y: LOW, z: 4 }, enemySpawns: [],
     view: { eye: { x: 8, y: 13, z: 12 }, target: { x: 0, y: 5, z: -15 } },
   };
+}
+
+// 刀を選んだときだけ、練習場の奥に高台をつなぐ。
+export function buildSwordTutorialExtension(): StageBox[] {
+  return [
+    { minX: -5, maxX: 5, minZ: -164, maxZ: -152, h: TOP, light: LIGHT_FLOOR, look: 'terrain' },
+    { minX: -5, maxX: 5, minZ: -190, maxZ: -164, h: TOP + 6, light: LIGHT_FLOOR, look: 'terrain' },
+  ];
 }

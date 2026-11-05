@@ -11,6 +11,8 @@ import { swordState } from './weapons/swordCombat.js';
 import { player, position, velocity } from './player/state.js';
 import { padState } from './player/padControls.js';
 import { SPRINT_SPEED } from './player/config.js';
+import { PARRY_RETURN_HIT } from './weapons/handgunCombat.js';
+import { restartAnim } from './ui/restartAnim.js';
 
 // ---- 案内に並べる入力のアイコン ----
 // 押している間は光らせて、入力が届いていることを見せる
@@ -170,11 +172,7 @@ function renderProgress(total: number, now: number) {
 }
 // 説明が変わったときは、枠を少し動かして目を引く
 function replay() {
-  for (const el of [panel, prompt]) {
-    el.classList.remove('enter');
-    void el.offsetWidth;
-    el.classList.add('enter');
-  }
+  for (const el of [panel, prompt]) restartAnim(el, 'enter');
 }
 function setHint(text: string) {
   hintEl.hidden = !text;
@@ -287,7 +285,7 @@ export function updateTutorial(dt: number) {
   if (toastT >= 0 && (toastT += dt) > TOAST_TIME) { toastT = -1; toastEl.hidden = true; }
   // 下の床に落ちたら、今の課題の手前から何度でもやり直せる。何度か落ちたらコツを出す
   if (position.y < 1) {
-    const checkpoint = weaponPractice ? { x: 0, y: 13.4, z: -125 } : checkpoints[Math.min(step, checkpoints.length - 1)];
+    const checkpoint = weaponPractice ? (swordStep >= 3 ? { x: 0, y: 19.4, z: -170 } : { x: 0, y: 13.4, z: -125 }) : checkpoints[Math.min(step, checkpoints.length - 1)];
     position.set(checkpoint.x, checkpoint.y, checkpoint.z);
     velocity.set(0, 0, 0);
     player.onGround = true;
@@ -304,7 +302,11 @@ export function updateTutorial(dt: number) {
     }
   }
   if (step >= steps.length) {
-    if (weaponPractice && swordStep >= 0) updateSwordTutorial();
+    if (weaponPractice && swordStep >= 0) {
+      if (swordStep === 2 && position.z < -166 && position.y >= 19.1 && player.onGround) swordStep++;
+      updateSwordTutorial();
+      updateWaypoint();
+    }
     if (finishT < 0) return false;
     finishT += dt;
     if (finishT < FINISH_TIME) return false;
@@ -369,16 +371,38 @@ export function startWeaponTutorial(id: WeaponId) {
 const attackChip = (note?: string): Chip => ({ icon: CONTROL_ICONS.attack[game.usingPad ? 1 : 0], note, on: () => game.attackHeld });
 const aimChip = (): Chip => ({ icon: CONTROL_ICONS.aim[game.usingPad ? 1 : 0], on: () => swordState.focusing });
 const swordLessons: { title: string; pc: string; pad: string; keys: () => Chips }[] = [
-  { title: '斬り', pc: '的に近づいて、斬りを当てよう', pad: '的に近づいて、斬りを当てよう', keys: () => [attackChip()] },
-  { title: '溜め斬り', pc: '長押しで溜め、溜まったら離して的を斬ろう', pad: '長押しで溜め、溜まったら離して的を斬ろう', keys: () => [attackChip('HOLD')] },
-  { title: '居合ゲージ', pc: '的を攻撃して、居合ゲージを満タンにしよう', pad: '的を攻撃して、居合ゲージを満タンにしよう', keys: () => [attackChip()] },
-  { title: '一閃', pc: '構えて的に照準を合わせ、斬りで一閃を放とう', pad: '構えて的に照準を合わせ、斬りで一閃を放とう', keys: () => [aimChip(), '→', attackChip()] },
+  { title: '斬り', pc: 'ダミーに近づき、{attack}を押して斬ろう。繰り返し斬って倒そう', pad: 'ダミーに近づき、{attack}を押して斬ろう。繰り返し斬って倒そう', keys: () => [attackChip()] },
+  { title: '溜め斬り', pc: '{attack}を長押しし、溜めきってから離してダミーを斬ろう', pad: '{attack}を長押しし、溜めきってから離してダミーを斬ろう', keys: () => [attackChip('HOLD')] },
+  { title: '溜め斬りで飛ぶ', pc: '{attack}を長押しして溜めきり、押したまま{jump}でジャンプ。上を向いて{attack}を離し、壁の上へ飛ぼう', pad: '{attack}を長押しして溜めきり、押したまま{jump}でジャンプ。上を向いて{attack}を離し、壁の上へ飛ぼう', keys: () => [game.usingPad ? padA : space, '→', attackChip('HOLD')] },
+  { title: '一閃', pc: '{aim}で構え、ダミーに照準を合わせてロックオン。{attack}を押して一閃で倒そう', pad: '{aim}で構え、ダミーに照準を合わせてロックオン。{attack}を押して一閃で倒そう', keys: () => [aimChip(), '→', attackChip()] },
+  { title: 'パリィ', pc: 'ダミーの方を向き、弾が近づいたら{attack}を押そう。斬りで弾を弾き返して倒そう', pad: 'ダミーの方を向き、弾が近づいたら{attack}を押そう。斬りで弾を弾き返して倒そう', keys: () => [attackChip()] },
 ];
 
+function swordGuideText(text: string) {
+  const icons = { attack: attackChip(), aim: aimChip(), jump: game.usingPad ? padA : space };
+  const labels = { attack: '攻撃', aim: '構え', jump: 'ジャンプ' };
+  return text.replace(/\{(attack|aim|jump)\}/g, (_, name: keyof typeof icons) =>
+    `<span class="tg-inline-icon" role="img" aria-label="${labels[name]}">${icons[name].icon}</span>`);
+}
+
+export const swordTutorialActive = () => active && weaponPractice && swordStep >= 0;
+export const swordTutorialCanRespawn = () => !swordTutorialActive() || swordStep === 0 || swordStep === 1 || swordStep === 3 || swordStep === 4;
+export const swordTutorialCanFire = () => swordTutorialActive() && swordStep === 4;
+export const swordTutorialSpawn = () => swordStep >= 3 ? { x: 0, y: 19.4, z: -181 } : { x: 0, y: 13.4, z: -138 };
+// 課題の技以外は、ダミーにダメージやよろめきを与えない。
+export function swordTutorialAllowsHit(def: HitDef) {
+  if (!swordTutorialActive()) return true;
+  if (swordStep === 0) return SWORD_COMBO.some((attack) => attack === def);
+  if (swordStep === 1) return def === SWORD_CHARGE_SLASH;
+  if (swordStep === 3) return def === SWORD_ISSEN;
+  if (swordStep === 4) return def === PARRY_RETURN_HIT;
+  return false;
+}
+
 function updateSwordTutorial() {
-  if (swordStep === 2 && swordState.focusCharge >= 1) swordStep++;
-  const refill = swordStep === 3 && swordState.focusCharge < 1 && !swordState.focusing && swordState.rushTime < 0 && swordState.swordAttack !== SWORD_ISSEN;
-  const guideKey = `${swordStep}:${game.usingPad}:${refill}`;
+  // 一閃に失敗しても、再び構えて挑戦できる。
+  if (swordStep === 3 && swordState.focusCharge < 1 && !swordState.focusing && swordState.rushTime < 0 && swordState.swordAttack !== SWORD_ISSEN) swordState.focusCharge = 1;
+  const guideKey = `${swordStep}:${game.usingPad}`;
   if (guideKey === swordGuideKey) return;
   const advanced = !swordGuideKey.startsWith(`${swordStep}:`) && swordGuideKey !== '';
   swordGuideKey = guideKey;
@@ -388,27 +412,23 @@ function updateSwordTutorial() {
     sfx.playRing(1.25, 1.4, 0.5);
     replay();
   }
+  marker.visible = beam.visible = swordStep === 2;
+  if (swordStep === 2) { marker.position.set(0, 19.43, -169); beam.position.set(0, 19.4, -169); }
   if (swordStep >= swordLessons.length) {
-    titleEl.textContent = '刀の練習完了';
-    textEl.textContent = '引き続き、的で自由に練習できます。';
-    renderChips([]);
-    setHint('');
-    toastEl.textContent = 'Esc / START で一時停止し、TITLE から戻れます';
-    toastEl.hidden = false;
+    panel.hidden = prompt.hidden = waypoint.hidden = true;
     return;
   }
   const lesson = swordLessons[swordStep];
   titleEl.textContent = lesson.title;
-  textEl.textContent = game.usingPad ? lesson.pad : lesson.pc;
+  textEl.innerHTML = swordGuideText(game.usingPad ? lesson.pad : lesson.pc);
   renderChips(lesson.keys());
-  setHint(refill ? 'ゲージが空のときは、もう一度的を攻撃して溜めよう' : '');
+  setHint(swordStep === 2 ? '空中で上を向いて溜め斬りを放つと、視線の方向へ飛べます' : swordStep === 3 ? '居合ゲージはこの練習中、自動で溜まります' : '');
 }
 
-// 振るだけではなく、練習用の的に技が当たったときに進める。
-export function noteTutorialSwordHit(def: HitDef) {
-  if (!weaponPractice || swordStep < 0) return;
-  if (swordStep === 0 && SWORD_COMBO.some((attack) => attack === def)) swordStep++;
-  else if (swordStep === 1 && def === SWORD_CHARGE_SLASH) swordStep++;
-  else if (swordStep === 3 && def === SWORD_ISSEN) swordStep++;
+// 指定された攻撃でとどめを刺したときだけ次に進む。
+export function noteTutorialSwordHit(def: HitDef, killed: boolean) {
+  if (!swordTutorialActive() || !killed || !swordTutorialAllowsHit(def)) return false;
+  swordStep++;
   updateSwordTutorial();
+  return swordStep === swordLessons.length;
 }

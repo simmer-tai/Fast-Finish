@@ -1,16 +1,23 @@
 // ---- プレイヤーカードの背景とフレーム ----
 // ロッカー（ui/playerCard.ts）と、ロードマップのご褒美の中身（ui/lvRoadmap.ts）で使う
 // 背景。見た目は index.html の .pcard.bg-<id> に書く。dark は字を白にする
-export interface Background { id: string; name: string; dark?: boolean }
+import { GLITCH_FRAME } from './glitchFrame.js';
+import { VIOLET_FACETS, VIOLET_FRAME } from './violetFrame.js';
+
+// pending: 解放の条件がまだ決まっていない（作者の手元と ?devmode でだけ選べる）
+export interface Background { id: string; name: string; dark?: boolean; pending?: true }
 export const BACKGROUNDS: Background[] = [
   { id: 'plain', name: 'PLAIN' },
-  { id: 'grid', name: 'GRID' },
-  { id: 'stripe', name: 'STRIPE' },
-  { id: 'halftone', name: 'HALFTONE' },
-  { id: 'band', name: 'BAND' },
-  { id: 'redline', name: 'REDLINE' },
-  { id: 'ink', name: 'INK', dark: true },
-  { id: 'scan', name: 'SCAN', dark: true },
+  { id: 'grid', name: 'GRID', pending: true },
+  { id: 'stripe', name: 'STRIPE', pending: true },
+  { id: 'halftone', name: 'HALFTONE', pending: true },
+  { id: 'band', name: 'BAND', pending: true },
+  { id: 'redline', name: 'REDLINE', pending: true },
+  { id: 'ink', name: 'INK', dark: true, pending: true },
+  { id: 'scan', name: 'SCAN', dark: true, pending: true },
+  { id: 'polygon', name: 'POLYGON', pending: true },
+  { id: 'polygon-black', name: 'POLYGON BLACK', dark: true, pending: true },
+  { id: 'carbon', name: 'CARBON', dark: true, pending: true },
 ];
 // フレーム（縁の飾り）。見た目は index.html の .pcard.fr-<id> に書く。背景とは別に選び、字の色（背景の dark）に合わせて縁の色も変わる
 // pending: 解放の条件がまだ決まっていない（作者の手元と ?devmode でだけ選べる）
@@ -18,15 +25,16 @@ export interface Frame { id: string; name: string; pending?: true }
 export const FRAMES: Frame[] = [
   { id: 'standard', name: 'STANDARD' },
   { id: 'none', name: 'NONE' },
-  { id: 'bold', name: 'BOLD' },
-  { id: 'bracket', name: 'BRACKET' },
-  { id: 'ticks', name: 'TICKS' },
-  { id: 'rededge', name: 'RED EDGE' },
-  { id: 'hazard', name: 'HAZARD' },
+  { id: 'bold', name: 'BOLD', pending: true },
+  { id: 'bracket', name: 'BRACKET', pending: true },
+  { id: 'ticks', name: 'TICKS', pending: true },
+  { id: 'rededge', name: 'RED EDGE', pending: true },
+  { id: 'hazard', name: 'HAZARD', pending: true },
   { id: 'talon', name: 'TALON' },
   { id: 'falcon', name: 'FALCON', pending: true },
   { id: 'eclipse', name: 'ECLIPSE', pending: true },
   { id: 'violet', name: 'VIOLET', pending: true },
+  { id: 'glitch', name: 'GLITCH', pending: true },
 ];
 // 名前の色。見た目は index.html の .nc-<id> に書く。白と黒はいつでも選べる。
 // frame / bg のあるものは、そのフレームか背景を解放すると選べる（付けていなくてもよい。解放していなければ一覧にも出さない）
@@ -165,7 +173,7 @@ const FALCON_FRAME =
   '<path class="fc-glint" pathLength="100" d="M3 3H149.2L157 10.8V87H10.8L3 79.2Z"/>' +
   `<g>${FALCON_HALF}</g><g transform="rotate(180 80 45)">${FALCON_HALF}</g>` +
   '</svg>';
-// FALCON のカードの表面: 頂点に高さを持たせた凹凸の面を三角形に割り、左上からの光で面ごとの明暗を計算して塗る（フラットシェーディング）。
+// 背景 POLYGON の表面: 頂点に高さを持たせた凹凸の面を三角形に割り、左上からの光で面ごとの明暗を計算して塗る（フラットシェーディング）。
 // 光に向く面は白、背を向ける面は黒の半透明で重ねるので、背景の明暗によらず凹凸に見える。三角形は濃さ（FACET_LEVELS 段）ごとに 1 本の path にまとめる。
 // その上に、傾きの大きい面だけ同じ形の光る面（fc-lit）を重ねる。光がカードのまわりをゆっくり回る見立てで、面の向きと光の向きが合ったときに光る。
 // 位置ではなく向きで順番が決まるので、離れた面が同時に光る。傾きが大きい面ほど強く光る。
@@ -178,7 +186,7 @@ const FACET_CONTRAST = 12; // 明暗の差を段に直す倍率
 const FACET_LIGHT = [-0.5, -0.6, 0.62]; // 光の向き（左上の手前から）
 const FACET_LIT_MIN_SLOPE = 0.35; // これより傾いた面だけ光らせる
 const FACET_ORBIT_SEC = 10; // 光が一周する時間。index.html の fc-facet-lit と同じ値にする
-const FALCON_FACETS = (() => {
+const POLYGON_FACETS = (() => {
   let seed = 20261104;
   const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
   const cw = 160 / FACET_COLS;
@@ -266,6 +274,6 @@ const ECLIPSE_FRAME =
   '<path class="ec-crown" d="M68 0H92L89 4H83.5L80 6L76.5 4H71Z"/>' +
   '<path class="ec-glint" pathLength="100" d="M4.1 4.1H148L155.9 12V85.9H12L4.1 78Z"/>' +
   '</svg>';
-export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${ECLIPSE_HOLOGRAM}${FALCON_FACETS}${TALON_SCARS}${TALON_FRAME}${FALCON_FRAME}${ECLIPSE_FRAME}<img class="pc-violet" src="./eclipse-frame-concept.svg" alt="" aria-hidden="true">`;
+export const FRAME_PARTS = `<span class="pc-frame"><i></i></span><i class="c tl"></i><i class="c br"></i>${ECLIPSE_HOLOGRAM}${POLYGON_FACETS}${VIOLET_FACETS}${TALON_SCARS}${TALON_FRAME}${FALCON_FRAME}${ECLIPSE_FRAME}${VIOLET_FRAME}${GLITCH_FRAME}`;
 // 背景とフレームの見本（中身は空のカード）
 export const partSwatch = (bgId: string, frame: string) => `<span class="${baseClass(bgId, frame)}">${FRAME_PARTS}</span>`;

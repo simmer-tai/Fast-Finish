@@ -76,13 +76,9 @@ export const MASTERY_REWARDS: Partial<Record<number, MasteryReward>> = {
   [EMBLEM_LEVEL]: { kind: 'emblem', name: 'EMBLEM' },
 };
 export const MASTERY_MILESTONE = 5;
-// プレイヤーのレベルのご褒美。プレイヤーカードの背景とフレームを、低いレベルのうちに何枚かずつまとめて解放する（ここに無い部品は初めから選べる）。
+// プレイヤーのレベルのご褒美。カード部品の未定の解放条件は cardParts.ts の pending で管理する。
 // 決めていない節目は中身の分からないカードで出す
-export const PLAYER_REWARDS: Partial<Record<number, MasteryReward>> = {
-  2: { kind: 'card', name: 'CARD ×4', backgrounds: ['grid', 'stripe'], frames: ['bold', 'bracket'] },
-  5: { kind: 'card', name: 'CARD ×4', backgrounds: ['halftone', 'band'], frames: ['ticks', 'rededge'] },
-  7: { kind: 'card', name: 'CARD ×4', backgrounds: ['redline', 'ink', 'scan'], frames: ['hazard'] },
-};
+export const PLAYER_REWARDS: Partial<Record<number, MasteryReward>> = {};
 // プレイヤーカードの部品を解放するレベル（ご褒美に無ければ 0 = 初めから）
 export function cardPartLevel(kind: 'background' | 'frame', id: string) {
   for (const [lv, r] of Object.entries(PLAYER_REWARDS)) if ((kind === 'background' ? r?.backgrounds : r?.frames)?.includes(id)) return Number(lv);

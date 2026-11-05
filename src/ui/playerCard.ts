@@ -37,10 +37,11 @@ const TALON_MARK =
 // 背景とフレームが選べるか（プレイヤーのレベルで解放する）
 type Part = 'background' | 'frame';
 // チャレンジの追加のご褒美のフレームは、その見出しのミッションの達成数で開く（challenges.ts の MissionGroup.bonus）
-// 条件の決まっていないフレーム（cardParts.ts の Frame.pending）は閉じたまま
+// 条件の決まっていない部品（cardParts.ts の pending）は閉じたまま
+const partPending = (kind: Part, id: string) => !!(kind === 'frame' ? FRAMES : BACKGROUNDS).find((p) => p.id === id)?.pending;
 function partOpen(kind: Part, id: string) {
   if (OWNER) return true;
-  if (kind === 'frame' && FRAMES.find((f) => f.id === id)?.pending) return false;
+  if (partPending(kind, id)) return false;
   const g = kind === 'frame' ? bonusGroupOf(id) : undefined;
   return g ? groupDone(g.id) >= g.bonus!.need : playerMastery().level >= cardPartLevel(kind, id);
 }
@@ -176,11 +177,11 @@ const swatch = (data: string, name: string, req: string) =>
   `<button type="button" class="lk-item lk-bg" ${data}><span class="pcard">${FRAME_PARTS}</span><small>${name}</small>${NEW_TAG}${req ? `${LOCK}<small class="lk-req">${req}</small>` : ''}</button>`;
 const lvReq = (lv: number) => (lv ? `LV${lv}` : '');
 const frameReq = (id: string) => {
-  if (FRAMES.find((f) => f.id === id)?.pending) return 'TBA';
+  if (partPending('frame', id)) return 'TBA';
   const g = bonusGroupOf(id);
   return g ?`${g.name} ×${g.bonus!.need}` : lvReq(cardPartLevel('frame', id));
 };
-pane('bg').innerHTML = BACKGROUNDS.map((b) => swatch(`data-bg="${b.id}"`, b.name, lvReq(cardPartLevel('background', b.id)))).join('');
+pane('bg').innerHTML = BACKGROUNDS.map((b) => swatch(`data-bg="${b.id}"`, b.name, b.pending ? 'TBA' : lvReq(cardPartLevel('background', b.id)))).join('');
 pane('frame').innerHTML = FRAMES.map((f) => swatch(`data-frame="${f.id}"`, f.name, frameReq(f.id))).join('');
 // 称号は記録と同じ一覧。まだ解放していないものは、右に条件を添える
 pane('title').innerHTML = TITLES.map((t) => `<button type="button" class="lk-item lk-stat lk-title" data-title="${t.id}"><b>${t.name}</b>${t.ja ? `<i class="lk-ja">${t.ja}</i>` : ''}<small>${unlockHint(t.unlock)}</small>${NEW_TAG}</button>`).join('');

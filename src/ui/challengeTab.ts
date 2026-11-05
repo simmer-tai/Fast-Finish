@@ -1,5 +1,5 @@
 import * as sfx from '../audio.js';
-import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleTag, ruleText, type Mission } from '../challenges.js';
+import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleParts, ruleTag, type Mission } from '../challenges.js';
 import { fmtTime } from '../result.js';
 import { LOCK, cardPreview } from './lvRoadmap.js';
 import { badgePlate } from './cardHonors.js';
@@ -119,7 +119,8 @@ function renderDetail() {
   rd.querySelector('.go .ic')!.innerHTML = best ? CHECK : LOCK;
   rd.querySelector('.go em')!.textContent = best ? 'UNLOCKED' : 'LOCKED';
   rd.classList.toggle('got', !!best);
-  detail.querySelector('.ch-note')!.textContent = `${ruleText(m)}。熟練度の XP は入らず、ステージの自己ベストにも残らない`;
+  detail.querySelector('.ch-goal-list')!.replaceChildren(...ruleParts(m).map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  detail.querySelector('.ch-note')!.textContent = '熟練度の XP は入らず、ステージの自己ベストにも残らない';
 }
 // 見出しの概要: ルールの帯は中のミッションで共通なので最初のものから。もらえるスキンは中のミッション 1 つにつき 1 枚
 function renderOverview(id: string) {

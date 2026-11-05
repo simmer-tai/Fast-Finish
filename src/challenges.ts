@@ -4,7 +4,7 @@
 //   熟練度の XP は入れず、ステージの自己ベストも書き換えない（記録はミッションごとに別に持つ）。
 //   達成するとご褒美のスキンを解放する（weapons/skins.ts の skinUnlocked がミッションの記録を見る）
 // 実績: ふつうのステージとミッションの 1 回のプレイの中で、決まった離れ業をすると達成（訓練場とマルチプレイでは数えない）。
-//   数を貯めるもの（〇〇を 100 体など）は XP の役目なので入れない
+//   累計撃破の実績はプレイをまたいで記録する
 import type { WeaponId } from './weapons/ids.js';
 import type { Difficulty } from './game/state.js';
 import { localDev } from './localDev.js';
@@ -81,6 +81,10 @@ export const MISSIONS: Mission[] = [...TALON_WEAPONS.map(([weapon, ja]): Mission
 // ルールの説明（チャレンジの画面と、ミッションの始まり・失敗の画面に出す）
 export const parkourTargets = (m: Mission) => m.rule.kind === 'parkour' ? `GOLD ${m.rule.gold}s / SILVER ${m.rule.silver}s / BRONZE ${m.rule.bronze}s` : '';
 export const ruleText = (m: Mission) => m.rule.kind === 'parkour' ? `ゴールを目指す。${parkourTargets(m)}` : (m.rank ? `回復なしで、ランク ${m.rank} 以上で倒しきる` : '回復なしで倒しきる');
+// クリア条件を 1 つずつに分けたもの（チャレンジの詳細で、目立つ帯に並べる）
+export const ruleParts = (m: Mission): string[] => m.rule.kind === 'parkour'
+  ? ['ゴールまで走る', parkourTargets(m)]
+  : ['回復なし', ...(m.rank ? [`ランク ${m.rank} 以上`] : []), '敵を倒しきる'];
 // 短い札（HUD とリストに出す）
 export const ruleTag = (m: Mission) => m.rule.kind === 'parkour' ? 'TIME TRIAL' : (m.rank ? `NO HEAL / RANK ${m.rank}` : 'NO HEAL');
 // ランクの文字が、ミッションの求める段に届いているか
@@ -178,6 +182,14 @@ export const FEATS: Feat[] = [
   { id: 'untouchable', name: 'UNTOUCHABLE', ja: '無傷の頂', desc: 'HARD でノーダメージかつランク SS 以上をとる', icon: '<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M9 3l3 6 3-6M12 9v12"/>', tier: 5 },
 ];
 
+FEATS.push(
+  { id: 'kills100', name: 'CENTURY', ja: '百人斬り', desc: '敵を累計 100 体倒す', icon: '<path d="M5 4v16M9 7l3-3v16M16 4h4v16h-4z"/>', tier: 2 },
+  { id: 'rifle-headhunter', name: 'RIFLE HEADHUNTER', ja: '狙撃の名手', desc: 'スナイパーライフルでヘッドショット率 100% でクリアする', icon: '<circle cx="12" cy="12" r="8"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/><circle cx="12" cy="12" r="2"/>', tier: 3 },
+  { id: 'revolver-headhunter', name: 'REVOLVER HEADHUNTER', ja: '拳銃の名手', desc: 'リボルバーでヘッドショット率 100% でクリアする', icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>', tier: 3 },
+  { id: 'bow-headhunter', name: 'BOW HEADHUNTER', ja: '弓の名手', desc: '弓でヘッドショット率 100% でクリアする', icon: '<path d="M5 3c10 3 10 15 0 18M5 3v18M3 12h17M16 8l4 4-4 4"/>', tier: 3 },
+  { id: 'rifle-five', name: 'FIVE THROUGH', ja: '五体貫通', desc: 'スナイパーライフルの 1 発で敵を 5 体倒す', icon: '<path d="M3 5l5 7-5 7M7 5l5 7-5 7M11 5l5 7-5 7M15 5l5 7-5 7"/>', tier: 5 },
+);
+
 const featKey = (id: string) => `fast-finish.feat.${id}`;
 export function featDone(id: string) {
   try {
@@ -195,4 +207,16 @@ export function unlockFeat(id: string) {
     // 保存できない環境でも、その場では知らせる
   }
   return true;
+}
+
+// 訓練場・マルチプレイ以外で倒した敵を、クリア失敗時も含めて記録する。
+let totalKills = (() => {
+  try { const n = Number(localStorage.getItem('fast-finish.totalKills')); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0; }
+  catch { return 0; }
+})();
+export function recordTotalKill() {
+  if (totalKills >= 100) return;
+  totalKills++;
+  try { localStorage.setItem('fast-finish.totalKills', String(totalKills)); } catch { /* メモリ内では進行を保つ */ }
+  if (totalKills >= 100) unlockFeat('kills100');
 }

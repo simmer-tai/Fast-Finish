@@ -27,9 +27,9 @@ import { finalScore, fmtTime, killPar, scoreRank, showParkourResult, showResult,
 import { gameOverChoice, showGameOverView, stepGameOverMenu } from './gameOver.js';
 import type { StageBox, StageLayout, StageRamp } from './stage.js';
 import { buildStation } from './station.js';
-import { buildTutorial } from './tutorialStage.js';
+import { buildTutorial, buildSwordTutorialExtension } from './tutorialStage.js';
 import { buildShip } from './ship.js';
-import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, stopTutorial, updateTutorial } from './tutorial.js';
+import { noteTutorialSwordHit, startTutorial, startWeaponTutorial, stopTutorial, updateTutorial, swordTutorialActive, swordTutorialAllowsHit, swordTutorialCanFire, swordTutorialCanRespawn, swordTutorialSpawn } from './tutorial.js';
 import { buildWarehouse } from './warehouse.js';
 import { buildParking } from './parking.js';
 import { buildLift } from './lift.js';
@@ -73,13 +73,14 @@ import {
 import { addSlashScar, clearScars, updateScars } from './fx/scars.js';
 import { updateArcs } from './fx/arcs.js';
 import { initOptions, onOptionsClick, onOptionsKey, options, renderOptions, type Quality } from './ui/options.js';
+import { finishLoading } from './ui/loadingScreen.js';
 import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js';
 import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js';
 import { closeFeedbackTab, onFeedbackClick, openFeedbackTab } from './ui/feedbackTab.js';
 import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js';
 import { buildParkour, parkourCourse, type ParkourZone } from './world/parkour.js';
 import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js';
-import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat, type Mission } from './challenges.js';
+import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat, recordTotalKill, type Mission } from './challenges.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
 import { addXp, loadXp } from './mastery.js';
@@ -671,7 +672,7 @@ function onStageSelectKey(e: KeyboardEvent) {
   }
 }
 // 靄で覆った間にプレイを片付けてタイトルへ戻す。
-function quitToTitle() {
+function quitToTitle(stageSelect = false) {
   if (overlay.classList.contains('quitting')) return;
   if (mission) { try { sessionStorage.setItem(CHALLENGE_RETURN, '1'); } catch {} }
   overlay.classList.add('quitting');
@@ -685,7 +686,8 @@ function quitToTitle() {
     overlay.querySelector('[data-action="start"] .label')!.textContent = 'START';
     overlayPrompt.textContent = '';
     setupTitleStage();
-    restoreChallengeReturn();
+    if (stageSelect) { setPlaySelect(true); setStageSelect(true); }
+    else restoreChallengeReturn();
     requestAnimationFrame(() => overlay.classList.remove('quitting'));
     menuRedraw = true;
   }, 380);
@@ -861,7 +863,7 @@ function onPadMenuKey(e: KeyboardEvent, selector: string) {
   }
 }
 window.addEventListener('keydown', (e) => {
-  if (controls.isLocked || overlay.classList.contains('hidden')) return;
+  if (controls.isLocked || overlay.classList.contains('hidden') || overlay.classList.contains('booting')) return;
   if (!e.repeat && e.code === 'KeyK' && (overlay.classList.contains('over') || overlay.classList.contains('pause') || overlay.classList.contains('result')) && (multiplayerRun || (pendingStage && pendingStage !== 'tutorial'))) {
     e.preventDefault();
     return multiplayerRun ? returnToLobby() : retryStage();
@@ -1132,7 +1134,7 @@ document.addEventListener('mousemove', (e) => {
 const DEV_MODE = new URLSearchParams(location.search).has('devmode');
 let invincible = false; // ?devmode で 0 キーを押すと切り替わる。体力が減らない
 function damagePlayer(amount: number) {
-  if (game.playerHp <= 0 || amount <= 0 || invincible) return;
+  if (game.playerHp <= 0 || amount <= 0 || invincible || swordTutorialActive()) return;
   rumble('damage');
   game.style.rank = Math.max(0, game.style.rank - 1);
   game.style.meter = STYLE_HIT_METER;
@@ -1602,6 +1604,7 @@ const HEADSHOT_MULT = 2.5;
 // 当たりの反応と演出。hitDir（攻撃した側から敵の奥への水平の向き）は呼ぶ前に入れておく
 // scar = false なら切り跡を残さない（刃の当たらない衝撃波など）。dmgScale はダメージだけに掛ける倍率
 function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: THREE.Vector3, scar = true, dmgScale = 1, remote = false, scoped = false) {
+  if (!swordTutorialAllowsHit(def)) return;
   if (multiplayerRun && isMultiplayerGuest() && stageRun?.boss) {
     sendGuestHit(def, at, kind, 'core', kind === 'kunai' || kind === 'sword' || kind === 'axe' || (kind === 'bat' && def !== BAT_RETURN_HIT) ? dmgScale * BOSS_MELEE_MULT : dmgScale, enemies.indexOf(en), swing);
     return;
@@ -1634,7 +1637,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   const damage = dummyHitDamage(def, kind, headshot, remote ? scoped : rifleState.scopedShot) * dmgScale;
   en.hp -= damage;
   if (!remote && def !== SWORD_ISSEN && def !== DEADEYE_HIT) chargeFocus(damage); // 一閃・デッドアイそのものでは溜めない
-  if (!remote && pendingStage === 'tutorial' && game.shownWeapon === 'sword' && kind === 'sword') noteTutorialSwordHit(def);
+  const tutorialFinish = !remote && pendingStage === 'tutorial' && game.shownWeapon === 'sword' && noteTutorialSwordHit(def, en.hp <= 0);
   if (!remote) { countHit(en.hp <= 0); trackHitProcess(def, kind); }
   const rifleHead = !remote && def === RIFLE_HIT && headshot;
   if (en.hp <= 0) {
@@ -1646,7 +1649,7 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
       const bonuses = killBonuses(def, headshot);
       noteKillFeats(bonuses, def);
       if (!stageRun?.boss) perfSpan('score', () => scoreKill(showKillScore(styleKillBonuses(bonuses)), highlightWeight(def, kind)));
-      killDummy(kind, swing, remote, true, rifleHead ? at : undefined, def === RIFLE_HIT && rifleState.scopedShot);
+      killDummy(kind, swing, remote, true, rifleHead ? at : undefined, def === RIFLE_HIT && rifleState.scopedShot, tutorialFinish);
     } else {
       killDummy(kind, swing, remote);
     }
@@ -1985,6 +1988,7 @@ function applyBossHit(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossP
       killSoundChain = showKillChain();
       flushBossTally();
       stageRun.kills++;
+      if (!remote && !multiplayerRun && pendingStage !== 'tutorial') recordTotalKill();
       breakAdds();
     }
   }
@@ -2031,13 +2035,14 @@ function applyBossHit(def: HitDef, at: THREE.Vector3, kind: HitKind, part: BossP
 
 // headAt: ライフルで頭を撃ち抜いて倒したときの当たった所。頭を撃ち飛ばし、ほかのとどめより長いスローと寄りで見せる
 // scoped: スコープを覗いたライフルで倒した。倍率で揺れが大きく見えるので、胴体でもヘッドショットと同じくらいに抑える
-function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts = true, headAt?: THREE.Vector3, scoped = false) {
+function killDummy(kind?: HitKind, swing?: THREE.Vector3, remote = false, counts = true, headAt?: THREE.Vector3, scoped = false, tutorialFinish = false) {
   en.alive = false;
   en.deadTime = 0;
   notePerfKill();
   const killSoundChain = remote ? 1 : showKillChain();
   sinceKill = 0;
-  finale = counts && !!stageRun?.running && !stageRun.boss && stageRun.kills + 1 >= stageRun.quota;
+  finale = tutorialFinish || (counts && !!stageRun?.running && !stageRun.boss && stageRun.kills + 1 >= stageRun.quota);
+  if (tutorialFinish) tutorialFinishPending = true;
   headSlow = !!headAt;
   realShake = !!headAt || scoped;
   game.hitStop = Math.max(game.hitStop, finale ? FINALE_HIT_STOP : headAt ? HEADSHOT_HIT_STOP : KILL_HIT_STOP);
@@ -2326,6 +2331,11 @@ function respawnDummy() {
   if (multiplayerRun && stageRun?.boss && !isMultiplayerGuest()) markAddSpawn(en);
   if (cargoSpawn) placeDummy(-1, cargoSpawn);
   else if (spawn >= 0) placeDummy(spawn);
+  if (swordTutorialActive()) {
+    const at = swordTutorialSpawn();
+    en.baseY = at.y;
+    en.root.position.set(at.x, at.y, at.z);
+  }
   if (en.kind !== 'drone') boardLedge(); // リフトのステージでは、上の足場に乗せる
   en.alive = true;
   en.hp = enemyMaxHp(en.kind);
@@ -2421,10 +2431,9 @@ function pickEnemyKind(): EnemyKind {
 // 残りの数より多くは湧かせないので、最後の 1 体を倒すと場に敵はいなくなる。とどめのスローの余韻を見せてから結果を出す
 const STAGE_KILL_QUOTA = { easy: 10, normal: 15, hard: 20 } as const;
 const RESULT_DELAY = 3.2; // 倒しきってから結果を出すまで（実時間）。最後の 1 体の長いスローを見せきってから
+let tutorialFinishPending = false;
 const BOSS_RESULT_DELAY = 6.5; // ボスは止まってから爆発し、残骸が落ちきるまで見せる
 const finaleHud = document.getElementById('finale')!;
-document.fonts.load('800 100px "Barlow Condensed"', 'FINISH'); // 出す瞬間に別の字形で一瞬出ないよう、太字を先に読み込んでおく
-document.fonts.load('600 100px "Oswald"', 'FASTFINISH'); // ステージの始まりのタイトルの字も先に読み込んでおく
 interface StageRun {
   quota: number;
   kills: number;
@@ -2451,6 +2460,8 @@ function awardFeat(id: string) {
 }
 function noteKillFeats(bonuses: KillBonus[], def: HitDef) {
   if (!stageRun?.running || multiplayerRun || pendingStage === 'tutorial') return;
+  recordTotalKill();
+  if (def === RIFLE_HIT && rifleState.shotKills >= 5) awardFeat('rifle-five');
   const has = (label: string) => bonuses.some((b) => b.label === label);
   if (has('HEADSHOT')) awardFeat('bullseye');
   if (has('SLIDE KILL')) awardFeat('slider');
@@ -2565,7 +2576,10 @@ function clearStageRun() {
   if (game.difficulty === 'hard' && stageRun.damage === 0) awardFeat('flawless');
   if (game.difficulty === 'normal' && stageRun.damage === 0) awardFeat('clean');
   // 狙って撃つ武器で、当てた弾と矢がすべて頭（ほかの武器で倒しても数えないよう、武器を絞る）
-  if ((game.shownWeapon === 'handgun' || game.shownWeapon === 'bow' || game.shownWeapon === 'rifle') && stageRun.aimedHits > 0 && stageRun.headshots === stageRun.aimedHits) awardFeat('headhunter');
+  if ((game.shownWeapon === 'handgun' || game.shownWeapon === 'bow' || game.shownWeapon === 'rifle') && stageRun.aimedHits > 0 && stageRun.headshots === stageRun.aimedHits) {
+    awardFeat('headhunter');
+    awardFeat(game.shownWeapon === 'handgun' ? 'revolver-headhunter' : game.shownWeapon === 'bow' ? 'bow-headhunter' : 'rifle-headhunter');
+  }
   if (multiplayerRun && stageRun.boss && !isMultiplayerGuest()) {
     multiplayerResult = { score: totalScore(), time: stageRun.time };
     broadcastBossVictory(multiplayerResult.score, multiplayerResult.time);
@@ -3441,7 +3455,7 @@ function updateDummy(dt: number) {
     clearCargoJump();
     en.deadTime += dt;
     updateDebris(dt);
-    if (en.deadTime >= RESPAWN_TIME && canSpawnEnemy() && spawnReady()) respawnDummy();
+    if (en.deadTime >= RESPAWN_TIME && canSpawnEnemy() && spawnReady() && swordTutorialCanRespawn()) respawnDummy();
   }
   updateScars(en, dt);
 
@@ -3457,7 +3471,7 @@ function updateDummy(dt: number) {
   for (const m of en.mats) m.emissiveIntensity = (1 - fade) * (1 - fade);
 
   if (en.alive && trainExiting.has(en)) return;
-  if (en.kind === 'gunner' && !(pendingStage === 'tutorial' && !game.unarmed)) updateEnemyFire(dt);
+  if (en.kind === 'gunner' && (!(pendingStage === 'tutorial' && !game.unarmed) || swordTutorialCanFire())) updateEnemyFire(dt);
   else if (en.kind === 'sniper') updateSniperFire(dt);
   else if (en.kind === 'dual') updateDualFire(dt);
   else if (en.kind === 'drone') updateDroneFire(dt);
@@ -4610,18 +4624,24 @@ function warmHitFxShaders() {
   to.dispose();
 }
 
-// 初めて選んだときに組むと引っかかるので、タイトルを見ている間の空き時間に 1 つずつ組んでおく
+// 初めて選んだときに組むと引っかかるので、ロード画面の間の空き時間に 1 つずつ組んでおく
 function prebuildStagePreviews() {
   const ids = stageButtons.map((b) => b.dataset.stage).filter((id): id is StageId => !!id && id in STAGE_BUILDERS);
   const idle = (fn: () => void) =>
     'requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 2000 }) : setTimeout(fn, 200);
-  const next = () => {
-    const id = ids.shift();
-    if (!id) return;
-    getStagePreview(id);
+  return new Promise<void>((resolve) => {
+    const next = () => {
+      const id = ids.shift();
+      if (!id) return resolve();
+      try {
+        getStagePreview(id);
+      } catch (e) {
+        console.error(e); // 1 つ組めなくても、ロード画面から抜けられるように先へ進む
+      }
+      idle(next);
+    };
     idle(next);
-  };
-  idle(next);
+  });
 }
 
 // ステージ選択で選んでいるステージを背景に出す（null でタイトルへ戻す）
@@ -4697,11 +4717,15 @@ function clearStagePreview() {
 
 const transitionFx = document.getElementById('transition')!;
 let introSwitched = false;
+let introRevealed = false; // 帯を抜き始めたか
+let introHoldFrames = 0; // 組んだ場面を描き終えるまで、帯で覆ったまま待つフレーム数
 function startStageIntro() {
   introT = 0;
   introSwitched = false;
+  introRevealed = false;
   titleRiserT = -1;
-  transitionFx.classList.add('on');
+  transitionFx.classList.remove('out');
+  restartAnim(transitionFx, 'on'); // やり直しでは直前に外したばかりなので、頭から再生させる
   sfx.playTransition();
 }
 
@@ -4722,16 +4746,35 @@ function switchToStage() {
   camera.quaternion.identity();
   camera.fov = BASE_FOV + INTRO_FOV_BONUS;
   camera.updateProjectionMatrix();
-  riseT = 0;
-  sfx.playStageRise(INTRO_RISE_DELAY);
+  // シェーダーは初めて描くときに作られる。地面の下にあって描かれない箱の分も、覆っている間に作っておく
+  renderer.setRenderTarget(composer.renderTarget1);
+  renderer.compile(scene, camera);
+  renderer.setRenderTarget(null);
+  introHoldFrames = 1; // このフレームと次のフレームを描き終えるまで待つ
+}
+
+// 準備ができたら帯を抜き、同時にステージを伸ばし始める
+function revealStage() {
+  introRevealed = true;
+  transitionFx.classList.add('out');
+  riseT = INTRO_RISE_DELAY;
+  sfx.playStageRise();
 }
 
 function updateStageIntro(dt: number) {
-  introT += dt;
   if (!introSwitched) {
+    introT += dt;
     if (introT >= INTRO_SWITCH_TIME) switchToStage();
     return;
   }
+  // 重い PC では準備に時間がかかるので、帯は時間ではなく準備が終わるのを待って抜く
+  if (!introRevealed) {
+    introT = Math.min(introT + dt, INTRO_REVEAL_TIME);
+    if (introHoldFrames > 0) introHoldFrames--;
+    else if (introT >= INTRO_REVEAL_TIME) revealStage();
+    return;
+  }
+  introT += dt;
   updateBossEntrance(dt);
   setLetterbox(bossEntranceView.bars);
   // 帯が抜けるのに合わせて、少し広げた視野から元へ縮めて像を結ぶ（ボスの登場では、その演出の視野を足す）
@@ -4781,6 +4824,12 @@ function finishTutorialPicker(decided: boolean) {
   game.wantWeapon = game.shownWeapon = selectedLoadout();
   game.holster = 1;
   drawWeapon();
+  if (game.shownWeapon === 'sword' && stageRoot) {
+    const extension = buildSwordTutorialExtension();
+    for (const group of groupStageBoxes(extension)) addBoxes(group, stageMaterial(group[0]), (b) => b.light, stageRoot, true, stageGeo(group[0]));
+    blocks.push(...mergeBoxes(extension));
+    playBounds.minZ = -190 + PLAYER_RADIUS;
+  }
   setEn(createEnemy(false));
   en.baseY = 13.4;
   en.root.position.set(0, 13.4, -138);
@@ -4844,6 +4893,7 @@ const restorePlayerState = snapshotState(player);
 const restoreGameState = snapshotState(game);
 const restoreCameraState = snapshotState(cameraFx);
 function resetRun() {
+  tutorialFinishPending = false;
   stopTutorial(); tutorialPickerWaiting = false; setViewModelsVisible(false);
   sfx.resetMatchAudio(); // 死んだときに絞った世界の音やスローのこもりを、次の試合へ持ち越さない
   resetKunaiCombat(); resetSwordCombat(); resetAxeCombat(); resetBatCombat();
@@ -4877,7 +4927,7 @@ function resetRun() {
   scoreSpeedTime = scoreHighSpeedTime = 0;
   hitCount = 0; lastHitAt = -Infinity; hitsEl.classList.remove('show');
   finale = false; headSlow = false; realShake = false; killSlowTime = Infinity; sharedBossBreakTime = Infinity;
-  introT = riseT = titleT = titleRiserT = -1; transitionFx.classList.remove('on');
+  introT = riseT = titleT = titleRiserT = -1; transitionFx.classList.remove('on', 'out');
   setLetterbox(0); camera.fov = BASE_FOV; camera.updateProjectionMatrix();
   finaleHud.classList.remove('on'); runHud.classList.remove('clear'); remainHud.classList.remove('clear');
   runHud.hidden = remainHud.hidden = missionHud.hidden = true;
@@ -4894,6 +4944,7 @@ const debugSword = SWORD_ATTACKS[debugParams.get('sword') ?? ''];
 const debugAxe = AXE_ATTACKS[debugParams.get('axe') ?? ''];
 const debugBat = BAT_ATTACKS[debugParams.get('bat') ?? ''];
 const debugSpear = SPEAR_ATTACKS[debugParams.get('spear') ?? ''];
+let bootWork = Promise.resolve(); // ロード画面を抜ける前に終わらせておく処理
 if (debugAttack) {
   runAttackDebug(debugAttack, debugParams);
 } else if (debugSword) {
@@ -4946,7 +4997,7 @@ if (debugAttack) {
   }
   setupTitleStage();
   warmHitFxShaders();
-  prebuildStagePreviews();
+  bootWork = prebuildStagePreviews();
   restoreChallengeReturn();
   if (debugParams.has('parkour')) {
     configureMission(PARKOUR_MISSION);
@@ -4998,6 +5049,10 @@ if (debugAttack) {
     updatePlayerDown(realFrame);
     // 倒した直後とパリィの後、倒れた後のスローは、演出も含めて全体にかける
     const killSlow = killSlowFactor(realFrame);
+    if (tutorialFinishPending && killSlowTime >= RESULT_DELAY) {
+      tutorialFinishPending = false;
+      quitToTitle(true);
+    }
     const parrySlow = parrySlowFactor(realFrame);
     const downSlow = downSlowFactor();
     sharedBossBreakTime += realFrame;
@@ -5122,6 +5177,8 @@ window.addEventListener('resize', () => {
   menuRedraw = true; // 大きさを変えるとキャンバスが消えるので、止まっている画面でも描き直す
 });
 
-// ここまで来れば準備ができている。読み込み中の見た目を外して、ボタンを押せるようにする（index.html の .booting）
-overlay.classList.remove('booting');
-if (overlayPrompt.textContent === 'LOADING') overlayPrompt.textContent = 'SELECT MODE';
+// 景色まで組み終えて最初の画面を描いたら、ロード画面を抜けてボタンを押せるようにする（index.html の .booting）
+void finishLoading(bootWork, () => {
+  overlay.classList.remove('booting');
+  if (overlayPrompt.textContent === 'LOADING') overlayPrompt.textContent = 'SELECT MODE';
+});
