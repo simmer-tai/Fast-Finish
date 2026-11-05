@@ -165,7 +165,7 @@ function renderOverview(id: string) {
     slot.classList.toggle('got', got);
     slot.querySelector('.ch-frame')!.innerHTML = partSwatch('plain', b.frame);
     slot.querySelector('.nm')!.textContent = b.name;
-    slot.querySelector('.ja')!.textContent = b.perfect ? `命中率 100% で ${b.need} つすべて倒しきると、カードの${b.ja}` : `${first.reward?.name ?? ""} スキンをどれか ${b.need} つで、カードの${b.ja}`;
+    slot.querySelector('.ja')!.textContent = b.perfect ? `ヘッド率 100% で ${b.need} つすべて倒しきると、カードの${b.ja}` : `${first.reward?.name ?? ""} スキンをどれか ${b.need} つで、カードの${b.ja}`;
     slot.querySelector('.ch-bonus-n')!.textContent = `${Math.min(count, b.need)} / ${b.need}`;
     slot.querySelector('.go .ic')!.innerHTML = got ? CHECK : LOCK;
     slot.querySelector('.go em')!.textContent = got ? 'UNLOCKED' : 'LOCKED';
@@ -306,7 +306,7 @@ function showBonusTip(anchor: HTMLElement) {
   tip.innerHTML =
     `<header><b>${b.name}</b><span>${b.ja}</span><em>${got ? 'UNLOCKED' : 'LOCKED'}</em></header>` +
     `<figure class="lv-tip-card">${cardPreview({ frame: b.frame })}</figure>` +
-    `<p class="lv-tip-req">${g.name} のミッションを${b.perfect ? ' 命中率 100% で' : ''} ${b.need} つ達成するとアンロック</p>`;
+    `<p class="lv-tip-req">${g.name} のミッションを${b.perfect ? ' ヘッド率 100% で' : ''} ${b.need} つ達成するとアンロック</p>`;
   placeRewardTip(anchor);
 }
 function hideRewardTip() {

@@ -142,7 +142,7 @@ const FALCON = {
   name: 'FALCON',
   ja: '隼',
   swatch: ['#111214', '#c9a25a', '#e6e8ea'],
-  unlock: 'チャレンジ「FALCON TRIAL」: STATION（HARD）を命中率 85% 以上・ランク S 以上で倒しきる',
+  unlock: 'チャレンジ「FALCON TRIAL」: STATION（HARD）をヘッド率 85% 以上・ランク S 以上で倒しきる',
   trail: { body: 0xe0a83a, edge: 0x6a4a14, core: 0xfff4d8, glow: true },
   spark: 0xf2d79a,
   hitSparks: { count: 1.4, life: 1.2, size: 1, embers: 0.6, tint: 0xffc860 },

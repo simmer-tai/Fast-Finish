@@ -4001,7 +4001,7 @@
       if (new URLSearchParams(location.search).has('new') && !window.__freshStorageReady) {
         throw new Error('Could not isolate storage for ?new');
       }
-      import('./dist/main.js?v=762889d8').catch((e) => {
+      import('./dist/main.js?v=3ab2ce06').catch((e) => {
         console.error(e);
         const loader = document.getElementById('loader');
         loader.classList.add('failed');

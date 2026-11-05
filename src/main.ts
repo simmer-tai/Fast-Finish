@@ -5,7 +5,7 @@ import { resetAxeCombat } from './weapons/axeCombat.js';
 import { resetBatCombat } from './weapons/batCombat.js';
 import { resetSpearCombat } from './weapons/spearCombat.js';
 import { resetBowCombat } from './weapons/bowCombat.js';
-import { accuracyTracker, resetHandgunCombat } from './weapons/handgunCombat.js';
+import { resetHandgunCombat } from './weapons/handgunCombat.js';
 import { resetSickleCombat } from './weapons/sickleCombat.js';
 import { resetRifleCombat } from './weapons/rifleCombat.js';
 import { resetViewModelMotion } from './weapons/viewModelMotion.js';
@@ -1650,8 +1650,8 @@ function applyDummyHit(def: HitDef, at: THREE.Vector3, kind: HitKind, swing?: TH
   spawnHitFx(at, hitDir, def, swing);
   if (!remote && scar && (kind === 'kunai' || kind === 'sword' || kind === 'axe')) perfSpan('scar', () => addSlashScar(en, camera, at, hitDir, def, kind, swing));
 
-  // 結果に出すヘッドショット率は、自分で狙って当てた弾と矢だけで数える（デッドアイと跳ね返した弾は除く）
-  if (!remote && stageRun?.running && (def === BULLET_HIT || def === ARROW_HIT || def === RIFLE_HIT)) {
+  // 結果に出すヘッドショット率は、自分で狙って当てた弾と矢と投げたクナイだけで数える（デッドアイと跳ね返した弾は除く）
+  if (!remote && stageRun?.running && (def === BULLET_HIT || def === ARROW_HIT || def === RIFLE_HIT || def === THROW_HIT)) {
     stageRun.aimedHits++;
     if (headshot) stageRun.headshots++;
   }
@@ -2457,8 +2457,6 @@ interface StageRun {
   leads: number; // 出した主役の敵の数
   guests: number; // 出した脇役の敵の数
   spawned: Record<EnemyKind, number>; // 出した敵の、種類ごとの数
-  shots: number;
-  shotHits: number;
   aimedHits: number; // ハンドガンの弾と弓の矢が当たった数
   headshots: number; // そのうち頭に当たった数
   running: boolean; // 時間を測っている間
@@ -2471,15 +2469,6 @@ interface StageRun {
   feats: string[]; // このプレイで条件を満たした実績。倒しきったときに記録して、結果の画面に出す（途中で倒れたら数えない）
 }
 let stageRun: StageRun | null = null; // 訓練場では null
-accuracyTracker.shot = () => {
-  const run = stageRun;
-  if (!run?.running || multiplayerRun) return undefined;
-  run.shots++;
-  let hit = false;
-  return () => {
-    if (!hit && stageRun === run && run.running) { hit = true; run.shotHits++; }
-  };
-};
 function awardFeat(id: string) {
   if (!stageRun?.running || multiplayerRun || pendingStage === 'tutorial') return;
   if (!stageRun.feats.includes(id)) stageRun.feats.push(id);
@@ -2521,7 +2510,7 @@ function beginStageRun(bossStage = false) {
   resetReplay();
   stageRun = {
     quota: bossStage ? 1 : STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]],
-    kills: 0, time: 0, damage: 0, leads: 0, guests: 0, spawned: { gunner: 0, striker: 0, sniper: 0, dual: 0, drone: 0 }, shots: 0, shotHits: 0, aimedHits: 0, headshots: 0, running: false, clearedT: -1,
+    kills: 0, time: 0, damage: 0, leads: 0, guests: 0, spawned: { gunner: 0, striker: 0, sniper: 0, dual: 0, drone: 0 }, aimedHits: 0, headshots: 0, running: false, clearedT: -1,
     resultDelay: bossStage ? BOSS_RESULT_DELAY : RESULT_DELAY,
     boss: bossStage,
     adds: 0,
@@ -2754,11 +2743,11 @@ function masteryResult(run: StageRun) {
 }
 // ミッションの結果。倒しきっても、ランクが届かなければ記録しない。初めての達成ならご褒美のスキンの名前を添える
 function missionOutcome(m: Mission, rank: string, time: number, run: StageRun) {
-  const accuracy = run.shots > 0 ? run.shotHits / run.shots : 0;
-  const base = { name: m.name, ja: m.ja, rank, need: m.rank ?? '', accuracy, accuracyNeed: m.rule.kind === 'accuracy' ? m.rule.min : undefined };
-  if (!rankReached(m, rank) || (m.rule.kind === 'accuracy' && accuracy < m.rule.min)) return { ...base, cleared: false, first: false, newTime: false };
+  const accuracy = run.aimedHits > 0 ? run.headshots / run.aimedHits : 0;
+  const base = { name: m.name, ja: m.ja, rank, need: m.rank ?? '', accuracy, accuracyNeed: m.rule.kind === 'headRate' ? m.rule.min : undefined };
+  if (!rankReached(m, rank) || (m.rule.kind === 'headRate' && accuracy < m.rule.min)) return { ...base, cleared: false, first: false, newTime: false };
   const saved = saveMissionClear(m.id, time);
-  const perfectFirst = m.rule.kind === 'accuracy' && run.shots > 0 && run.shotHits === run.shots && savePerfect(m.id);
+  const perfectFirst = m.rule.kind === 'headRate' && run.aimedHits > 0 && run.headshots === run.aimedHits && savePerfect(m.id);
   // 追加のご褒美: この達成で見出しの達成数がちょうど届いたら、フレームの解放も出す
   const group = MISSION_GROUPS.find((g) => g.id === m.group);
   const bonus = group?.bonus;

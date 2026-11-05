@@ -320,12 +320,11 @@ export function buildStation(): StageLayout {
     ],
     trainOnly: true, // 始めの敵のあとは、駅に着いた電車から降りてくる
     // 主役は狙撃手。長いホームの奥や電車の屋根から、見通しを通して撃ってくる。
-    // 最初のステージなので easy は銃撃役と狙撃手だけ。normal から、電車を降りるなり連射してくる二丁拳銃と、
-    // 電車の着くのに合わせてホームの上を飛んで来るドローンを混ぜる
+    // 最初のステージなので easy は銃撃役と狙撃手だけ。normal から、電車を降りるなり連射してくる二丁拳銃を混ぜる
     mix: {
       easy: { gunner: 0.8, sniper: 0.2 },
-      normal: { gunner: 0.47, sniper: 0.27, dual: 0.13, drone: 0.13 },
-      hard: { gunner: 0.3, sniper: 0.3, dual: 0.2, drone: 0.2 },
+      normal: { gunner: 0.54, sniper: 0.31, dual: 0.15 },
+      hard: { gunner: 0.375, sniper: 0.375, dual: 0.25 },
     },
     // ホームの手前の先、左の線路の上から、屋根の下に柱が並んで奥へ続き、右に電車が止まっているのを見る
     view: { eye: { x: -14, y: 8, z: 12 }, target: { x: 6, y: 2.5, z: -40 } },

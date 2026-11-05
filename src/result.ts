@@ -377,7 +377,7 @@ export function showResult(d: ResultData, done?: () => void) {
       // 熟練度と同じ置き方で、ミッションの名前と、初めての達成か最短を縮めたかの札。
       // ランクが足りなければ失敗にして、取ったランクと求めたランクを出す。初めての達成ならご褒美の札も足す
       const head = `<div class="rv-ms-head"><span class="rv-ms-name">${m.name}</span><span class="rv-ms-ja">${m.ja}</span></div>`;
-      if (!m.cleared) mastery.innerHTML = `<small>MISSION FAILED</small>${head}<em class="rv-mi-tag">RANK ${m.rank} — NEED ${m.need}</em>${m.accuracyNeed === undefined ? '' : `<em class="rv-mi-tag">命中率 ${Math.floor(m.accuracy * 100)}%（必要 ${Math.round(m.accuracyNeed * 100)}%）</em>`}`;
+      if (!m.cleared) mastery.innerHTML = `<small>MISSION FAILED</small>${head}<em class="rv-mi-tag">RANK ${m.rank} — NEED ${m.need}</em>${m.accuracyNeed === undefined ? '' : `<em class="rv-mi-tag">ヘッド率 ${Math.floor(m.accuracy * 100)}%（必要 ${Math.round(m.accuracyNeed * 100)}%）</em>`}`;
       else {
         const tag = m.first ? 'FIRST CLEAR' : m.newTime ? 'NEW BEST TIME' : 'CLEARED';
         const reward = (m.reward ? ` <em class="rv-mi-tag new">${m.reward} UNLOCKED</em>` : '') + (m.bonus ? ` <em class="rv-mi-tag new">${m.bonus} UNLOCKED</em>` : '');

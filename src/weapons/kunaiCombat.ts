@@ -18,7 +18,7 @@ import { swordState } from './swordCombat.js';
 import { batState } from './batCombat.js';
 import { spearState } from './spearCombat.js';
 import { rifleState } from './rifleCombat.js';
-import { SLIDE_SPIN_SWISH, TAU, gunState, accuracyTracker } from './handgunCombat.js';
+import { SLIDE_SPIN_SWISH, TAU, gunState } from './handgunCombat.js';
 import { sickleState } from './sickleCombat.js';
 import {
   KUNAI_RIBBON, Ribbon, TRAIL_STEP, flightRibbonMat, makeRibbonMaterial, spinRibbonMat, taperBase, tintRibbon,
@@ -314,7 +314,6 @@ export function endKunaiDrawSpin() {
 // fly: 投げて飛んでいる / stuck: 刺さっている / back: 抜けてプレイヤーの手元へ戻っている
 export type ThrownPhase = 'fly' | 'stuck' | 'back';
 export interface Thrown {
-  accuracyHit?: () => void;
   mesh: THREE.Group;
   vel: THREE.Vector3;
   age: number;
@@ -463,7 +462,7 @@ export function launchKunai() {
   let reach = throwFrom.distanceTo(throwAim);
   if (target) reach = Math.max(reach, throwFrom.distanceTo(enemyChest(target, homingWant)) * 1.2);
   const missAt = Math.min(MISS_RETURN_MAX, reach / THROW_SPEED + MISS_MARGIN);
-  const t: Thrown = { accuracyHit: accuracyTracker.shot(), mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target, stuckEnemy: null, worldAnchor: false, recallHits: new Set(), recallBoss: new Set(), damagingReturn: false };
+  const t: Thrown = { mesh, vel, age: 0, missAt, phase: 'fly', spin: 0, trail, target, stuckEnemy: null, worldAnchor: false, recallHits: new Set(), recallBoss: new Set(), damagingReturn: false };
   orientThrown(t, throwDir);
   sampleFlightTrail(t, throwFrom, throwDir);
   thrown.push(t);
@@ -783,7 +782,6 @@ export function updateThrown(dt: number) {
     // 切っ先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
     throwFrom.copy(t.mesh.position).addScaledVector(throwDir, BLADE_TIP);
     if (castThrow(throwFrom, throwDir, step)) {
-      if (castHit.enemy || castHit.boss) t.accuracyHit?.();
       // ボスの機体には刺さらず、当てて手元へ戻す
       if (castHit.boss) {
         const boss = castHit.boss;
