@@ -31,21 +31,21 @@ export const FRAMES: Frame[] = [
   { id: 'rededge', name: 'RED EDGE', pending: true },
   { id: 'hazard', name: 'HAZARD', pending: true },
   { id: 'talon', name: 'TALON' },
-  { id: 'falcon', name: 'FALCON', pending: true },
+  { id: 'falcon', name: 'FALCON' },
   { id: 'eclipse', name: 'ECLIPSE', pending: true },
   { id: 'violet', name: 'VIOLET', pending: true },
   { id: 'glitch', name: 'GLITCH', pending: true },
 ];
 // 名前の色。見た目は index.html の .nc-<id> に書く。白と黒はいつでも選べる。
-// frame / bg のあるものは、そのフレームか背景を解放すると選べる（付けていなくてもよい。解放していなければ一覧にも出さない）
-export interface NameColor { id: string; name: string; frame?: string; bg?: string }
+// 特別な色は対応するフレームで解放。pending の色は入手方法が決まるまで選べない。
+export interface NameColor { id: string; name: string; frame?: string; pending?: true }
 export const NAME_COLORS: NameColor[] = [
   { id: 'black', name: 'BLACK' },
   { id: 'white', name: 'WHITE' },
-  { id: 'rededge', name: 'RED EDGE', frame: 'rededge' },
+  { id: 'rededge', name: 'RED EDGE', pending: true },
   { id: 'talon', name: 'TALON', frame: 'talon' },
   { id: 'falcon', name: 'FALCON', frame: 'falcon' },
-  { id: 'scan', name: 'SCAN', bg: 'scan' },
+  { id: 'scan', name: 'SCAN', pending: true },
 ];
 // カードの土台（背景とフレーム）の class。ロッカーの見本でも使う
 export const baseClass = (bgId: string, frame: string) => `pcard bg-${bgId}${BACKGROUNDS.find((b) => b.id === bgId)!.dark ? ' dark' : ''} fr-${frame}`;

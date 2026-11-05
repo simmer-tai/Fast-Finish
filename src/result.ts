@@ -25,7 +25,7 @@ export interface ResultData {
   mastery?: { name: string; ja: string; before: number; gained: number }; // 持ち込んだ武器の XP（このステージの前と、稼いだ分）
   // cleared: ランクまで届いて達成したか（届かなければ need に求めたランクを入れる）。reward: 初めての達成で解放したスキンの名前
   // bonus: この達成で解放した見出しの追加のご褒美（フレーム）の名前
-  mission?: { name: string; ja: string; cleared: boolean; rank: string; need: string; first: boolean; newTime: boolean; reward?: string; bonus?: string };
+  mission?: { name: string; ja: string; cleared: boolean; rank: string; need: string; first: boolean; newTime: boolean; accuracy: number; accuracyNeed?: number; reward?: string; bonus?: string };
   feats: Feat[]; // このプレイで初めて達成した実績。札を押した後に、もらえるバッジを 1 つずつ出す
   clip?: { aspect: number; play: (canvas: HTMLCanvasElement) => void }; // 録れたハイライト（fx/replayClip.ts）。熟練度に入れ替えるとき、ランクの枠を映像に入れ替える
 }
@@ -377,7 +377,7 @@ export function showResult(d: ResultData, done?: () => void) {
       // 熟練度と同じ置き方で、ミッションの名前と、初めての達成か最短を縮めたかの札。
       // ランクが足りなければ失敗にして、取ったランクと求めたランクを出す。初めての達成ならご褒美の札も足す
       const head = `<div class="rv-ms-head"><span class="rv-ms-name">${m.name}</span><span class="rv-ms-ja">${m.ja}</span></div>`;
-      if (!m.cleared) mastery.innerHTML = `<small>MISSION FAILED</small>${head}<em class="rv-mi-tag">RANK ${m.rank} — NEED ${m.need}</em>`;
+      if (!m.cleared) mastery.innerHTML = `<small>MISSION FAILED</small>${head}<em class="rv-mi-tag">RANK ${m.rank} — NEED ${m.need}</em>${m.accuracyNeed === undefined ? '' : `<em class="rv-mi-tag">命中率 ${Math.floor(m.accuracy * 100)}%（必要 ${Math.round(m.accuracyNeed * 100)}%）</em>`}`;
       else {
         const tag = m.first ? 'FIRST CLEAR' : m.newTime ? 'NEW BEST TIME' : 'CLEARED';
         const reward = (m.reward ? ` <em class="rv-mi-tag new">${m.reward} UNLOCKED</em>` : '') + (m.bonus ? ` <em class="rv-mi-tag new">${m.bonus} UNLOCKED</em>` : '');

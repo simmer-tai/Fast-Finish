@@ -115,7 +115,11 @@ const tintFlash = () => {
 tintFlash();
 onSkinChange((id) => id === 'handgun' && tintFlash());
 
+// The game supplies a callback for each counted shot.
+export const accuracyTracker: { shot: () => (() => void) | undefined } = { shot: () => undefined };
+
 export interface Bullet {
+  accuracyHit?: () => void;
   pos: THREE.Vector3;
   dir: THREE.Vector3;
   traveled: number;
@@ -223,6 +227,7 @@ export function fireGun(at?: THREE.Vector3, target?: Enemy) {
   if (arc) spawnMuzzleArcs(gunMuzzle, arc);
   bullets.push({
     pos: bulletFrom.clone(), dir, traveled: 0, tail: 0, hit: false, mesh, deadEye: !!at,
+    accuracyHit: at ? undefined : accuracyTracker.shot(),
     aimEnemy: aimEnemy ?? undefined, aimDist,
   });
 
@@ -803,6 +808,7 @@ export function updateBullets(dt: number) {
       const moved = b.pos.distanceTo(castHit.point);
       b.tail = Math.min(maxTail, b.tail + moved);
       b.pos.copy(castHit.point);
+      if ((castHit.enemy || castHit.boss) && !b.parried && !b.batted && !b.remoteVisual) b.accuracyHit?.();
       onBulletHit(castHit.point, b.dir, castHit.enemy, b.parried, b.deadEye, b.batted, castHit.boss);
     } else if (b.aimEnemy?.alive && b.traveled + step >= b.aimDist!) {
       // 狙った所まで来た: クロスヘアが捉えていた敵に当てる
@@ -810,6 +816,7 @@ export function updateBullets(dt: number) {
       const moved = b.aimDist! - b.traveled;
       b.tail = Math.min(maxTail, b.tail + moved);
       b.pos.addScaledVector(b.dir, moved);
+      if (!b.parried && !b.batted && !b.remoteVisual) b.accuracyHit?.();
       onBulletHit(b.pos.clone(), b.dir, b.aimEnemy, b.parried, b.deadEye, b.batted);
     } else {
       b.pos.addScaledVector(b.dir, step);

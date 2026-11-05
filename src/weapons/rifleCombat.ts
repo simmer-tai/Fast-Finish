@@ -13,7 +13,7 @@ import { castForgiving, castHit } from '../world/raycast.js';
 import { en, hitDir, setEn, type Enemy } from '../enemy/state.js';
 import type { BossPart } from '../enemy/boss.js';
 import type { HitDef } from './kunaiAttacks.js';
-import { makeFlashTexture } from './handgunCombat.js';
+import { accuracyTracker, makeFlashTexture } from './handgunCombat.js';
 import { createRound } from './revolver.js';
 import { onSkinChange, skinFx, skinOf, type SkinTrail } from './skins.js';
 import { rifleModel, weaponMats } from './viewModels.js';
@@ -267,6 +267,7 @@ function updateReload(dt: number) {
 
 // spun: スピンコック乱射の 1 発（狙いをばらし、レバーの動きは回転のほうで見せる）
 function fireRifle(spun = false) {
+  const accuracyHit = accuracyTracker.shot();
   if (rifleState.reload !== 'none') endReload(); // 込めている途中でも、入れた分で撃つ
   rifleState.ammo--;
   rifleState.scopedShot = rifleState.scope >= SCOPE_VIEW_ON;
@@ -325,6 +326,7 @@ function fireRifle(spun = false) {
   const arc = skinOf('rifle').arc;
   if (arc && rifleState.scope < SCOPE_VIEW_ON) spawnMuzzleArcs(rifleMuzzle, arc);
 
+  if (hits.some((hit) => hit.enemy || hit.boss)) accuracyHit?.();
   rifleState.shotKills = 0;
   for (const hit of hits) onRifleHit(hit.at, aimDir.clone(), hit.enemy, hit.part, hit.boss);
 

@@ -10,7 +10,7 @@ import type { Difficulty } from './game/state.js';
 import { localDev } from './localDev.js';
 
 // ミッションのルール
-export type MissionRule = { kind: 'noHeal' } | { kind: 'parkour'; gold: number; silver: number; bronze: number };
+export type MissionRule = { kind: 'noHeal' } | { kind: 'accuracy'; min: number } | { kind: 'parkour'; gold: number; silver: number; bronze: number };
 
 // 結果のランク（result.ts の RANKS と同じ文字）。付けたミッションは、倒しきったときにこれ以上でないと達成にしない
 export type MissionRank = 'S' | 'SS' | 'SSS';
@@ -25,6 +25,7 @@ export interface Mission {
   weapon: WeaponId;
   rule: MissionRule;
   rank?: MissionRank; // 無ければランクは問わない
+  // rule が accuracy のとき、結果の命中率（狙って撃った・投げた数のうち当たった割合）が min 以上でないと達成にしない。命中率 100% で達成した記録（loadPerfect）は別に残す
   reward?: { skin: string; name: string; ja: string }; // 達成すると、weapon のこのスキン（weapons/skins.ts の id）を解放する
 }
 
@@ -34,7 +35,8 @@ export interface MissionGroup {
   name: string;
   ja: string;
   desc: string; // 見出しを選んだときの詳細に出す概要
-  bonus?: { need: number; frame: string; name: string; ja: string }; // 中のミッションをどれか need 個達成すると、プレイヤーカードのこのフレーム（ui/cardParts.ts の id）を解放する
+  bonus?: { need: number; frame: string; name: string; ja: string; perfect?: true }; // perfect: 達成の数でなく、命中率 100% で達成した記録の数で数える
+  //  // 中のミッションをどれか need 個達成すると、プレイヤーカードのこのフレーム（ui/cardParts.ts の id）を解放する
 }
 // パルクールはまだ公開しない。見出しとミッションを出すのはローカル開発時だけ（localDev.ts）
 export const MISSION_GROUPS: MissionGroup[] = [
@@ -44,11 +46,20 @@ export const MISSION_GROUPS: MissionGroup[] = [
     name: 'TALON TRIAL',
     ja: '爪の試練',
     desc: '爪のスキンがある武器を持って LIFT（HARD）に挑む。回復なしで、ランク SS 以上で倒しきると、挑んだ武器の TALON スキンがもらえる。武器ごとに 1 つずつ。',
-    bonus: { need: 3, frame: 'talon', name: 'TALON FRAME', ja: '爪のフレーム' },
+    bonus: { need: 6, frame: 'talon', name: 'TALON FRAME', ja: '爪のフレーム' },
+  },
+  {
+    id: 'falcon',
+    name: 'FALCON TRIAL',
+    ja: '隼の試練',
+    desc: '隼のスキンがある武器を持って STATION（HARD）に挑む。狙った弾・矢・クナイの命中率 85% 以上で、ランク S 以上で倒しきると、挑んだ武器の FALCON スキンがもらえる。4 つすべてを命中率 100% で倒しきると、カードの FALCON フレームが開く。',
+    bonus: { need: 4, frame: 'falcon', name: 'FALCON FRAME', ja: '隼のフレーム', perfect: true },
   },
 ];
 // 見出しの中で達成したミッションの数
 export const groupDone = (id: string) => MISSIONS.filter((m) => m.group === id && loadMission(m.id)).length;
+// 追加のご褒美に数える進み具合（perfect の見出しは、命中率 100% で達成した数）
+export const bonusCount = (g: MissionGroup) => g.bonus?.perfect ? MISSIONS.filter((m) => m.group === g.id && loadPerfect(m.id)).length : groupDone(g.id);
 // そのフレームを追加のご褒美にしている見出し（無ければ、フレームはプレイヤーのレベルで解放する）
 export const bonusGroupOf = (frame: string) => MISSION_GROUPS.find((g) => g.bonus?.frame === frame);
 
@@ -63,6 +74,13 @@ const TALON_WEAPONS: [WeaponId, string][] = [
   ['spear', '槍'],
   ['rifle', 'スナイパーライフル'],
 ];
+// 隼（FALCON）の試練: STATION（HARD）を、命中率 85% 以上・ランク S 以上で倒しきると、その武器の隼がもらえる
+const FALCON_WEAPONS: [WeaponId, string][] = [
+  ['rifle', 'スナイパーライフル'],
+  ['handgun', 'リボルバー'],
+  ['bow', '弓'],
+  ['kunai', 'クナイ'],
+];
 // ?parkour（動きを確かめる URL）は公開版でもこれを使う
 export const PARKOUR_MISSION: Mission = { id: 'parkour-01', group: 'parkour', name: 'PARKOUR 01', ja: 'パルクール 01', stage: 'parkour', difficulty: 'normal', weapon: 'kunai', rule: { kind: 'parkour', gold: 75, silver: 100, bronze: 150 } };
 export const MISSIONS: Mission[] = [...TALON_WEAPONS.map(([weapon, ja]): Mission => ({
@@ -76,17 +94,31 @@ export const MISSIONS: Mission[] = [...TALON_WEAPONS.map(([weapon, ja]): Mission
   rule: { kind: 'noHeal' },
   rank: 'SS',
   reward: { skin: 'talon', name: 'TALON', ja: '爪' },
+})), ...FALCON_WEAPONS.map(([weapon, ja]): Mission => ({
+  id: `falcon-${weapon}`,
+  group: 'falcon',
+  name: 'FALCON TRIAL',
+  ja: `隼の試練 — ${ja}`,
+  stage: 'station',
+  difficulty: 'hard',
+  weapon,
+  rule: { kind: 'accuracy', min: 0.85 },
+  rank: 'S',
+  reward: { skin: 'falcon', name: 'FALCON', ja: '隼' },
 })), ...(localDev ? [PARKOUR_MISSION] : [])];
 
 // ルールの説明（チャレンジの画面と、ミッションの始まり・失敗の画面に出す）
 export const parkourTargets = (m: Mission) => m.rule.kind === 'parkour' ? `GOLD ${m.rule.gold}s / SILVER ${m.rule.silver}s / BRONZE ${m.rule.bronze}s` : '';
-export const ruleText = (m: Mission) => m.rule.kind === 'parkour' ? `ゴールを目指す。${parkourTargets(m)}` : (m.rank ? `回復なしで、ランク ${m.rank} 以上で倒しきる` : '回復なしで倒しきる');
+export const accuracyPct = (m: Mission) => m.rule.kind === 'accuracy' ? Math.round(m.rule.min * 100) : 0;
+export const ruleText = (m: Mission) => m.rule.kind === 'accuracy' ? `命中率 ${accuracyPct(m)}% 以上で、ランク ${m.rank} 以上で倒しきる` : m.rule.kind === 'parkour' ? `ゴールを目指す。${parkourTargets(m)}` : (m.rank ? `回復なしで、ランク ${m.rank} 以上で倒しきる` : '回復なしで倒しきる');
 // クリア条件を 1 つずつに分けたもの（チャレンジの詳細で、目立つ帯に並べる）
-export const ruleParts = (m: Mission): string[] => m.rule.kind === 'parkour'
+export const ruleParts = (m: Mission): string[] => m.rule.kind === 'accuracy'
+  ? [`命中率 ${accuracyPct(m)}% 以上`, `ランク ${m.rank} 以上`, '敵を倒しきる']
+  : m.rule.kind === 'parkour'
   ? ['ゴールまで走る', parkourTargets(m)]
   : ['回復なし', ...(m.rank ? [`ランク ${m.rank} 以上`] : []), '敵を倒しきる'];
 // 短い札（HUD とリストに出す）
-export const ruleTag = (m: Mission) => m.rule.kind === 'parkour' ? 'TIME TRIAL' : (m.rank ? `NO HEAL / RANK ${m.rank}` : 'NO HEAL');
+export const ruleTag = (m: Mission) => m.rule.kind === 'accuracy' ? `ACC ${accuracyPct(m)}% / RANK ${m.rank}` : m.rule.kind === 'parkour' ? 'TIME TRIAL' : (m.rank ? `NO HEAL / RANK ${m.rank}` : 'NO HEAL');
 // ランクの文字が、ミッションの求める段に届いているか
 const RANK_ORDER = ['C', 'B', 'A', 'S', 'SS', 'SSS'];
 export const rankReached = (m: Mission, rank: string) => !m.rank || RANK_ORDER.indexOf(rank) >= RANK_ORDER.indexOf(m.rank);
@@ -114,6 +146,18 @@ export function saveMissionClear(id: string, time: number) {
     }
   }
   return { first, newTime };
+}
+
+// 命中率 100% で達成した記録（accuracy のミッションだけ。FALCON FRAME の条件）
+const perfectKey = (id: string) => `fast-finish.mission.${id}.perfect`;
+export function loadPerfect(id: string) {
+  try { return localStorage.getItem(perfectKey(id)) === '1'; } catch { return false; }
+}
+// 命中率 100% の達成を記録する。初めてなら true
+export function savePerfect(id: string) {
+  if (loadPerfect(id)) return false;
+  try { localStorage.setItem(perfectKey(id), '1'); } catch { /* 保存できない環境では、その場の結果だけ出す */ }
+  return true;
 }
 
 // 実績。絵は 24 四方で、線で描く（見た目は index.html の .ch-feat）

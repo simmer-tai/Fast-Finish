@@ -5,7 +5,7 @@ import { resetAxeCombat } from './weapons/axeCombat.js';
 import { resetBatCombat } from './weapons/batCombat.js';
 import { resetSpearCombat } from './weapons/spearCombat.js';
 import { resetBowCombat } from './weapons/bowCombat.js';
-import { resetHandgunCombat } from './weapons/handgunCombat.js';
+import { accuracyTracker, resetHandgunCombat } from './weapons/handgunCombat.js';
 import { resetSickleCombat } from './weapons/sickleCombat.js';
 import { resetRifleCombat } from './weapons/rifleCombat.js';
 import { resetViewModelMotion } from './weapons/viewModelMotion.js';
@@ -77,10 +77,11 @@ import { finishLoading } from './ui/loadingScreen.js';
 import { closeLocker, onLockerClick, openLocker, showLockerNew } from './ui/playerCard.js';
 import { closeRoadmapTab, onRoadmapClick, onRoadmapKey, openRoadmapTab } from './ui/lvRoadmap.js';
 import { closeFeedbackTab, onFeedbackClick, openFeedbackTab } from './ui/feedbackTab.js';
+import { closeSupplyLineup, onSupplyClick, supplyLineupOpen } from './ui/supplyTab.js';
 import { closeChallengeTab, initChallengeTab, onChallengeClick, onChallengeKey, openChallengeTab } from './ui/challengeTab.js';
 import { buildParkour, parkourCourse, type ParkourZone } from './world/parkour.js';
 import { clearParkourTraps, resetParkourTraps, setParkourTraps, updateParkourTraps } from './world/parkourTraps.js';
-import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, groupDone, rankReached, ruleTag, ruleText, saveMissionClear, unlockFeat, recordTotalKill, type Mission } from './challenges.js';
+import { FEATS, MISSION_GROUPS, PARKOUR_MISSION, loadMission, bonusCount, rankReached, ruleTag, ruleText, saveMissionClear, savePerfect, unlockFeat, recordTotalKill, type Mission } from './challenges.js';
 import { hidePicker, onPickerClick, onPickerKey, openPicker, pickerOpen, selectedLoadout } from './ui/weaponPicker.js';
 import { loadBest, saveBest } from './records.js';
 import { addXp, loadXp } from './mastery.js';
@@ -440,23 +441,25 @@ function setPlaySelect(on: boolean) {
 // PLAY の上のタブ。ステージ選択（SINGLE PLAYER）・チャレンジ・マルチプレイの入口・ロッカー・ロードマップを行き来する。
 // 部屋を作る・参加する流れに入ったあとは、切り替えると抜けてしまうので受け付けない（タブも隠れている）
 const multiplayerFlow = overlay.querySelector<HTMLElement>('.multiplayer [data-flow]')!;
-const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'roadmap', 'feedback'] as const;
+const ALL_PLAY_TABS = ['single', 'challenge', 'multi', 'locker', 'gacha', 'roadmap', 'feedback'] as const;
 type PlayTab = (typeof ALL_PLAY_TABS)[number];
 // マルチプレイはまだ公開しない。タブを出すのはローカル開発時だけ（localDev.ts）
-const PLAY_TABS: readonly PlayTab[] = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi');
+const PLAY_TABS: readonly PlayTab[] = localDev ? ALL_PLAY_TABS : ALL_PLAY_TABS.filter((t) => t !== 'multi' && t !== 'gacha');
 if (!localDev) overlay.querySelector<HTMLElement>('.play-tabs [data-tab="multi"]')!.style.display = 'none';
+if (!localDev) overlay.querySelector<HTMLElement>('.play-tabs [data-tab="gacha"]')!.style.display = 'none';
 function currentPlayTab(): PlayTab | null {
   if (overlay.classList.contains('select-stage')) return 'single';
   if (overlay.classList.contains('select-challenge')) return 'challenge';
   if (overlay.classList.contains('select-multiplayer')) return 'multi';
   if (overlay.classList.contains('select-locker')) return 'locker';
+  if (overlay.classList.contains('select-gacha')) return 'gacha';
   if (overlay.classList.contains('select-roadmap')) return 'roadmap';
   if (overlay.classList.contains('select-feedback')) return 'feedback';
   return null;
 }
 function switchPlayTab(tab: PlayTab) {
   const cur = currentPlayTab();
-  if (tab === cur || (cur === 'multi' && !multiplayerFlow.hidden)) return;
+  if (!PLAY_TABS.includes(tab) || tab === cur || (cur === 'multi' && !multiplayerFlow.hidden)) return;
   padMenuTarget?.classList.remove('pad-focus');
   padMenuTarget = null;
   sfx.playUiOpen();
@@ -466,6 +469,7 @@ function switchPlayTab(tab: PlayTab) {
     leaveMultiplayer();
     overlay.classList.remove('select-multiplayer');
   } else if (cur === 'locker') closeLocker();
+  else if (cur === 'gacha') { closeSupplyLineup(); overlay.classList.remove('select-gacha'); }
   else if (cur === 'roadmap') closeRoadmapTab();
   else if (cur === 'feedback') closeFeedbackTab();
   if (tab === 'single') return setStageSelect(true);
@@ -479,6 +483,9 @@ function switchPlayTab(tab: PlayTab) {
   } else if (tab === 'locker') {
     openLocker();
     overlayPrompt.textContent = 'LOCKER';
+  } else if (tab === 'gacha') {
+    overlay.classList.add('select-gacha');
+    overlayPrompt.textContent = 'SUPPLY';
   } else if (tab === 'roadmap') {
     openRoadmapTab(selectedLoadout());
     overlayPrompt.textContent = 'ROADMAP';
@@ -779,6 +786,16 @@ overlay.addEventListener('click', (e) => {
       overlayPrompt.textContent = 'SELECT MODE';
       return sfx.playUiBack();
     }
+    if (overlay.classList.contains('select-gacha')) {
+      if (onSupplyClick(target)) return;
+      if (target.closest('[data-action="gacha-back"]')) {
+        closeSupplyLineup();
+        overlay.classList.remove('select-gacha');
+        overlayPrompt.textContent = 'SELECT MODE';
+        sfx.playUiBack();
+      }
+      return;
+    }
     if (overlay.classList.contains('select-locker')) {
       if (!target.closest('[data-action="locker-back"]')) return onLockerClick(target);
       closeLocker();
@@ -904,6 +921,10 @@ window.addEventListener('keydown', (e) => {
   if (overlay.classList.contains('select-feedback')) {
     if (e.code === 'Escape') return overlay.querySelector<HTMLElement>('[data-action="feedback-back"]')?.click();
     return onPadMenuKey(e, '.feedback button');
+  }
+  if (overlay.classList.contains('select-gacha')) {
+    if (e.code === 'Escape') return overlay.querySelector<HTMLElement>(supplyLineupOpen() ? '[data-action="supply-lineup-back"]' : '[data-action="gacha-back"]')?.click();
+    return onPadMenuKey(e, '.gacha button');
   }
   if (overlay.classList.contains('select-locker')) {
     if (e.code === 'Escape') return overlay.querySelector<HTMLElement>('[data-action="locker-back"]')?.click();
@@ -2239,10 +2260,9 @@ function scoreSpeed() {
 const killAt = new THREE.Vector3();
 function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   const out: KillBonus[] = [];
-  if (def === RIFLE_HIT) out.push({ label: 'RIFLE', add: 1 });
-  if (headshot) out.push({ label: 'HEADSHOT', add: def === RIFLE_HIT ? 2 : 1 });
+  if (headshot) out.push({ label: 'HEADSHOT', add: 1 });
   if (def === RIFLE_HIT && rifleState.shotKills >= 2) {
-    out.push({ label: 'PENETRATION', detail: `×${rifleState.shotKills}`, add: Math.min(3, (rifleState.shotKills - 1) * 1.5) });
+    out.push({ label: 'PENETRATION', detail: `×${rifleState.shotKills}`, add: Math.min(2, (rifleState.shotKills - 1) * 0.5) });
   }
   if (multiKill > 1) out.push({ label: 'MULTI KILL', detail: `×${multiKill}`, add: Math.min(MULTI_MAX, (multiKill - 1) * MULTI_STEP) });
   if (en.weapons.size >= 2) out.push({ label: 'SWITCH', detail: `${en.weapons.size} WEAPONS`, add: 1 });
@@ -2253,7 +2273,7 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   if (!en.hitPlayer) out.push({ label: 'NO DAMAGE', add: 0.5 });
   moveBonuses(def, out);
   if (headshot && (player.wallRunning || (!player.onGround && player.mantleTime < 0)) && (def === BULLET_HIT || def === DEADEYE_HIT || def === ARROW_HIT || def === RIFLE_HIT)) out.push({ label: 'SKY SHOT', add: 1 });
-  if (def === ARROW_HIT && bowState.bouncedHitting) out.push({ label: 'RICOCHET', add: 1 });
+  if (def === ARROW_HIT && bowState.bouncedHitting) out.push({ label: 'RICOCHET', add: 0.5 });
   if (def === ARROW_HIT && (bowState.volleyKills?.count ?? 0) >= 2) out.push({ label: 'VOLLEY', add: 1 });
   if (spearState.cleaveHitting) out.push({ label: 'CLEAVE', add: 1 });
   if (en.airY > 0.5) out.push({ label: 'JUGGLE', add: 1 });
@@ -2268,12 +2288,7 @@ function killBonuses(def: HitDef, headshot: boolean): KillBonus[] {
   speedBonus(out);
   if (killChain > 1) {
     const add = Math.min(CHAIN_MAX, (killChain - 1) * CHAIN_STEP);
-    out.push({ label: 'CHAIN', detail: `×${killChain}`, add: def === RIFLE_HIT ? add + Math.min(1, (killChain - 1) * 0.25) : add });
-  }
-  if (def === RIFLE_HIT) {
-    for (const bonus of out) {
-      if (bonus.label === 'SLIDE KILL' || bonus.label === 'WALL RUN' || bonus.label === 'AERIAL' || bonus.label === 'SPEED KILL' || bonus.label === 'SKY SHOT') bonus.add *= 1.5;
-    }
+    out.push({ label: 'CHAIN', detail: `×${killChain}`, add });
   }
   return out;
 }
@@ -2442,6 +2457,8 @@ interface StageRun {
   leads: number; // 出した主役の敵の数
   guests: number; // 出した脇役の敵の数
   spawned: Record<EnemyKind, number>; // 出した敵の、種類ごとの数
+  shots: number;
+  shotHits: number;
   aimedHits: number; // ハンドガンの弾と弓の矢が当たった数
   headshots: number; // そのうち頭に当たった数
   running: boolean; // 時間を測っている間
@@ -2454,6 +2471,15 @@ interface StageRun {
   feats: string[]; // このプレイで条件を満たした実績。倒しきったときに記録して、結果の画面に出す（途中で倒れたら数えない）
 }
 let stageRun: StageRun | null = null; // 訓練場では null
+accuracyTracker.shot = () => {
+  const run = stageRun;
+  if (!run?.running || multiplayerRun) return undefined;
+  run.shots++;
+  let hit = false;
+  return () => {
+    if (!hit && stageRun === run && run.running) { hit = true; run.shotHits++; }
+  };
+};
 function awardFeat(id: string) {
   if (!stageRun?.running || multiplayerRun || pendingStage === 'tutorial') return;
   if (!stageRun.feats.includes(id)) stageRun.feats.push(id);
@@ -2495,7 +2521,7 @@ function beginStageRun(bossStage = false) {
   resetReplay();
   stageRun = {
     quota: bossStage ? 1 : STAGE_KILL_QUOTA[DIFFICULTIES[difficultyIndex]],
-    kills: 0, time: 0, damage: 0, leads: 0, guests: 0, spawned: { gunner: 0, striker: 0, sniper: 0, dual: 0, drone: 0 }, aimedHits: 0, headshots: 0, running: false, clearedT: -1,
+    kills: 0, time: 0, damage: 0, leads: 0, guests: 0, spawned: { gunner: 0, striker: 0, sniper: 0, dual: 0, drone: 0 }, shots: 0, shotHits: 0, aimedHits: 0, headshots: 0, running: false, clearedT: -1,
     resultDelay: bossStage ? BOSS_RESULT_DELAY : RESULT_DELAY,
     boss: bossStage,
     adds: 0,
@@ -2727,13 +2753,16 @@ function masteryResult(run: StageRun) {
   return { name: row?.dataset.name ?? id.toUpperCase(), ja: row?.dataset.ja ?? '', before: Math.max(0, loadXp(id) - run.xp), gained: run.xp };
 }
 // ミッションの結果。倒しきっても、ランクが届かなければ記録しない。初めての達成ならご褒美のスキンの名前を添える
-function missionOutcome(m: Mission, rank: string, time: number) {
-  const base = { name: m.name, ja: m.ja, rank, need: m.rank ?? '' };
-  if (!rankReached(m, rank)) return { ...base, cleared: false, first: false, newTime: false };
+function missionOutcome(m: Mission, rank: string, time: number, run: StageRun) {
+  const accuracy = run.shots > 0 ? run.shotHits / run.shots : 0;
+  const base = { name: m.name, ja: m.ja, rank, need: m.rank ?? '', accuracy, accuracyNeed: m.rule.kind === 'accuracy' ? m.rule.min : undefined };
+  if (!rankReached(m, rank) || (m.rule.kind === 'accuracy' && accuracy < m.rule.min)) return { ...base, cleared: false, first: false, newTime: false };
   const saved = saveMissionClear(m.id, time);
+  const perfectFirst = m.rule.kind === 'accuracy' && run.shots > 0 && run.shotHits === run.shots && savePerfect(m.id);
   // 追加のご褒美: この達成で見出しの達成数がちょうど届いたら、フレームの解放も出す
-  const bonus = MISSION_GROUPS.find((g) => g.id === m.group)?.bonus;
-  const bonusNow = saved.first && bonus && groupDone(m.group) === bonus.need ? bonus.name : undefined;
+  const group = MISSION_GROUPS.find((g) => g.id === m.group);
+  const bonus = group?.bonus;
+  const bonusNow = group && bonus && (bonus.perfect ? perfectFirst : saved.first) && bonusCount(group) === bonus.need ? bonus.name : undefined;
   return { ...base, cleared: true, ...saved, reward: saved.first ? m.reward?.name : undefined, bonus: bonusNow };
 }
 // 一時停止の画面を結果の画面に作り替えて止める。ここからはタイトルへ戻ることしかできない。
@@ -2753,7 +2782,7 @@ function showStageResult(run: StageRun) {
   if (!mission && !multiplayerRun) saveBest(stage, difficulty, { time: newTime ? run.time : best!.time, score: newScore ? score : best!.score });
   if (!mission) addXp(game.shownWeapon, run.xp);
   const rankScale = bossStage ? BOSS_RANK_SCALE : run.kills;
-  const missionResult = mission ? missionOutcome(mission, scoreRank(score, rankScale), run.time) : undefined;
+  const missionResult = mission ? missionOutcome(mission, scoreRank(score, rankScale), run.time, run) : undefined;
   // ランクは最終スコアが出てから決まるので、ここで見る（awardFeat は倒しきった後は受け付けない）
   const rank = scoreRank(score, rankScale);
   if (!multiplayerRun && pendingStage !== 'tutorial' && difficulty === 'hard' && run.damage === 0 && (rank === 'SS' || rank === 'SSS') && !run.feats.includes('untouchable')) run.feats.push('untouchable');
@@ -2810,39 +2839,51 @@ const TRAIN_DOOR_STOP = 4;
 const trainExiting = new WeakSet<Enemy>();
 const TRAIN_EXIT_X = 10.4;
 const TRAIN_EXIT_SPEED = 4; // 電車から駆け降りる速さ (m/s)
+// e を、今いる所に近いホームの立てる所へ移す（立てる所が無ければ false）。
+function putOnPlatform(e: Enemy): boolean {
+  const p = e.root.position;
+  const side = Math.sign(p.x) || 1;
+  for (let d = 0; d <= 30; d += 0.5) {
+    for (const dz of d === 0 ? [0] : [d, -d]) {
+      for (const x of [TRAIN_EXIT_X, 9, 7, 5, 3, 1, -1, -3, -5, -7, -9, -TRAIN_EXIT_X]) {
+        if (!enemyCanStandAt(side * x, p.z + dz, 1)) continue;
+        p.set(side * x, 1, p.z + dz);
+        e.baseY = 1; e.airY = 0; e.airVel = 0;
+        e.vel.set(0, 0, 0); e.knockVel.set(0, 0, 0); e.moving = false;
+        trainExiting.delete(e);
+        return true;
+      }
+    }
+  }
+  return false;
+}
 // 戸が閉まる前に車内と屋根の敵をホームへ移す。
 function clearDepartingTrains(dt: number) {
-  const old = en;
   for (const e of enemies) {
     if (!e.alive) continue;
     const p = e.root.position;
-    const side = Math.sign(p.x);
-    if (!trainNeedsClear(side > 0 ? 0 : 1, p.x, p.z, p.y, dt)) continue;
-    setEn(e);
-    let found = false;
-    for (let d = 0; d <= 30 && !found; d += 0.5) {
-      for (const dz of d === 0 ? [0] : [d, -d]) {
-        for (const x of [TRAIN_EXIT_X, 9, 7, 5, 3, 1, -1, -3, -5, -7, -9, -TRAIN_EXIT_X]) {
-          if (!enemyCanStandAt(side * x, p.z + dz, 1)) continue;
-          p.set(side * x, 1, p.z + dz);
-          found = true;
-          break;
-        }
-        if (found) break;
-      }
-    }
-    if (!found) continue;
-    e.baseY = 1; e.airY = 0; e.airVel = 0;
-    e.vel.set(0, 0, 0); e.knockVel.set(0, 0, 0); e.moving = false;
-    trainExiting.delete(e);
+    if (!trainNeedsClear(Math.sign(p.x) > 0 ? 0 : 1, p.x, p.z, p.y, dt)) continue;
+    putOnPlatform(e);
   }
-  setEn(old);
+}
+// 立てない所（電車の抜けた線路の上、降車口の詰まりなど）で動けなくなった敵を、ホームへ移す。
+const TRAIN_STUCK_TIME = 0.6;
+const stuckTime = new WeakMap<Enemy, number>();
+function rescueStuckEnemy(dt: number) {
+  const p = en.root.position;
+  const free = en.kind === 'drone' || en.ride !== 'none' || en.airY > 0 || en.airVel > 0 || env.isHeld()
+    || en.knockVel.lengthSq() > 1 || en.riseTime < RESPAWN_RISE_TIME || enemyCanStandAt(p.x, p.z, en.baseY);
+  if (free) { stuckTime.delete(en); return; }
+  const t = (stuckTime.get(en) ?? 0) + dt;
+  if (t < TRAIN_STUCK_TIME) { stuckTime.set(en, t); return; }
+  stuckTime.delete(en);
+  putOnPlatform(en);
 }
 // 降車中は通常の行動を止め、ホームの内側まで歩く。
 function updateTrainExit(dt: number) {
   const p = en.root.position;
   const target = Math.sign(enemySpawns[en.spawnIndex].x) * TRAIN_EXIT_X;
-  if (Math.abs(p.x) <= TRAIN_EXIT_X) { trainExiting.delete(en); en.moving = false; return; }
+  if (Math.abs(p.x) <= TRAIN_EXIT_X) { trainExiting.delete(en); en.moving = false; en.vel.set(0, 0, 0); return; }
   en.waitT -= dt;
   en.moving = en.waitT <= 0;
   const halted = en.riseTime < RESPAWN_RISE_TIME || en.flashT < ENEMY_HIT_RECOVER || env.isHeld() || en.airY > 0 || en.knockVel.lengthSq() > 1;
@@ -2850,7 +2891,15 @@ function updateTrainExit(dt: number) {
   en.vel.x += (speed - en.vel.x) * Math.min(1, dt * 8);
   en.vel.z = 0;
   const nx = speed ? (speed < 0 ? Math.max(target, p.x + en.vel.x * dt) : Math.min(target, p.x + en.vel.x * dt)) : p.x;
-  if (enemyCanStand(nx, p.z)) p.x = nx; else en.vel.x = 0;
+  if (enemyCanStand(nx, p.z)) { p.x = nx; stuckTime.delete(en); } else {
+    en.vel.x = 0;
+    // 降りる先がふさがれて進めないまま居続けたら、ホームへ移す
+    if (speed) {
+      const t = (stuckTime.get(en) ?? 0) + dt;
+      if (t >= TRAIN_STUCK_TIME) { stuckTime.delete(en); putOnPlatform(en); return; }
+      stuckTime.set(en, t);
+    }
+  }
   en.yaw = target < p.x ? -Math.PI / 2 : Math.PI / 2;
   en.root.quaternion.setFromAxisAngle(UP, en.yaw);
 }
@@ -3442,6 +3491,7 @@ function updateDummy(dt: number) {
       else if (en.kind === 'striker') updateStrikerMove(dt);
       else if (en.kind === 'gunner' || en.kind === 'dual') updateEnemyMove(dt); // 狙撃手は出た所から動かない
     }
+    if (trainOnly && !boarding) rescueStuckEnemy(dt);
     if (en.kind !== 'drone') updateEnemyGait(dt);
     if (trainExiting.has(en)) { /* 降車方向を向く */ }
     else if (en.kind === 'striker') updateStrikerFace(dt);

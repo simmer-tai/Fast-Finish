@@ -4,7 +4,7 @@ import { EMBLEM_LEVEL, cardPartLevel, loadXp, masteryOf, playerMastery } from '.
 import { LOCK, PLAYER_MARK, initCardPreview } from './lvRoadmap.js';
 import { OWNER, SKINS, skinUnlocked } from '../weapons/skins.js';
 import { BACKGROUNDS, FRAMES, FRAME_PARTS, NAME_COLORS, baseClass, type NameColor } from './cardParts.js';
-import { TIER_NAMES, bonusGroupOf, groupDone } from '../challenges.js';
+import { TIER_NAMES, bonusCount, bonusGroupOf } from '../challenges.js';
 import { BADGES, BADGE_SLOTS, TITLES, WEAPON_NAMES, badgePlate, unlockHint, unlocked, type Badge, type Honor } from './cardHonors.js';
 import { allBests } from '../records.js';
 import { NEW_TAG, isNew, markSeen, seedSeen } from './newMarks.js';
@@ -43,10 +43,10 @@ function partOpen(kind: Part, id: string) {
   if (OWNER) return true;
   if (partPending(kind, id)) return false;
   const g = kind === 'frame' ? bonusGroupOf(id) : undefined;
-  return g ? groupDone(g.id) >= g.bonus!.need : playerMastery().level >= cardPartLevel(kind, id);
+  return g ? bonusCount(g) >= g.bonus!.need : playerMastery().level >= cardPartLevel(kind, id);
 }
-// 名前の色は、対応するフレームか背景を解放すると選べる
-const nameColorOpen = (n: NameColor) => (n.frame ? partOpen('frame', n.frame) : !n.bg || partOpen('background', n.bg));
+// 特別な色はフレームで解放し、通常の未定の色は独立して管理する。
+const nameColorOpen = (n: NameColor) => OWNER || (n.frame ? partOpen('frame', n.frame) : !n.pending);
 const honorOpen = (h: Honor) => OWNER || unlocked(h.unlock);
 const titleOf = (id: string) => TITLES.find((t) => t.id === id);
 const badgeOf = (id: string) => BADGES.find((b) => b.id === id);

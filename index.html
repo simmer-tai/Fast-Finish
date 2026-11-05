@@ -149,6 +149,7 @@
         background: linear-gradient(90deg, rgba(51, 51, 51, .55), rgba(51, 51, 51, 0));
       }
       #overlay.title:is(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback) .play-tabs { display: flex; }
+      #overlay.title.select-gacha .play-tabs { display: flex; }
       #overlay.select-multiplayer:has(.multiplayer [data-flow]:not([hidden])) .play-tabs, #overlay.pick-weapon .play-tabs { display: none; }
       #overlay .play-tabs button {
         position: relative; isolation: isolate; display: flex; align-items: center; border: 0; background: none; cursor: pointer;
@@ -184,6 +185,11 @@
       #overlay.select-locker .play-tabs :is([data-tab="locker"], [data-tab="locker"] + button)::after,
       #overlay.select-roadmap .play-tabs :is([data-tab="roadmap"], [data-tab="roadmap"] + button)::after,
       #overlay.select-feedback .play-tabs :is([data-tab="feedback"], [data-tab="feedback"] + button)::after { display: none; }
+      #overlay.select-gacha .play-tabs [data-tab="gacha"] span { max-width: 18em; margin-left: calc(12 * var(--u)); opacity: 1; transition: max-width .3s cubic-bezier(.2, .8, .2, 1), margin-left .3s cubic-bezier(.2, .8, .2, 1), opacity .2s .08s; }
+      #overlay.select-gacha .play-tabs [data-tab="gacha"] svg { animation: tab-icon-in .34s cubic-bezier(.3, 1.6, .5, 1) both; }
+      #overlay.select-gacha .play-tabs [data-tab="gacha"] { color: #fff; cursor: default; }
+      #overlay.select-gacha .play-tabs [data-tab="gacha"]::before { background: var(--ink); transform-origin: 0 50%; animation: tab-band-in .26s cubic-bezier(.2, .8, .2, 1) both; }
+      #overlay.select-gacha .play-tabs :is([data-tab="gacha"], [data-tab="gacha"] + button)::after { display: none; }
       /* マルチプレイ: 見出しはステージ選択と同じ位置と大きさに置き、状態と BACK / START は下端にそろえる */
       #overlay.select-multiplayer .frame { visibility: hidden; }
       #overlay .multiplayer {
@@ -361,6 +367,7 @@
          .foot のタブ名は上のタブと見出しで分かるので出さない。その分、中身を下まで使う */
       #overlay :is(.multiplayer, .challenge, .locker, .roadmap, .feedback) .mp-bottom .mp-footer { margin-top: 0; }
       #overlay.title:is(.select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback) .foot { display: none; }
+      #overlay.title.select-gacha .foot { display: none; }
       #overlay .mp-status { display: flex; align-items: center; gap: 12px; margin: 0; padding: calc(12 * var(--u)) 0; border-top: 1px solid var(--ink-faint); font: 500 max(12px, calc(14 * var(--u)))/1.5 "IBM Plex Sans JP", sans-serif; }
       #overlay .mp-status::before { content: "STATUS"; flex: none; padding: 4px 9px; background: var(--ink); color: #fff; font: 600 max(10px, calc(12 * var(--u))) "Barlow Condensed", sans-serif; letter-spacing: .2em; }
       #overlay .mp-footer { align-items: center; margin-top: calc(10 * var(--u)); }
@@ -690,13 +697,13 @@
       #overlay .pcard.fr-falcon .pc-falcon { display: block; }
       #overlay .pcard.fr-falcon .pc-frame { display: none; }
       #overlay .pc-falcon .fc-plate { fill: #e6e8ea; stroke: #9a9ea4; stroke-width: 0.3; }
-      #overlay .pc-falcon .fc-line { fill: none; stroke: #c9a25a; stroke-width: 0.35; stroke-linecap: round; stroke-linejoin: round; }
+      #overlay .pc-falcon .fc-line { fill: none; stroke: #c9a25a; stroke: url(#fc-g-line); stroke-width: 0.35; stroke-linecap: round; stroke-linejoin: round; }
       #overlay .pc-falcon .fc-wing { fill: #111214; stroke: #34373c; stroke-width: 0.3; stroke-linejoin: round; }
       #overlay .pc-falcon .fc-gloss { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.3; stroke-linecap: round; }
       #overlay .pc-falcon .fc-shell { fill: #e6e8ea; stroke: #8f9399; stroke-width: 0.2; }
-      #overlay .pc-falcon .fc-gold { fill: #c9a25a; stroke: #7a5a22; stroke-width: 0.2; animation: fc-sheen 4.8s linear infinite; }
-      #overlay .pc-falcon .fc-ring { fill: #0c0d0e; stroke: #c9a25a; stroke-width: 0.6; }
-      #overlay .pc-falcon .fc-slot { fill: #c9a25a; }
+      #overlay .pc-falcon .fc-gold { fill: #c9a25a; fill: url(#fc-g-quill); stroke: #5e4216; stroke-width: 0.2; animation: fc-sheen 4.8s linear infinite; }
+      #overlay .pc-falcon .fc-ring { fill: #0c0d0e; stroke: #c9a25a; stroke: url(#fc-g-ring); stroke-width: 0.6; }
+      #overlay .pc-falcon .fc-slot { fill: #c9a25a; fill: url(#fc-g-quill); }
       #overlay .pc-falcon .fc-core { fill: #ffe2a0; filter: drop-shadow(0 0 0.5px #ffd27a) drop-shadow(0 0 1.4px rgba(224, 166, 64, 0.9)); animation: fc-core 3.2s ease-in-out infinite; }
       /* 金の線を走る光。向かい合う 2 本が、周期の初めの 3 割で半周ずつ進む */
       #overlay .pc-falcon .fc-glint {
@@ -705,7 +712,7 @@
       }
       @keyframes fc-glint { 0% { stroke-dashoffset: 0; opacity: 0; } 4% { opacity: 1; } 36% { opacity: 1; } 40% { stroke-dashoffset: -50; opacity: 0; } 100% { stroke-dashoffset: -50; opacity: 0; } }
       /* 光が角を出る瞬間に、金の羽根が明るく照る */
-      @keyframes fc-sheen { 0%, 100% { fill: #c9a25a; } 2.667% { fill: #f4dca0; } 10.667% { fill: #c9a25a; } }
+      @keyframes fc-sheen { 0%, 100% { filter: brightness(1); } 2.667% { filter: brightness(1.45); } 10.667% { filter: brightness(1); } }
       @keyframes fc-core { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
       /* カードの表面の三角形（SVG は cardParts.ts の FALCON_FACETS）。z-index: -1 で背景の模様より上、文字より下に敷く。面の明暗は計算して白と黒の半透明で重ねるので、背景の明暗によらず凹凸に見える。内側の影で、面が枠より一段奥に沈んで見えるようにする */
       #overlay .pcard .pc-facets { display: none; position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; pointer-events: none; box-shadow: inset 0 0 6cqw rgba(0, 0, 0, 0.16); }
@@ -732,6 +739,7 @@
         transform: translateY(-100%) perspective(calc(1200 * var(--u))) rotateY(-6deg); transform-origin: 100% 50%;
       }
       #overlay.title.card-on:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .title-card { display: block; }
+      #overlay.title.card-on.select-gacha .title-card { display: none; }
       #overlay .title-card .pcard { animation: pc-in 0.6s 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
       @keyframes pc-in { from { opacity: 0; transform: translateX(calc(60 * var(--u))); } }
       /* ---- ロッカー ----
@@ -885,7 +893,31 @@
         display: none; position: absolute; inset: 0; flex-direction: column; overflow: hidden; cursor: default; box-sizing: border-box;
         padding: calc(80 * var(--u)) calc(80 * var(--u)) max(56px, calc(100 * var(--u)));
       }
-      #overlay.select-feedback .feedback { display: flex; }
+      #overlay.select-feedback .feedback:not(.gacha) { display: flex; }
+      #overlay.select-gacha .frame { visibility: hidden; }
+      #overlay.select-gacha .gacha { display: flex; }
+      #overlay .gacha .gc-body { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: space-around; gap: 32px; animation: ov-slide .45s .08s cubic-bezier(.2,.9,.3,1) both; }
+      #overlay .gacha .gc-copy { max-width: 580px; }
+      #overlay .gacha .gc-label { color: var(--ink-soft); font-size: max(12px, calc(18 * var(--u))); letter-spacing: .3em; }
+      #overlay .gacha .gc-title { margin: 12px 0; font-size: max(38px, calc(82 * var(--u))); line-height: .95; letter-spacing: .04em; }
+      #overlay .gacha .gc-text { font: 500 max(13px, calc(20 * var(--u)))/1.8 "IBM Plex Sans JP", sans-serif; }
+      #overlay .gacha .gc-status { display: inline-block; margin-top: 20px; padding: 10px 18px; background: var(--ink); color: #fff; font-size: max(15px, calc(23 * var(--u))); letter-spacing: .16em; }
+      #overlay .gacha .gc-cards { position: relative; flex: 0 0 min(36vw, 460px); height: min(27vw, 300px); }
+      #overlay .gacha .gc-card { position: absolute; inset: 12% 8%; border: 3px solid var(--ink); background: repeating-linear-gradient(135deg, #eee 0 12px, #ddd 12px 13px); box-shadow: 8px 8px 0 rgba(51,51,51,.14); transform: rotate(-9deg); }
+      #overlay .gacha .gc-card:last-child { display: flex; align-items: center; justify-content: center; inset: 20% 0 4% 18%; background: #333; color: #fff; transform: rotate(7deg); font-size: max(48px, calc(100 * var(--u))); font-weight: 700; }
+      #overlay .gacha [hidden] { display: none !important; }
+      #overlay .gacha .gc-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+      #overlay .gacha .gc-actions button, #overlay .gacha .gc-lineup-back { border: 1px solid var(--ink); padding: 10px 24px; background: transparent; color: var(--ink); font: 600 max(17px, calc(25 * var(--u))) "Barlow Condensed", sans-serif; letter-spacing: .14em; cursor: pointer; }
+      #overlay .gacha .gc-actions button:is(:hover, :focus-visible, .pad-focus), #overlay .gacha .gc-lineup-back:is(:hover, :focus-visible, .pad-focus) { background: var(--ink); color: white; outline: none; }
+      #overlay .gacha .gc-actions button:disabled { opacity: .4; cursor: default; }
+      #overlay .gacha .gc-lineup { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 0; }
+      #overlay .gacha .gc-lineup h3 { margin: 24px 0 10px; font-size: max(19px, calc(28 * var(--u))); letter-spacing: .12em; }
+      #overlay .gacha .gc-lineup h3 small { font: 500 max(11px, calc(15 * var(--u))) "IBM Plex Sans JP", sans-serif; color: var(--ink-soft); }
+      #overlay .gacha .gc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+      #overlay .gacha .gc-item { min-width: 0; container-type: inline-size; }
+      #overlay .gacha .gc-item > small { display: block; margin-top: 5px; font-size: 14px; letter-spacing: .08em; }
+      #overlay .gacha .gc-color { display: flex; aspect-ratio: 16 / 9; align-items: center; justify-content: center; background: #ddd; border: 1px solid #aaa; font-size: 32px; }
+      @media (max-width: 700px) { #overlay .gacha .gc-body { flex-direction: column-reverse; align-items: flex-start; justify-content: center; gap: 12px; } #overlay .gacha .gc-cards { flex: none; width: 55%; height: 130px; } }
       #overlay .feedback .rule { flex: none; }
       #overlay .fb-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; gap: calc(34 * var(--u)); max-width: calc(1420 * var(--u)); animation: ov-slide 0.45s 0.08s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
       #overlay .fb-lead { margin: 0; font: 700 max(20px, calc(46 * var(--u)))/1.3 "IBM Plex Sans JP", sans-serif; letter-spacing: 0.02em; }
@@ -1279,6 +1311,7 @@
         padding: calc(10 * var(--u)) calc(16 * var(--u)); color: var(--ink); transition: color 0.12s; animation: ov-fade 0.6s 0.7s ease-out both;
       }
       #overlay.title:not(.select-stage, .select-challenge, .select-multiplayer, .select-locker, .select-roadmap, .select-feedback, .show-options, .pick-weapon, .tutorial-pick, .mp-pick) .pn-open { display: block; }
+      #overlay.title.select-gacha .pn-open { display: none; }
       #overlay .pn-open svg { display: block; width: max(22px, calc(34 * var(--u))); height: max(22px, calc(34 * var(--u))); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
       #overlay :is(.pn-open, .pn-close)::before { content: ""; position: absolute; z-index: -1; inset: 0; background: none; transform: skewX(-24deg); transition: background 0.12s; }
       #overlay :is(.pn-open, .pn-close):is(:hover, :focus-visible, .pad-focus) { color: #fff; outline: none; }
@@ -3006,6 +3039,20 @@
     </style>
   </head>
   <body class="on-title">
+    <!-- FALCON のフレームの金の質感。カードごとに id が重複しないよう、グラデーションはここに 1 度だけ置く（display:none にすると参照が切れる） -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="fc-g-quill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff0c0"/><stop offset="0.3" stop-color="#d9b25e"/><stop offset="0.55" stop-color="#8a6322"/><stop offset="0.8" stop-color="#c9a25a"/><stop offset="1" stop-color="#6e4e1a"/>
+        </linearGradient>
+        <linearGradient id="fc-g-line" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="160" y2="90">
+          <stop offset="0" stop-color="#8a6322"/><stop offset="0.12" stop-color="#f4dca0"/><stop offset="0.25" stop-color="#b08a3c"/><stop offset="0.4" stop-color="#fff0c0"/><stop offset="0.55" stop-color="#8a6322"/><stop offset="0.7" stop-color="#e8c878"/><stop offset="0.85" stop-color="#a07a30"/><stop offset="1" stop-color="#f4dca0"/>
+        </linearGradient>
+        <radialGradient id="fc-g-ring" cx="0.35" cy="0.3" r="0.9">
+          <stop offset="0" stop-color="#fff0c0"/><stop offset="0.5" stop-color="#c9a25a"/><stop offset="1" stop-color="#6e4e1a"/>
+        </radialGradient>
+      </defs>
+    </svg>
     <div id="loader" role="status" aria-label="読み込み中">
       <div class="cover"></div>
       <div class="content">
@@ -3442,6 +3489,28 @@
           <div class="mp-actions mp-footer"><button type="button" data-action="roadmap-back">BACK</button></div>
         </div>
       </div>
+      <!-- SUPPLY: 抽選とポイントは準備中。画面はローカル開発時だけ開ける -->
+      <div class="feedback gacha">
+        <div class="mp-heading">
+          <div><h2>SUPPLY</h2></div>
+          <div class="mp-heading-side">PLAYER CARD<b>COLLECTION</b></div>
+        </div>
+        <div class="rule"></div>
+        <div class="gc-body" data-supply-home>
+          <div class="gc-copy">
+            <span class="gc-label">PLAYER CARD PARTS</span>
+            <h3 class="gc-title">MAKE IT<br>YOUR OWN.</h3>
+            <p class="gc-text">背景やフレーム、名前の色を集めて、<br>自分だけのプレイヤーカードを作ろう。</p>
+            <div class="gc-actions"><button type="button" disabled>OPEN — COMING SOON</button><button type="button" data-action="supply-lineup">LINEUP</button></div>
+          </div>
+          <div class="gc-cards" aria-hidden="true"><div class="gc-card"></div><div class="gc-card">?</div></div>
+        </div>
+        <div class="gc-lineup" data-supply-lineup hidden>
+          <button type="button" class="gc-lineup-back" data-action="supply-lineup-back">← SUPPLY</button>
+          <div data-supply-list></div>
+        </div>
+        <div class="mp-bottom"><div class="mp-actions mp-footer"><button type="button" data-action="gacha-back">BACK</button></div></div>
+      </div>
       <!-- フィードバック: 感想を書いてもらう呼びかけと、Google フォームを開くボタン（動きは ui/feedbackTab.ts） -->
       <div class="feedback">
         <div class="mp-heading">
@@ -3475,6 +3544,7 @@
         <button type="button" data-tab="challenge" title="CHALLENGE — チャレンジ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5"/><path d="M12 14v4M8 20.5h8"/></svg><span>CHALLENGE<span class="jp">チャレンジ</span></span></button>
         <button type="button" data-tab="multi" title="MULTIPLAYER (TEST) — 協力プレイ"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19.5c0-3.4 2.7-6 6-6s6 2.6 6 6"/><path d="M15 5.2a3 3 0 0 1 0 5.6M17.5 13.9c2 .8 3.5 2.9 3.5 5.6"/></svg><span>MULTIPLAYER<small>TEST</small><span class="jp">協力プレイ</span></span></button>
         <button type="button" data-tab="locker" title="LOCKER — プレイヤーカード編集"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8.5 6.5h7M8.5 9h7M15 13v3"/></svg><span>LOCKER<span class="jp">カード編集</span></span></button>
+        <button type="button" data-tab="gacha" title="SUPPLY — カードパーツ"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10"/><path d="M3 7h18v3H3zM12 7v13M12 7C10.5 3.5 6.5 3.5 6.5 5.5S10 7 12 7zM12 7c1.5-3.5 5.5-3.5 5.5-1.5S14 7 12 7z"/></svg><span>SUPPLY<span class="jp">カードパーツ</span></span></button>
         <button type="button" data-tab="roadmap" title="ROADMAP — 武器の熟練度"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>ROADMAP<span class="jp">熟練度</span></span></button>
         <button type="button" data-tab="feedback" title="FEEDBACK — ご意見・感想"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-4.5 4v-4H4z"/><path d="M8 9h8M8 12h5"/></svg><span>FEEDBACK<span class="jp">ご意見・感想</span></span></button>
       </div>
@@ -3866,6 +3936,16 @@
           </div>
           <div class="pn-body">
             <section class="pn-entry">
+              <time datetime="2026-11-05">2026.11.05</time>
+              <p>FALCON（隼）のスキンが追加されました。新しいチャレンジ FALCON TRIAL で解放できます。</p>
+              <ul>
+                <li>スナイパーライフル・リボルバー・弓・クナイの FALCON スキンが登場しました。</li>
+                <li>チャレンジに FALCON TRIAL を追加しました。STATION（HARD）を命中率 85% 以上、ランク S 以上で倒しきると、挑んだ武器の FALCON スキンがもらえます。</li>
+                <li>4 つすべてを命中率 100% で倒しきると、プレイヤーカードの FALCON フレームが開きます。</li>
+                <li>TALON TRIAL の TALON フレームは、6 つ達成で開くようになりました。</li>
+              </ul>
+            </section>
+            <section class="pn-entry">
               <time datetime="2026-11-04">2026.11.04</time>
               <p>プレイヤーカードの TALON フレームの見た目とアニメーションを強化しました。</p>
               <ul>
@@ -3921,7 +4001,7 @@
       if (new URLSearchParams(location.search).has('new') && !window.__freshStorageReady) {
         throw new Error('Could not isolate storage for ?new');
       }
-      import('./dist/main.js?v=02ff01f7').catch((e) => {
+      import('./dist/main.js?v=762889d8').catch((e) => {
         console.error(e);
         const loader = document.getElementById('loader');
         loader.classList.add('failed');

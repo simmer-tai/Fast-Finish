@@ -5,6 +5,7 @@ import { camera, controls, scene } from '../core.js';
 import { ARROW_LEN, createArrow, setBowDraw } from './bow.js';
 import { bowModel, receiveShadows, skinMats, weaponMats } from './viewModels.js';
 import { findThrowAim } from './kunaiCombat.js';
+import { accuracyTracker } from './handgunCombat.js';
 import type { HitDef } from './kunaiAttacks.js';
 import { Ribbon, arrowRibbonMat } from '../fx/ribbons.js';
 import { addGlow } from '../fx/glow.js';
@@ -191,6 +192,7 @@ const ARROW_AXIS = new THREE.Vector3(0, 1, 0);
 const ARROW_Z = -0.004; // 矢は柄の左（-Z）に寄せて載せる
 
 interface Arrow {
+  accuracyHit?: () => void;
   mesh: THREE.Group;
   vel: THREE.Vector3;
   gravity: number;
@@ -231,6 +233,7 @@ function launchArrow(from: THREE.Vector3, dir: THREE.Vector3, speed: number, gra
   scene.add(trail.mesh);
   if (skinTrail?.glow) addGlow(trail.mesh, 0, true); // 筋が捨てられてシーンから外れたら、にじみの登録も外れる
   arrows.push({
+    accuracyHit: accuracyTracker.shot(),
     mesh,
     vel: dir.clone().multiplyScalar(speed),
     gravity,
@@ -462,6 +465,7 @@ function updateArrows(dt: number) {
     // 鏃の先からこのフレームで進む分だけ線を伸ばし、途中で当たるものを探す（速くてもすり抜けない）
     tip.copy(a.mesh.position).addScaledVector(flyDir, ARROW_LEN);
     if (castForgiving(tip, flyDir, step, 0.10)) {
+      if (castHit.enemy || castHit.boss) a.accuracyHit?.();
       hitAt.copy(castHit.point);
       // ボスの機体には刺さらず（動く機体に残すと浮いて見える）、当てて消す
       if (castHit.boss) {

@@ -1,5 +1,5 @@
 import * as sfx from '../audio.js';
-import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, featDone, groupDone, loadMission, parkourTargets, ruleParts, ruleTag, type Mission } from '../challenges.js';
+import { FEATS, MISSIONS, MISSION_GROUPS, TIER_NAMES, bonusCount, featDone, loadMission, parkourTargets, ruleParts, ruleTag, type Mission } from '../challenges.js';
 import { fmtTime } from '../result.js';
 import { LOCK, cardPreview } from './lvRoadmap.js';
 import { badgePlate } from './cardHonors.js';
@@ -159,13 +159,14 @@ function renderOverview(id: string) {
   overview.classList.toggle('has-bonus', !!g.bonus);
   if (g.bonus) {
     const b = g.bonus;
-    const got = groupDone(g.id) >= b.need;
+    const count = bonusCount(g);
+    const got = count >= b.need;
     const slot = overview.querySelector<HTMLElement>('.ch-bonus')!;
     slot.classList.toggle('got', got);
     slot.querySelector('.ch-frame')!.innerHTML = partSwatch('plain', b.frame);
     slot.querySelector('.nm')!.textContent = b.name;
-    slot.querySelector('.ja')!.textContent = `${first.reward?.name ?? ""} スキンをどれか ${b.need} つで、カードの${b.ja}`;
-    slot.querySelector('.ch-bonus-n')!.textContent = `${Math.min(done, b.need)} / ${b.need}`;
+    slot.querySelector('.ja')!.textContent = b.perfect ? `命中率 100% で ${b.need} つすべて倒しきると、カードの${b.ja}` : `${first.reward?.name ?? ""} スキンをどれか ${b.need} つで、カードの${b.ja}`;
+    slot.querySelector('.ch-bonus-n')!.textContent = `${Math.min(count, b.need)} / ${b.need}`;
     slot.querySelector('.go .ic')!.innerHTML = got ? CHECK : LOCK;
     slot.querySelector('.go em')!.textContent = got ? 'UNLOCKED' : 'LOCKED';
   }
@@ -301,11 +302,11 @@ function showBonusTip(anchor: HTMLElement) {
   const g = row && 'group' in row ? MISSION_GROUPS.find((x) => x.id === row.group) : undefined;
   if (!g?.bonus) return;
   const b = g.bonus;
-  const got = groupDone(g.id) >= b.need;
+  const got = bonusCount(g) >= b.need;
   tip.innerHTML =
     `<header><b>${b.name}</b><span>${b.ja}</span><em>${got ? 'UNLOCKED' : 'LOCKED'}</em></header>` +
     `<figure class="lv-tip-card">${cardPreview({ frame: b.frame })}</figure>` +
-    `<p class="lv-tip-req">${g.name} のミッションを ${b.need} つ達成するとアンロック</p>`;
+    `<p class="lv-tip-req">${g.name} のミッションを${b.perfect ? ' 命中率 100% で' : ''} ${b.need} つ達成するとアンロック</p>`;
   placeRewardTip(anchor);
 }
 function hideRewardTip() {
